@@ -14,6 +14,7 @@ use std::process::Command;
 
 use mediacraft_daemon::QueueEngine;
 use mediacraft_daemon::hardware::HardwareCapabilities;
+use mediacraft_daemon::pipeline::flac_adapter::FlacEncoderAdapter;
 use mediacraft_daemon::pipeline::prores_adapter::ProResEncoderAdapter;
 use mediacraft_daemon::plan::{PlanError, compile_execution_plan};
 use mediacraft_daemon::quality::{calculate_psnr, calculate_ssim, measure_audio_loudness};
@@ -366,6 +367,17 @@ fn test_m10_format_expansion_flac_and_prores() {
     assert!(
         flac_bytes.starts_with(b"fLaC"),
         "Deliverable must start with standard RFC 9639 'fLaC' marker"
+    );
+
+    // Direct adapter block encoding verification
+    let mut adapter = FlacEncoderAdapter::new(48000, 2, 16).unwrap();
+    let left = vec![1000i32; 1024];
+    let right = vec![2000i32; 1024];
+    adapter.encode_block(&[&left, &right]).unwrap();
+    let stream_bytes = adapter.finish();
+    assert!(
+        stream_bytes.starts_with(b"fLaC"),
+        "Adapter finished stream must contain standard RFC 9639 'fLaC' marker"
     );
 
     // If FFprobe is available on the system, externally probe the FLAC file
