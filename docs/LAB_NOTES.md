@@ -244,6 +244,55 @@ Following the directives in [`FEATURES.md`](file:///Users/zachshallbetter/Projec
 - **Quality Gates Status**:
   - `cargo fmt --check`: Clean across all crates.
   - `cargo clippy --workspace --all-targets -- -D warnings`: Clean with zero warnings.
-  - `cargo test --workspace`: 40/40 unit tests pass across all crates.
+  - `cargo test --workspace`: 44/44 unit tests pass across all crates.
   - `cargo check --target wasm32-unknown-unknown`: Clean across all catalog, protocol, and bitstream crates.
+
+---
+
+## Section 9: Real-Media Transcode Pipeline & External Empirical Verification (2026-10-13)
+
+### 1. Pure-Rust RIFF/WAVE Parser & Serializer (`mediacraft-daemon::wav`)
+- **Module**: [`crates/daemon/src/wav.rs`](file:///Users/zachshallbetter/Projects/ArtCraft/mediacraft/crates/daemon/src/wav.rs)
+- **Format Support**:
+  - 16-bit signed integer linear PCM (`i16`)
+  - 24-bit packed signed integer linear PCM (`i24`)
+  - 32-bit signed integer linear PCM (`i32`)
+  - 32-bit IEEE single-precision floating point (`f32`)
+- **Persistence**: Employs [`craft_atomic::atomic_write`](file:///Users/zachshallbetter/Projects/ArtCraft/mediacraft/crates/daemon/src/wav.rs#L271-L274) ensuring atomic, crash-safe disk writes with temporary file replacement and parent directory synchronization.
+- **Verification**: Verified via `test_wav_roundtrip_16bit_stereo` with exact sample roundtrip conversion.
+
+### 2. Candidate Engine Adapters & Streaming Pipeline (`mediacraft-daemon::pipeline`)
+- **Encoder Adapter**: [`crates/daemon/src/pipeline/aac_adapter.rs`](file:///Users/zachshallbetter/Projects/ArtCraft/mediacraft/crates/daemon/src/pipeline/aac_adapter.rs) wraps `filmcraft-aac`, providing CBR configuration (64–320 kbps), 1024-sample encoder priming extraction, and `AudioSpecificConfig` extraction.
+- **Muxer Adapter**: [`crates/daemon/src/pipeline/m4a_adapter.rs`](file:///Users/zachshallbetter/Projects/ArtCraft/mediacraft/crates/daemon/src/pipeline/m4a_adapter.rs) wraps `filmcraft-isobmff`, generating `mp42`/`isom` container brands, 1024-sample edit list (`elst`) delay compensation (`media_start = Some(1024)`), and in-place Faststart `moov` relocation.
+- **Pipeline Orchestrator**: [`crates/daemon/src/pipeline/mod.rs`](file:///Users/zachshallbetter/Projects/ArtCraft/mediacraft/crates/daemon/src/pipeline/mod.rs) exposes `WavToM4aPipeline::transcode` with streaming chunk processing (1024-frame chunks), real-time progress callbacks, and execution receipts (`AudioTranscodeReceipt`).
+
+### 3. Queue Engine Integration (`mediacraft-daemon`)
+- **Integration**: [`crates/daemon/src/lib.rs`](file:///Users/zachshallbetter/Projects/ArtCraft/mediacraft/crates/daemon/src/lib.rs#L340-L425) in `QueueEngine::execute_job_to_completion`.
+- **Workflow**:
+  1. Inspects job input path and target preset.
+  2. Routes valid WAV files targeting `ContainerFormat::M4a` to `WavToM4aPipeline::transcode`.
+  3. Updates job progress dynamically through completion, recording exact wall-clock encoding time, real-time multiplier, and output byte counts.
+- **Verification**: Verified via `test_real_wav_to_m4a_transcode_via_queue_engine`.
+
+### 4. Independent External Empirical Verification via FFprobe & FFmpeg
+- **Oracle Test**: [`crates/oracles/tests/ffprobe_validation.rs`](file:///Users/zachshallbetter/Projects/ArtCraft/mediacraft/crates/oracles/tests/ffprobe_validation.rs)
+- **Empirical Checks Executed**:
+  1. **Source Generation**: 3.0s 48kHz stereo WAV (144,000 samples).
+  2. **Pipeline Execution**: Transcoded to M4A with progressive Faststart.
+  3. **FFprobe Stream Inspection** (`/opt/homebrew/bin/ffprobe`):
+     - `format_name`: Contains `m4a` / `mp4` / `mov`
+     - `codec_name`: `aac`
+     - `channels`: 2
+     - `sample_rate`: 48,000 Hz
+     - `duration`: Container duration matches within 50ms (< 1 video frame)
+  4. **FFmpeg Null Decode** (`/opt/homebrew/bin/ffmpeg -v error -xerror -i golden_tone_3s.m4a -f null -`):
+     - Exits with return code `0`
+     - 0 bitstream syntax or frame decode errors reported
+  5. **Sample Recovery Roundtrip**: Decoded back to WAV via FFmpeg, verifying that the 1024-sample edit list compensation recovers exact audio frames within 1 AAC frame of input.
+
+### 5. Workspace Quality Gates
+- **Formatting**: `cargo fmt --check` passes cleanly.
+- **Clippy**: `cargo clippy --workspace --all-targets -- -D warnings` passes with 0 warnings.
+- **Test Suite**: `cargo test --workspace` passes (44 tests across all workspace crates).
+- **WebAssembly**: `cargo check --target wasm32-unknown-unknown -p mediacraft-catalog -p mediacraft-protocol -p mediacraft-bitstream` passes cleanly.
 
