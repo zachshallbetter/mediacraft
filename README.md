@@ -18,16 +18,38 @@ It provides:
 5. The **Desktop Workspace UI** (`mediacraft-app`): A dark-mode desktop interface built with `craft-ui`, `craft-settings`, `craft-atomic`, and `craft-quit`.
 6. A headless testing CLI (`mediacraft-cli`).
 
-### Ecosystem Testbed & Staging Ground
+---
 
-MediaCraft serves as the primary empirical testbed and staging harness for capabilities proposed for `storytold/craft-libs`. Rather than designing shared abstractions in the abstract, components are first implemented, stress-tested, and proven here in accordance with authoritative suite specifications:
-- [`CRAFT_UI_SCHEMA.md`](../CRAFT_UI_SCHEMA.md): Presentation widget contracts, docking layout, dark theme tokens, and canvas controls tested live in `mediacraft-app`.
-- [`CRAFT_MEDIA_RFC.md`](../CRAFT_MEDIA_RFC.md): Clean-room media codecs, bitstream I/O, audio DSP, and stream-copy remuxing proven against ffmpeg verification oracles.
-- [`CRAFT_LIBS_RFC.md`](../CRAFT_LIBS_RFC.md): Shared library architecture, atomic persistence (`craft-atomic`), configuration self-healing (`craft-settings`), lifecycle termination (`craft-quit`), ISO 32000 PDF parsing (`craft-pdf`), and safe packaging (`craft-archive`).
+## 2. Empirical Testbed & Staging Ground for `craft-libs`
+
+MediaCraft is the primary empirical testbed and staging harness for architectural primitives, format handlers, and presentation widgets being developed for the shared `storytold/craft-libs` ecosystem.
+
+Rather than designing shared library abstractions in isolation, components are first implemented, stress-tested, and empirically verified inside MediaCraft under real multi-gigabyte production workloads before being extracted upstream:
+
+### 1. Shared UI Contracts & Presentation Engine ([`CRAFT_UI_SCHEMA.md`](../CRAFT_UI_SCHEMA.md))
+- **Active Reference Consumer**: `mediacraft-app` acts as the reference workbench and testbed for `craft-ui` across its 5 primary workspaces (Catalog, Inspector, Queue, Automations, Settings).
+- **Component Qualification**: Empirically validates presentation widgets, dockable panel hierarchies, tabbed workspaces, facet filter chips, canvas controls, and rich procedural thumbnails without causing event loop latency or window dormancy.
+- **Service Decoupling**: Proves seamless integration with `craft-quit` for non-blocking shutdown confirmation, `craft-settings` for schema-validated configuration storage, and `craft-atomic` for crash-safe state persistence.
+
+### 2. Clean-Room Media Infrastructure ([`CRAFT_MEDIA_RFC.md`](../CRAFT_MEDIA_RFC.md))
+- **5-Layer Media Stack**: Implements and stages the complete clean-room media pipeline proposed in `CRAFT_MEDIA_RFC.md`:
+  - *Bitstream Primitives*: Pure-Rust MSB/LSB bit readers/writers, Exp-Golomb, and RBSP handling (`craft-bitstream`).
+  - *Audio Infrastructure*: AAC-LC encoder/decoder (`craft-aac`), lossless FLAC (`craft-flac`), and Opus (`craft-opus`).
+  - *Audio DSP & Acoustics*: EBU R128 loudness, true-peak meter, and cross-correlation delay sync (`craft-audio-dsp`).
+  - *Video Codecs*: Intra/inter H.264/AVC decoder (`craft-h264`), multi-pass rate-controlled encoder (`craft-h264enc`), HEVC/H.265 (`craft-hevc`), and Apple ProRes 422/4444 (`craft-prores`).
+  - *Multiplexing & Remuxing*: ISO Base Media File Format MP4/MOV faststart muxer (`craft-isobmff`), Matroska MKV/WebM parser (`craft-matroska`), and stream-copy routing facade (`craft-media`).
+- **Empirical Oracles**: Codec implementations are verified against rigorous mathematical and ffmpeg/ffprobe verification oracles (`mediacraft-oracles`), proving bit-exactness, zero panics, and conformance.
+
+### 3. Shared Library Architecture & Document Packaging ([`CRAFT_LIBS_RFC.md`](../CRAFT_LIBS_RFC.md))
+- **System Contracts**: Proves adherence to `craft-libs` core non-negotiables: crash-safe atomic write ordering (`sync_file < rename < sync_dir` in `craft-atomic`), self-healing configuration backups in `craft-settings`, and signed 64-bit media time in `craft-time`.
+- **Document & Archive Staging**: Houses the initial staging and consumer testing for:
+  - *`craft-pdf`*: Pure-Rust ISO 32000 COS object graph, stream filters (Flate, LZW, ASCII85), crypt security handlers (RC4, AES-128/256), and metadata inspection.
+  - *`craft-archive`*: Safe multi-format unarchiver (ZIP, TAR, TAR.GZ) with `ResourceBudget` decompression limits, path containment, and Zip Slip traversal prevention.
+  - *`craft-psd`*: Adobe Photoshop layered raster image decoder for multi-app asset ingestion.
 
 ---
 
-## 2. Workspace Topology
+## 3. Workspace Topology
 
 MediaCraft is organized as an integrated cargo workspace containing 22 high-performance, `#![forbid(unsafe_code)]` member crates:
 
@@ -77,7 +99,7 @@ mediacraft/
 
 ---
 
-## 3. Strict Non-Negotiables
+## 4. Strict Non-Negotiables
 
 All crates in this workspace adhere to the authoritative Craft shared library standards:
 - `#![forbid(unsafe_code)]` enforced across every crate.
@@ -88,7 +110,7 @@ All crates in this workspace adhere to the authoritative Craft shared library st
 
 ---
 
-## 4. Verification Commands
+## 5. Verification Commands
 
 ```bash
 # Run all unit and property tests across workspace
