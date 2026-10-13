@@ -392,6 +392,8 @@ pub fn render_library_view(
             let btn_style = crate::craft_theme::craft_icon_button_style();
 
             for (kind, icon, label) in [
+                (MediaKind::Archive, "📦", "Archives"),
+                (MediaKind::Document, "📄", "Documents"),
                 (MediaKind::ProjectFile, "📁", "Projects"),
                 (MediaKind::Audio, "🎵", "Audio"),
                 (MediaKind::Image, "📷", "Photos"),
@@ -1606,6 +1608,56 @@ fn draw_rich_mock_thumbnail(painter: &egui::Painter, rect: Rect, asset: &MediaAs
                 CornerRadius::same(2),
                 Stroke::new(1.5, Color32::from_rgb(100, 200, 220)),
                 egui::StrokeKind::Inside,
+            );
+        }
+        MediaKind::Document => {
+            painter.rect_filled(rect, corner, Color32::from_rgb(38, 28, 32));
+            let sheet = rect.shrink2(Vec2::new(rect.width() * 0.22, rect.height() * 0.12));
+            painter.rect_filled(
+                sheet,
+                CornerRadius::same(2),
+                Color32::from_rgb(225, 230, 238),
+            );
+            let hdr = Rect::from_min_max(
+                sheet.min,
+                Pos2::new(sheet.max.x, sheet.min.y + sheet.height() * 0.22),
+            );
+            painter.rect_filled(hdr, CornerRadius::same(2), Color32::from_rgb(215, 45, 55));
+            for i in 0..3 {
+                let ly = sheet.min.y + sheet.height() * 0.38 + (i as f32) * (sheet.height() * 0.16);
+                let lw = if i == 2 {
+                    sheet.width() * 0.5
+                } else {
+                    sheet.width() * 0.75
+                };
+                let line_rect = Rect::from_min_size(
+                    Pos2::new(sheet.min.x + sheet.width() * 0.12, ly),
+                    Vec2::new(lw, 2.0),
+                );
+                painter.rect_filled(
+                    line_rect,
+                    CornerRadius::ZERO,
+                    Color32::from_rgb(165, 172, 185),
+                );
+            }
+        }
+        MediaKind::Archive => {
+            painter.rect_filled(rect, corner, Color32::from_rgb(32, 28, 42));
+            let box_rect = rect.shrink2(Vec2::new(rect.width() * 0.18, rect.height() * 0.15));
+            painter.rect_filled(
+                box_rect,
+                CornerRadius::same(4),
+                Color32::from_rgb(55, 48, 72),
+            );
+            let zip_w = 4.0;
+            let zip_rect = Rect::from_min_max(
+                Pos2::new(box_rect.center().x - zip_w * 0.5, box_rect.min.y),
+                Pos2::new(box_rect.center().x + zip_w * 0.5, box_rect.max.y),
+            );
+            painter.rect_filled(
+                zip_rect,
+                CornerRadius::ZERO,
+                Color32::from_rgb(220, 180, 70),
             );
         }
         MediaKind::ProjectFile | MediaKind::Other => {

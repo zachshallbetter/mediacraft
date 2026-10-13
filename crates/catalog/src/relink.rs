@@ -172,6 +172,8 @@ mod tests {
             has_proxy: false,
             needs_transcode: false,
             is_offline: true,
+            document: None,
+            archive: None,
         };
 
         // Initially offline

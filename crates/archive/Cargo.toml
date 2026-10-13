@@ -1,0 +1,21 @@
+[package]
+name = "craft-archive"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Clean-room pure-Rust safe archive extraction, path containment, and format detection"
+
+[lints]
+workspace = true
+
+[dependencies]
+flate2 = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+tar = "0.4"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = "3"

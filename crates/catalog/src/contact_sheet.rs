@@ -181,6 +181,8 @@ mod tests {
             has_proxy: true,
             needs_transcode: false,
             is_offline: false,
+            document: None,
+            archive: None,
         }];
 
         let html = ContactSheetGenerator::generate_html(&assets, &ContactSheetOptions::default());

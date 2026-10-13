@@ -294,6 +294,8 @@ mod tests {
             has_proxy: false,
             needs_transcode: false,
             is_offline: false,
+            document: None,
+            archive: None,
         };
 
         let a2 = MediaAsset {
@@ -314,6 +316,8 @@ mod tests {
             has_proxy: false,
             needs_transcode: false,
             is_offline: false,
+            document: None,
+            archive: None,
         };
 
         let a3 = MediaAsset {
@@ -334,6 +338,8 @@ mod tests {
             has_proxy: false,
             needs_transcode: false,
             is_offline: false,
+            document: None,
+            archive: None,
         };
 
         let finder = DuplicateFinder::new();
@@ -375,6 +381,8 @@ mod tests {
             has_proxy: false,
             needs_transcode: false,
             is_offline: false,
+            document: None,
+            archive: None,
         };
 
         let a2 = MediaAsset {
@@ -398,11 +406,13 @@ mod tests {
             camera_model: None,
             date_created: "2026-10-12".to_string(),
             geo_location: None,
-            rating: 4,
+            rating: 5,
             tags: vec![],
             has_proxy: false,
             needs_transcode: false,
             is_offline: false,
+            document: None,
+            archive: None,
         };
 
         let finder = DuplicateFinder::new();

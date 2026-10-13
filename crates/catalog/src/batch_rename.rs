@@ -284,6 +284,8 @@ mod tests {
             has_proxy: false,
             needs_transcode: false,
             is_offline: false,
+            document: None,
+            archive: None,
         };
 
         let asset2 = MediaAsset {
@@ -304,6 +306,8 @@ mod tests {
             has_proxy: false,
             needs_transcode: false,
             is_offline: false,
+            document: None,
+            archive: None,
         };
 
         let plan = planner.plan(&[asset1, asset2]);

@@ -205,6 +205,8 @@ pub fn render_sidebar_nav(
                 (MediaKind::RawDng, "RAW DNG"),
                 (MediaKind::ImageSequence, "Sequence"),
                 (MediaKind::ProjectFile, "Project"),
+                (MediaKind::Document, "Document"),
+                (MediaKind::Archive, "Archive"),
             ] {
                 let count = *kind_counts.get(&kind).unwrap_or(&0);
                 let is_checked = state.selected_kind_filter == Some(kind);

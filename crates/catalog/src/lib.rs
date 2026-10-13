@@ -32,6 +32,8 @@ pub enum MediaKind {
     RawDng,
     ImageSequence,
     ProjectFile,
+    Document,
+    Archive,
     Other,
 }
 
@@ -44,6 +46,8 @@ impl MediaKind {
             Self::RawDng => "RAW DNG",
             Self::ImageSequence => "Image Sequence",
             Self::ProjectFile => "Project File",
+            Self::Document => "Document",
+            Self::Archive => "Archive",
             Self::Other => "Other",
         }
     }
@@ -55,6 +59,8 @@ impl MediaKind {
             "png" | "jpg" | "jpeg" | "webp" | "tif" | "tiff" | "exr" => Self::Image,
             "dng" | "arw" | "cr3" | "nef" | "braw" | "r3d" => Self::RawDng,
             "fcp" | "prproj" | "aep" | "cpr" | "ptx" => Self::ProjectFile,
+            "pdf" => Self::Document,
+            "zip" | "tar" | "tgz" | "gz" | "bz2" | "xz" => Self::Archive,
             _ => Self::Other,
         }
     }
@@ -82,6 +88,26 @@ pub struct AudioStreamInfo {
     pub bitrate_kbps: u32,
 }
 
+/// Technical document metadata (e.g. PDF page count, dimensions, encryption).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DocumentInfo {
+    pub page_count: usize,
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub page_width: Option<f64>,
+    pub page_height: Option<f64>,
+    pub is_encrypted: bool,
+}
+
+/// Technical archive container metadata (e.g. ZIP/TAR entry count, uncompressed size).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ArchiveInfo {
+    pub format: String,
+    pub entry_count: usize,
+    pub uncompressed_bytes: u64,
+    pub has_encrypted_entries: bool,
+}
+
 /// An indexed media asset in the MediaCraft workspace.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MediaAsset {
@@ -103,6 +129,36 @@ pub struct MediaAsset {
     pub needs_transcode: bool,
     #[serde(default)]
     pub is_offline: bool,
+    #[serde(default)]
+    pub document: Option<DocumentInfo>,
+    #[serde(default)]
+    pub archive: Option<ArchiveInfo>,
+}
+
+impl Default for MediaAsset {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            path: PathBuf::new(),
+            filename: String::new(),
+            file_size_bytes: 0,
+            kind: MediaKind::Other,
+            duration_secs: None,
+            timecode_start: "00:00:00:00".to_string(),
+            video: None,
+            audio: None,
+            camera_model: None,
+            date_created: String::new(),
+            geo_location: None,
+            rating: 0,
+            tags: Vec::new(),
+            has_proxy: false,
+            needs_transcode: false,
+            is_offline: false,
+            document: None,
+            archive: None,
+        }
+    }
 }
 
 impl MediaAsset {
@@ -305,6 +361,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: true,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "B002_C014".to_string(),
@@ -338,6 +396,8 @@ impl MediaCatalog {
                 has_proxy: true,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "C003_C007".to_string(),
@@ -365,6 +425,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: true,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "IMG_8342".to_string(),
@@ -384,6 +446,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Surf_001".to_string(),
@@ -411,6 +475,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: true,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Podcast_Interview".to_string(),
@@ -436,6 +502,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: true,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Motion_Graphics".to_string(),
@@ -463,6 +531,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Drone_003".to_string(),
@@ -490,6 +560,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Color_Bars".to_string(),
@@ -523,6 +595,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Ski_Day_01".to_string(),
@@ -550,6 +624,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Waterfall_Exr".to_string(),
@@ -569,6 +645,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Interview_B_Roll".to_string(),
@@ -596,6 +674,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Product_Shot".to_string(),
@@ -615,6 +695,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Aerial_Utah".to_string(),
@@ -642,6 +724,8 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: true,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Car_Commercial".to_string(),
@@ -675,6 +759,8 @@ impl MediaCatalog {
                 has_proxy: true,
                 needs_transcode: false,
                 is_offline: false,
+                document: None,
+                archive: None,
             },
             MediaAsset {
                 id: "Offline_Take_04".to_string(),
@@ -702,6 +788,72 @@ impl MediaCatalog {
                 has_proxy: false,
                 needs_transcode: false,
                 is_offline: true,
+                document: None,
+                archive: None,
+            },
+            MediaAsset {
+                id: "CueSheet_Final".to_string(),
+                path: PathBuf::from("/Users/zachshallbetter/Projects/Media/CueSheet_Final.pdf"),
+                filename: "CueSheet_Final.pdf".to_string(),
+                file_size_bytes: 4_250_000,
+                kind: MediaKind::Document,
+                duration_secs: None,
+                timecode_start: "00:00:00:00".to_string(),
+                video: None,
+                audio: None,
+                camera_model: None,
+                date_created: "2026-07-12 11:30:00".to_string(),
+                geo_location: None,
+                rating: 5,
+                tags: vec![
+                    "cuesheet".to_string(),
+                    "pdf".to_string(),
+                    "deliverable".to_string(),
+                ],
+                has_proxy: false,
+                needs_transcode: false,
+                is_offline: false,
+                document: Some(DocumentInfo {
+                    page_count: 8,
+                    title: Some("SoundCraft Master Cue Sheet".to_string()),
+                    author: Some("Zach Shallbetter".to_string()),
+                    page_width: Some(612.0),
+                    page_height: Some(792.0),
+                    is_encrypted: false,
+                }),
+                archive: None,
+            },
+            MediaAsset {
+                id: "Deliverables_Package".to_string(),
+                path: PathBuf::from(
+                    "/Users/zachshallbetter/Projects/Media/Deliverables_Package.zip",
+                ),
+                filename: "Deliverables_Package.zip".to_string(),
+                file_size_bytes: 450_000_000,
+                kind: MediaKind::Archive,
+                duration_secs: None,
+                timecode_start: "00:00:00:00".to_string(),
+                video: None,
+                audio: None,
+                camera_model: None,
+                date_created: "2026-07-12 12:00:00".to_string(),
+                geo_location: None,
+                rating: 5,
+                tags: vec![
+                    "archive".to_string(),
+                    "zip".to_string(),
+                    "client-delivery".to_string(),
+                ],
+                has_proxy: false,
+                needs_transcode: false,
+                is_offline: false,
+                document: None,
+                archive: Some(ArchiveInfo {
+                    format: "ZIP".to_string(),
+                    entry_count: 24,
+                    uncompressed_bytes: 890_000_000,
+                    has_encrypted_entries: false,
+                }),
             },
         ];
 
@@ -909,11 +1061,13 @@ mod tests {
     #[test]
     fn test_mock_corpus_loading() {
         let cat = MediaCatalog::with_standard_mock_corpus();
-        assert_eq!(cat.all_assets().len(), 16);
+        assert_eq!(cat.all_assets().len(), 18);
         let counts = cat.kind_counts();
         assert_eq!(*counts.get(&MediaKind::Video).unwrap_or(&0), 12);
         assert_eq!(*counts.get(&MediaKind::Audio).unwrap_or(&0), 1);
         assert_eq!(*counts.get(&MediaKind::RawDng).unwrap_or(&0), 1);
+        assert_eq!(*counts.get(&MediaKind::Document).unwrap_or(&0), 1);
+        assert_eq!(*counts.get(&MediaKind::Archive).unwrap_or(&0), 1);
         let offline_count = cat.all_assets().iter().filter(|a| a.is_offline).count();
         assert_eq!(offline_count, 1);
     }

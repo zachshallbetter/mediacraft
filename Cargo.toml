@@ -21,6 +21,8 @@ members = [
     "crates/audio-dsp",
     "crates/matroska",
     "crates/psd",
+    "crates/pdf",
+    "crates/archive",
 ]
 
 [workspace.package]
@@ -61,6 +63,8 @@ craft-hevc = { path = "crates/hevc" }
 craft-audio-dsp = { path = "crates/audio-dsp" }
 craft-matroska = { path = "crates/matroska" }
 craft-psd = { path = "crates/psd" }
+craft-pdf = { path = "crates/pdf" }
+craft-archive = { path = "crates/archive" }
 
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }
 craft-quit = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }

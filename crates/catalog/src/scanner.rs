@@ -7,7 +7,10 @@ use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
 
-use crate::{AudioStreamInfo, MediaAsset, MediaCatalog, MediaKind, VideoStreamInfo};
+use crate::{
+    ArchiveInfo, AudioStreamInfo, DocumentInfo, MediaAsset, MediaCatalog, MediaKind,
+    VideoStreamInfo,
+};
 
 /// Options controlling directory scanning depth and filters.
 #[derive(Debug, Clone)]
@@ -130,6 +133,12 @@ pub fn probe_file(path: &Path) -> Option<MediaAsset> {
 
     let (video, audio, duration_secs) = probe_stream_metadata(&ext, &header_buf, file_size);
 
+    let (document, archive) = match kind {
+        MediaKind::Document if ext == "pdf" => (probe_pdf(path), None),
+        MediaKind::Archive => (None, probe_archive(path)),
+        _ => (None, None),
+    };
+
     Some(MediaAsset {
         id,
         path: path.to_path_buf(),
@@ -148,6 +157,49 @@ pub fn probe_file(path: &Path) -> Option<MediaAsset> {
         has_proxy: false,
         needs_transcode: false,
         is_offline: false,
+        document,
+        archive,
+    })
+}
+
+fn probe_pdf(path: &Path) -> Option<DocumentInfo> {
+    let meta = fs::metadata(path).ok()?;
+    if meta.len() > 64 * 1024 * 1024 {
+        return Some(DocumentInfo {
+            page_count: 0,
+            title: None,
+            author: None,
+            page_width: None,
+            page_height: None,
+            is_encrypted: false,
+        });
+    }
+    let bytes = fs::read(path).ok()?;
+    let inspector = craft_pdf::PdfInspector::open(&bytes).ok()?;
+    let count = inspector.page_count();
+    let dims = inspector.dimensions(0);
+    let (w, h) = dims
+        .map(|d| (Some(d[2]), Some(d[3])))
+        .unwrap_or((None, None));
+    Some(DocumentInfo {
+        page_count: count,
+        title: inspector.title(),
+        author: inspector.author(),
+        page_width: w,
+        page_height: h,
+        is_encrypted: inspector.is_encrypted(),
+    })
+}
+
+fn probe_archive(path: &Path) -> Option<ArchiveInfo> {
+    let budget = craft_archive::ResourceBudget::default();
+    let summary = craft_archive::inspect_archive(path, &budget).ok()?;
+    let has_encrypted = summary.entries.iter().any(|e| e.is_encrypted);
+    Some(ArchiveInfo {
+        format: summary.format.label().to_string(),
+        entry_count: summary.entry_count(),
+        uncompressed_bytes: summary.total_uncompressed_bytes,
+        has_encrypted_entries: has_encrypted,
     })
 }
 
@@ -304,6 +356,80 @@ mod tests {
 
         let _ = fs::remove_file(&clip1);
         let _ = fs::remove_file(&wav1);
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn scan_pdf_and_archive_populates_metadata() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("mc_scan_pdf_zip_test_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        let pdf_path = temp_dir.join("cue_sheet.pdf");
+        let pdf_bytes = b"%PDF-1.4\n\
+1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\
+2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\
+3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n\
+xref\n\
+0 4\n\
+0000000000 65535 f \n\
+0000000009 00000 n \n\
+0000000058 00000 n \n\
+0000000115 00000 n \n\
+trailer\n<< /Size 4 /Root 1 0 R >>\n\
+startxref\n\
+190\n\
+%%EOF\n";
+        let _ = fs::write(&pdf_path, pdf_bytes);
+
+        let zip_path = temp_dir.join("deliverables.zip");
+        let zip_res = craft_archive::create_simple_zip(&[
+            ("cues.txt", b"01:00:00 Music Start\n01:02:15 Dialog End\n"),
+            ("notes.txt", b"Final deliverables for client review\n"),
+        ]);
+        assert!(zip_res.is_ok());
+        if let Ok(zip_bytes) = zip_res {
+            let _ = fs::write(&zip_path, zip_bytes);
+        }
+
+        let mut catalog = MediaCatalog::new();
+        let added = catalog.scan_and_merge(&temp_dir, &ScanOptions::default());
+        assert_eq!(added, 2);
+
+        let pdf_asset = catalog
+            .all_assets()
+            .iter()
+            .find(|a| a.filename == "cue_sheet.pdf");
+        assert!(pdf_asset.is_some());
+        if let Some(pdf_asset) = pdf_asset {
+            assert_eq!(pdf_asset.kind, MediaKind::Document);
+            assert!(pdf_asset.document.is_some());
+            if let Some(doc_info) = &pdf_asset.document {
+                assert_eq!(doc_info.page_count, 1);
+                assert_eq!(doc_info.page_width, Some(612.0));
+                assert_eq!(doc_info.page_height, Some(792.0));
+                assert!(!doc_info.is_encrypted);
+            }
+        }
+
+        let zip_asset = catalog
+            .all_assets()
+            .iter()
+            .find(|a| a.filename == "deliverables.zip");
+        assert!(zip_asset.is_some());
+        if let Some(zip_asset) = zip_asset {
+            assert_eq!(zip_asset.kind, MediaKind::Archive);
+            assert!(zip_asset.archive.is_some());
+            if let Some(arch_info) = &zip_asset.archive {
+                assert_eq!(arch_info.format, "ZIP");
+                assert_eq!(arch_info.entry_count, 2);
+                assert!(!arch_info.has_encrypted_entries);
+                assert!(arch_info.uncompressed_bytes > 0);
+            }
+        }
+
+        let _ = fs::remove_file(&pdf_path);
+        let _ = fs::remove_file(&zip_path);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }

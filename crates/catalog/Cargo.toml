@@ -9,6 +9,8 @@ description = "Digital asset catalog, filesystem indexing, stream inspection, an
 [dependencies]
 mediacraft-protocol = { workspace = true }
 mediacraft-bitstream = { workspace = true }
+craft-pdf = { workspace = true }
+craft-archive = { workspace = true }
 craft-atomic = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
