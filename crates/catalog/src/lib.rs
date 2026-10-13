@@ -4,8 +4,11 @@
 //! faceted searching, and immutable derivative relationship tracking (originals -> proxies/deliveries).
 
 pub mod batch_rename;
+pub mod contact_sheet;
 pub mod duplicates;
+pub mod relink;
 pub mod scanner;
+pub mod stacks;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -228,6 +231,7 @@ impl SmartCollection {
 pub struct MediaCatalog {
     assets: Vec<MediaAsset>,
     graph: DerivativeGraph,
+    stacks: Vec<stacks::AssetStack>,
 }
 
 impl Default for MediaCatalog {
@@ -241,6 +245,7 @@ impl MediaCatalog {
         Self {
             assets: Vec::new(),
             graph: DerivativeGraph::new(),
+            stacks: Vec::new(),
         }
     }
 
@@ -700,6 +705,35 @@ impl MediaCatalog {
             },
         );
 
+        // Add mock asset stacks grouping takes and derivatives
+        let mut hero_stack =
+            stacks::AssetStack::new("stack_hero", "Summer Campaign Hero Shot", "A001_C001");
+        hero_stack.add_version(
+            "A001_C001_proxy",
+            stacks::StackVersionKind::Proxy,
+            Some("1080p ProRes Proxy".to_string()),
+        );
+        hero_stack.add_version(
+            "A001_C001_web",
+            stacks::StackVersionKind::Derivative("Web 1080p".to_string()),
+            Some("Web distribution deliverable".to_string()),
+        );
+        cat.stacks.push(hero_stack);
+
+        let mut drone_stack =
+            stacks::AssetStack::new("stack_drone", "Drone Coastal Takes", "Drone_001");
+        drone_stack.add_version(
+            "Drone_002",
+            stacks::StackVersionKind::Take(2),
+            Some("Alternate low angle pass".to_string()),
+        );
+        drone_stack.add_version(
+            "Drone_003",
+            stacks::StackVersionKind::Take(3),
+            Some("Sunset lighting take".to_string()),
+        );
+        cat.stacks.push(drone_stack);
+
         cat
     }
 
@@ -721,6 +755,30 @@ impl MediaCatalog {
 
     pub fn graph_mut(&mut self) -> &mut DerivativeGraph {
         &mut self.graph
+    }
+
+    pub fn stacks(&self) -> &[stacks::AssetStack] {
+        &self.stacks
+    }
+
+    pub fn stacks_mut(&mut self) -> &mut Vec<stacks::AssetStack> {
+        &mut self.stacks
+    }
+
+    pub fn find_or_create_stack(
+        &mut self,
+        id: &str,
+        name: &str,
+        primary_id: &str,
+    ) -> &mut stacks::AssetStack {
+        if let Some(pos) = self.stacks.iter().position(|s| s.id == id) {
+            &mut self.stacks[pos]
+        } else {
+            let stack = stacks::AssetStack::new(id, name, primary_id);
+            self.stacks.push(stack);
+            let idx = self.stacks.len().saturating_sub(1);
+            &mut self.stacks[idx]
+        }
     }
 
     pub fn get_by_id(&self, id: &str) -> Option<&MediaAsset> {

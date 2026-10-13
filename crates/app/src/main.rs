@@ -32,6 +32,8 @@ mod deliver_view;
 use deliver_view::{DeliverViewState, render_deliver_workspace};
 use inspector_view::{InspectorState, render_inspector_panel};
 use library_view::{LibraryViewContext, LibraryViewState, render_library_view};
+mod preset_view;
+use preset_view::{PresetViewState, PresetWorkspaceTab, render_preset_workspace};
 use process_view::{ProcessViewState, render_process_panel};
 use queue_drawer::{QueueDrawerState, render_queue_drawer};
 use queue_view::{QueueViewState, render_queue_workspace};
@@ -46,6 +48,7 @@ pub enum WorkspaceMode {
     Queue,
     Automations,
     Deliver,
+    Presets,
 }
 
 /// Docking panels in the primary workspace layout.
@@ -86,6 +89,7 @@ pub struct MediaCraftApp {
     queue_state: QueueViewState,
     automate_state: AutomateViewState,
     deliver_state: DeliverViewState,
+    preset_state: PresetViewState,
 
     // Docking layout for main workspace
     layout: Layout<Panel>,
@@ -370,6 +374,8 @@ impl MediaCraftApp {
             WorkspaceMode::Automations
         } else if std::env::args().any(|a| a.starts_with("--deliver")) {
             WorkspaceMode::Deliver
+        } else if std::env::args().any(|a| a == "--presets" || a == "--preset-diff") {
+            WorkspaceMode::Presets
         } else if std::env::args().any(|a| a == "--process") {
             WorkspaceMode::Process
         } else if std::env::args().any(|a| a == "--inspect") {
@@ -385,6 +391,11 @@ impl MediaCraftApp {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clear_all();
+        }
+
+        let mut preset_state = PresetViewState::default();
+        if std::env::args().any(|a| a == "--preset-diff") {
+            preset_state.active_tab = PresetWorkspaceTab::Comparison;
         }
 
         let mut deliver_state = DeliverViewState::default();
@@ -431,6 +442,7 @@ impl MediaCraftApp {
             queue_state: QueueViewState::default(),
             automate_state: AutomateViewState::default(),
             deliver_state,
+            preset_state,
             layout,
             presets,
             editing_preset: initial_editing_preset,
@@ -1114,15 +1126,16 @@ impl eframe::App for MediaCraftApp {
                 ("📋 Queue", WorkspaceMode::Queue),
                 ("⚙ Automations", WorkspaceMode::Automations),
                 ("📦 Deliver", WorkspaceMode::Deliver),
+                ("🎛 Presets", WorkspaceMode::Presets),
             ];
             let active_idx = tabs
                 .iter()
                 .position(|(_, m)| *m == self.workspace_mode)
                 .unwrap_or(0);
             let tab_fit = craft_ui::tabs::fit(
-                &[82.0, 84.0, 104.0, 84.0, 82.0, 112.0, 86.0],
+                &[82.0, 84.0, 104.0, 84.0, 82.0, 112.0, 86.0, 88.0],
                 active_idx,
-                ui.available_width().min(680.0),
+                ui.available_width().min(760.0),
                 50.0,
                 20.0,
             );
@@ -1264,6 +1277,9 @@ impl eframe::App for MediaCraftApp {
             }
             WorkspaceMode::Deliver => {
                 render_deliver_workspace(ui, &mut self.deliver_state);
+            }
+            WorkspaceMode::Presets => {
+                render_preset_workspace(ui, &mut self.preset_state, &mut self.presets);
             }
             WorkspaceMode::Inspect => {
                 let selected_asset = self
