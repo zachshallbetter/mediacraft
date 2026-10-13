@@ -33,6 +33,11 @@ mediacraft/
 │   ├── cli/                    (Headless CLI binary: status, add, pause, oracle-test)
 │   └── app/                    (Dockable desktop UI using craft-ui docking & craft-quit)
 └── docs/
+    ├── INTERFACE.md            (UI Screen Map: 5 workspaces, 20 screens, 14 panels)
+    ├── MEDIA_INFRASTRUCTURE_SPEC.md (5-layer shared library architecture)
+    ├── CONTRACT.md             (Product & system contract, boundaries, invariants)
+    ├── DEFINITION.md           (Product definition and lifecycle model)
+    ├── FEATURES.md             (Comprehensive feature & capability inventory)
     └── LAB_NOTES.md            (Exploration logs, empirical receipts, and findings)
 ```
 

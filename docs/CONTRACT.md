@@ -4,7 +4,7 @@
 **Version:** `0.1.0-draft`  
 **Status:** Proposed; not an assertion of implementation or conformance  
 **Scope:** MediaCraft desktop application, its local services, and its integration boundaries with Craft applications  
-**Companion documents:** `MEDIA_INFRASTRUCTURE_SPEC.md`, `DEFINITION.md`, `FEATURES.md`, `LAB_NOTES.md`
+**Companion documents:** `INTERFACE.md`, `MEDIA_INFRASTRUCTURE_SPEC.md`, `DEFINITION.md`, `FEATURES.md`, `LAB_NOTES.md`
 
 ## 1. Purpose and interpretation
 
