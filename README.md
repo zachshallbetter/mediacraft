@@ -96,7 +96,7 @@ mediacraft/
 │   └── Documents, Layered Images & Safe Packaging (Staged for craft-libs):
 │       ├── pdf/                (craft-pdf: Clean-room ISO 32000 PDF COS parser, filters, crypt, content)
 │       ├── archive/            (craft-archive: Safe ZIP/TAR inspection, Zip Slip defense, ResourceBudget)
-│       └── psd/                (craft-psd: Adobe Photoshop PSD/PSB layered raster image decoder)
+│       └── psd/                (craft-psd: PSD/PSB layered raster image decoder)
 └── docs/
     ├── INTERFACE.md            (UI Screen Map: 5 workspaces, 20 screens, 14 panels)
     ├── MEDIA_INFRASTRUCTURE_SPEC.md (Shared media library architecture)

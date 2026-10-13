@@ -1,8 +1,8 @@
 # craft-psd
 
-A standalone reader and writer for Adobe Photoshop **PSD** (version 1) and **PSB** (version 2, "large document format") files. It keeps everything it reads, so an unmodified file writes back byte for byte. It depends on no other application crate.
+A standalone reader and writer for **PSD** (version 1) and **PSB** (version 2, large document format) files. It keeps everything it reads, so an unmodified file writes back byte for byte. It depends on no other application crate.
 
-* Clean-room implementation from Adobe's public *Photoshop File Formats Specification*. Where the spec is silent, behavior follows MIT-licensed psd-tools / ag-psd documentation, and the code comments say so.
+* Clean-room implementation from the public *Photoshop File Formats Specification*. Where the spec is silent, behavior follows MIT-licensed psd-tools / ag-psd documentation, and the code comments say so.
 * `#![forbid(unsafe_code)]`. Builds for `wasm32-unknown-unknown`. The core API works on byte slices; the file helpers only exist on native targets.
 * Parsing never panics on malformed input. Limits: dimensions ≤ 300 000; allocations are checked against the remaining input; a single decode produces at most `MAX_DECODED_BYTES` (8 GiB on 64-bit targets, 2 GiB on 32-bit targets); descriptor nesting depth ≤ 64.
 
