@@ -1,0 +1,23 @@
+[package]
+name = "mediacraft-catalog"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Zach Shallbetter <zachshallbetter@icloud.com>"]
+description = "Digital asset catalog, filesystem indexing, stream inspection, and derivative relationship tracking for MediaCraft"
+
+[dependencies]
+mediacraft-protocol = { path = "../protocol" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unimplemented = "deny"
+todo = "deny"
+unreachable = "deny"

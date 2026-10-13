@@ -1,0 +1,33 @@
+[package]
+name = "mediacraft-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+default-run = "mediacraft-app"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mediacraft-app"
+path = "src/main.rs"
+
+[dependencies]
+mediacraft-protocol = { workspace = true }
+mediacraft-daemon = { workspace = true }
+mediacraft-oracles = { workspace = true }
+mediacraft-bitstream = { workspace = true }
+mediacraft-catalog = { workspace = true }
+craft-ui = { workspace = true }
+craft-quit = { workspace = true, features = ["egui"] }
+craft-settings = { workspace = true }
+craft-atomic = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

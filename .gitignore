@@ -1,0 +1,16 @@
+# Build artifacts
+/target
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temporary test logs and traces
+*.log

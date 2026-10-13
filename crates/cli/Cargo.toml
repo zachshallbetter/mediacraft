@@ -1,0 +1,26 @@
+[package]
+name = "mediacraft-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mediacraft"
+path = "src/main.rs"
+
+[dependencies]
+mediacraft-protocol = { workspace = true }
+mediacraft-daemon = { workspace = true }
+mediacraft-oracles = { workspace = true }
+mediacraft-bitstream = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+
+[dev-dependencies]
+proptest = { workspace = true }
