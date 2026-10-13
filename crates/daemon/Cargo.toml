@@ -15,6 +15,8 @@ mediacraft-bitstream = { workspace = true }
 filmcraft-bitstream = { workspace = true }
 filmcraft-aac = { workspace = true }
 filmcraft-isobmff = { workspace = true }
+filmcraft-h264 = { workspace = true }
+filmcraft-h264enc = { workspace = true }
 craft-atomic = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

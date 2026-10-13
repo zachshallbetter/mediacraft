@@ -18,6 +18,7 @@
 
 pub mod ipc;
 pub mod pipeline;
+pub mod scheduler;
 pub mod watch_folder;
 pub mod wav;
 

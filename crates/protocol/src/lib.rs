@@ -18,6 +18,9 @@
 )]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod stream;
+pub use stream::{AudioFrame, MediaFrame, MediaPacket, PixelFormat, Rational, VideoFrame};
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
