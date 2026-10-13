@@ -20,7 +20,7 @@ use craft_ui::docking::{DockArea, DockStyle, Layout, Node, Permissions};
 use craft_ui::layout::{SplitAxis, SplitSize};
 use craft_ui::theme::WidgetPalette;
 
-use mediacraft_catalog::MediaCatalog;
+use mediacraft_catalog::{MediaAsset, MediaCatalog};
 use mediacraft_daemon::QueueEngine;
 use mediacraft_daemon::ipc::IpcServer;
 use mediacraft_protocol::{
@@ -78,6 +78,7 @@ pub struct MediaCraftApp {
     catalog: MediaCatalog,
     selected_asset_id: Option<String>,
     search_query: String,
+    collection_manager: mediacraft_catalog::CollectionManager,
 
     // Sub-view states
     workspace_mode: WorkspaceMode,
@@ -405,11 +406,16 @@ impl MediaCraftApp {
             deliver_state.active_tab = deliver_view::DeliverTab::QualityAnalysis;
         } else if std::env::args().any(|a| a == "--deliver-destinations") {
             deliver_state.active_tab = deliver_view::DeliverTab::Destinations;
+        } else if std::env::args().any(|a| a == "--deliver-report-modal") {
+            deliver_state.active_tab = deliver_view::DeliverTab::Validation;
+            deliver_state.show_export_report_modal = true;
         }
 
         let mut inspector_state = InspectorState::default();
         if std::env::args().any(|a| a == "--validation") {
             inspector_state.active_tab = inspector_view::InspectorTab::Validation;
+        } else if std::env::args().any(|a| a == "--metadata") {
+            inspector_state.active_tab = inspector_view::InspectorTab::Metadata;
         }
         if std::env::args().any(|a| a == "--split-wipe") {
             inspector_state.preview_mode = inspector_view::PreviewMode::ComparisonSplit;
@@ -440,6 +446,7 @@ impl MediaCraftApp {
             catalog,
             selected_asset_id: Some("A001_C001".to_string()),
             search_query: String::new(),
+            collection_manager: mediacraft_catalog::CollectionManager::with_defaults(),
             workspace_mode: initial_workspace,
             library_state,
             inspector_state,
@@ -1349,11 +1356,40 @@ impl eframe::App for MediaCraftApp {
             WorkspaceMode::Collections => {
                 let counts = self.catalog.kind_counts();
                 let total = self.catalog.all_assets().len();
-                let filtered_assets = self.catalog.query(
-                    self.sidebar_state.selected_collection,
-                    &self.search_query,
-                    self.sidebar_state.selected_kind_filter,
-                );
+                let (collection_label, filtered_assets): (String, Vec<&MediaAsset>) =
+                    if let Some(ref custom_id) = self.sidebar_state.selected_custom_collection_id {
+                        let label = self
+                            .sidebar_state
+                            .selected_custom_label
+                            .clone()
+                            .unwrap_or_else(|| custom_id.clone());
+                        let mut assets = if custom_id.starts_with("smart_") {
+                            self.collection_manager
+                                .filter_smart(custom_id, self.catalog.all())
+                        } else {
+                            self.collection_manager
+                                .filter_static(custom_id, self.catalog.all())
+                        };
+                        if let Some(kind) = self.sidebar_state.selected_kind_filter {
+                            assets.retain(|a| a.kind == kind);
+                        }
+                        let q = self.search_query.trim().to_lowercase();
+                        if !q.is_empty() {
+                            assets.retain(|a| {
+                                a.filename.to_lowercase().contains(&q)
+                                    || a.id.to_lowercase().contains(&q)
+                            });
+                        }
+                        (label, assets)
+                    } else {
+                        let label = self.sidebar_state.selected_collection.label().to_string();
+                        let assets = self.catalog.query(
+                            self.sidebar_state.selected_collection,
+                            &self.search_query,
+                            self.sidebar_state.selected_kind_filter,
+                        );
+                        (label, assets)
+                    };
 
                 let mut library_action = None;
                 ui.columns(2, |columns| {
@@ -1363,6 +1399,7 @@ impl eframe::App for MediaCraftApp {
                         &mut self.library_state,
                         LibraryViewContext {
                             active_collection: self.sidebar_state.selected_collection,
+                            collection_label: &collection_label,
                             kind_filter: &mut self.sidebar_state.selected_kind_filter,
                             kind_counts: &counts,
                             total_assets: total,
@@ -1429,11 +1466,40 @@ impl eframe::App for MediaCraftApp {
 
                 let mut layout = std::mem::take(&mut self.layout);
 
-                let filtered_assets = self.catalog.query(
-                    self.sidebar_state.selected_collection,
-                    &self.search_query,
-                    self.sidebar_state.selected_kind_filter,
-                );
+                let (collection_label, filtered_assets): (String, Vec<&MediaAsset>) =
+                    if let Some(ref custom_id) = self.sidebar_state.selected_custom_collection_id {
+                        let label = self
+                            .sidebar_state
+                            .selected_custom_label
+                            .clone()
+                            .unwrap_or_else(|| custom_id.clone());
+                        let mut assets = if custom_id.starts_with("smart_") {
+                            self.collection_manager
+                                .filter_smart(custom_id, self.catalog.all())
+                        } else {
+                            self.collection_manager
+                                .filter_static(custom_id, self.catalog.all())
+                        };
+                        if let Some(kind) = self.sidebar_state.selected_kind_filter {
+                            assets.retain(|a| a.kind == kind);
+                        }
+                        let q = self.search_query.trim().to_lowercase();
+                        if !q.is_empty() {
+                            assets.retain(|a| {
+                                a.filename.to_lowercase().contains(&q)
+                                    || a.id.to_lowercase().contains(&q)
+                            });
+                        }
+                        (label, assets)
+                    } else {
+                        let label = self.sidebar_state.selected_collection.label().to_string();
+                        let assets = self.catalog.query(
+                            self.sidebar_state.selected_collection,
+                            &self.search_query,
+                            self.sidebar_state.selected_kind_filter,
+                        );
+                        (label, assets)
+                    };
 
                 let selected_asset = self
                     .selected_asset_id
@@ -1461,6 +1527,7 @@ impl eframe::App for MediaCraftApp {
                                 &mut self.library_state,
                                 LibraryViewContext {
                                     active_collection: self.sidebar_state.selected_collection,
+                                    collection_label: &collection_label,
                                     kind_filter: &mut self.sidebar_state.selected_kind_filter,
                                     kind_counts: &counts,
                                     total_assets: total,

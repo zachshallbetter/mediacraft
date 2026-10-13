@@ -28,6 +28,7 @@ pub struct InspectorState {
     pub volume: f32,
     pub preview_mode: PreviewMode,
     pub split_pos: f32, // 0.0 to 1.0
+    pub sidecar_status_msg: Option<String>,
 }
 
 impl Default for InspectorState {
@@ -39,6 +40,7 @@ impl Default for InspectorState {
             volume: 0.85,
             preview_mode: PreviewMode::Source,
             split_pos: 0.50,
+            sidecar_status_msg: None,
         }
     }
 }
@@ -422,7 +424,7 @@ pub fn render_inspector_panel(
         .show(ui, |ui| match state.active_tab {
             InspectorTab::Info => render_info_tab(ui, asset),
             InspectorTab::Streams => render_streams_tab(ui, asset),
-            InspectorTab::Metadata => render_metadata_tab(ui, asset),
+            InspectorTab::Metadata => render_metadata_tab(ui, state, asset),
             InspectorTab::Validation => render_validation_tab(ui, asset),
             InspectorTab::Analysis => render_analysis_tab(ui, asset),
             InspectorTab::History => render_history_tab(ui, asset),
@@ -611,7 +613,7 @@ fn render_streams_tab(ui: &mut egui::Ui, asset: &MediaAsset) {
     });
 }
 
-fn render_metadata_tab(ui: &mut egui::Ui, asset: &MediaAsset) {
+fn render_metadata_tab(ui: &mut egui::Ui, state: &mut InspectorState, asset: &MediaAsset) {
     ui.label(
         RichText::new("Embedded XMP / EXIF Attributes:")
             .strong()
@@ -638,7 +640,7 @@ fn render_metadata_tab(ui: &mut egui::Ui, asset: &MediaAsset) {
     }
 
     ui.separator();
-    ui.label(RichText::new("Tags:").size(11.0).strong());
+    ui.label(RichText::new("Asset Tags & Keywords:").size(11.0).strong());
     ui.horizontal_wrapped(|ui| {
         for t in &asset.tags {
             ui.label(
@@ -648,6 +650,121 @@ fn render_metadata_tab(ui: &mut egui::Ui, asset: &MediaAsset) {
             );
         }
     });
+
+    ui.add_space(8.0);
+    ui.separator();
+    ui.label(
+        RichText::new("Portable Metadata Sidecars (ISO 16684-1 / JSON)")
+            .strong()
+            .size(11.5),
+    );
+    ui.add_space(4.0);
+
+    let xmp_path = asset.path.with_extension("xmp");
+    let has_xmp = xmp_path.is_file();
+
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("Sidecar Status:")
+                .size(10.5)
+                .color(Color32::GRAY),
+        );
+        if has_xmp {
+            ui.label(
+                RichText::new("✓ XMP Synced")
+                    .size(10.5)
+                    .color(Color32::from_rgb(80, 230, 120))
+                    .strong(),
+            );
+        } else {
+            ui.label(
+                RichText::new("Embedded Only (No External Sidecar)")
+                    .size(10.5)
+                    .color(Color32::from_rgb(180, 190, 205)),
+            );
+        }
+    });
+
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        if ui
+            .button(
+                RichText::new("⚡ Export XMP Sidecar (.xmp)")
+                    .size(10.5)
+                    .strong()
+                    .color(Color32::from_rgb(80, 190, 255)),
+            )
+            .clicked()
+        {
+            let sidecar = mediacraft_catalog::sidecar::MediaSidecar {
+                rating: Some(asset.rating),
+                label: asset.tags.first().cloned(),
+                tags: asset.tags.clone(),
+                title: Some(asset.filename.clone()),
+                description: Some(format!(
+                    "Camera: {}",
+                    asset.camera_model.as_deref().unwrap_or("Standard")
+                )),
+                creator: Some("MediaCraft Operator".to_string()),
+            };
+            match mediacraft_catalog::sidecar::write_sidecar(
+                &asset.path,
+                &sidecar,
+                mediacraft_catalog::sidecar::SidecarFormat::Xmp,
+            ) {
+                Ok(p) => {
+                    state.sidecar_status_msg =
+                        Some(format!("Exported XMP sidecar to {}", p.display()));
+                }
+                Err(e) => {
+                    state.sidecar_status_msg = Some(format!("Error: {e}"));
+                }
+            }
+        }
+
+        if ui
+            .button(
+                RichText::new("📄 Export JSON (.mcsidecar)")
+                    .size(10.5)
+                    .color(Color32::from_rgb(200, 220, 240)),
+            )
+            .clicked()
+        {
+            let sidecar = mediacraft_catalog::sidecar::MediaSidecar {
+                rating: Some(asset.rating),
+                label: asset.tags.first().cloned(),
+                tags: asset.tags.clone(),
+                title: Some(asset.filename.clone()),
+                description: Some(format!(
+                    "Camera: {}",
+                    asset.camera_model.as_deref().unwrap_or("Standard")
+                )),
+                creator: Some("MediaCraft Operator".to_string()),
+            };
+            match mediacraft_catalog::sidecar::write_sidecar(
+                &asset.path,
+                &sidecar,
+                mediacraft_catalog::sidecar::SidecarFormat::Json,
+            ) {
+                Ok(p) => {
+                    state.sidecar_status_msg =
+                        Some(format!("Exported JSON sidecar to {}", p.display()));
+                }
+                Err(e) => {
+                    state.sidecar_status_msg = Some(format!("Error: {e}"));
+                }
+            }
+        }
+    });
+
+    if let Some(msg) = &state.sidecar_status_msg {
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new(format!("✓ {msg}"))
+                .size(10.0)
+                .color(Color32::from_rgb(80, 230, 120)),
+        );
+    }
 }
 
 fn render_analysis_tab(ui: &mut egui::Ui, _asset: &MediaAsset) {

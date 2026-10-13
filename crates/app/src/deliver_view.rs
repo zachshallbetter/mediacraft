@@ -25,6 +25,8 @@ pub struct DeliverViewState {
     pub search_query: String,
     pub selected_destination_idx: usize,
     pub status_notification: Option<String>,
+    pub show_export_report_modal: bool,
+    pub export_report_format_html: bool,
 }
 
 impl Default for DeliverViewState {
@@ -35,6 +37,8 @@ impl Default for DeliverViewState {
             search_query: String::new(),
             selected_destination_idx: 0,
             status_notification: None,
+            show_export_report_modal: false,
+            export_report_format_html: true,
         }
     }
 }
@@ -219,6 +223,8 @@ pub fn render_deliver_workspace(ui: &mut egui::Ui, state: &mut DeliverViewState)
         // Right Column: Detail Inspector depending on active DeliverTab
         render_deliver_detail(&mut columns[1], state, &deliverables);
     });
+
+    render_export_report_modal(ui, state, &deliverables);
 }
 
 fn render_deliverables_list(
@@ -354,7 +360,7 @@ fn render_deliver_detail(
 
     match state.active_tab {
         DeliverTab::Outputs => render_output_overview(ui, pkg),
-        DeliverTab::Validation => render_validation_certificate(ui, pkg),
+        DeliverTab::Validation => render_validation_certificate(ui, state, pkg),
         DeliverTab::QualityAnalysis => render_quality_metrics(ui, pkg),
         DeliverTab::Destinations => render_destinations_view(ui, state, pkg),
     }
@@ -437,7 +443,11 @@ fn render_output_overview(ui: &mut egui::Ui, pkg: &DeliverablePackage) {
         });
 }
 
-fn render_validation_certificate(ui: &mut egui::Ui, pkg: &DeliverablePackage) {
+fn render_validation_certificate(
+    ui: &mut egui::Ui,
+    state: &mut DeliverViewState,
+    pkg: &DeliverablePackage,
+) {
     ui.label(
         RichText::new("TECHNICAL DELIVERY CONTRACT CERTIFICATE")
             .size(10.5)
@@ -505,6 +515,19 @@ fn render_validation_certificate(ui: &mut egui::Ui, pkg: &DeliverablePackage) {
                 ui.end_row();
             }
         });
+
+    ui.add_space(10.0);
+    if ui
+        .button(
+            RichText::new("📄 Export Validation Report... (MD-14)")
+                .size(11.0)
+                .strong()
+                .color(Color32::from_rgb(80, 190, 255)),
+        )
+        .clicked()
+    {
+        state.show_export_report_modal = true;
+    }
 }
 
 fn render_quality_metrics(ui: &mut egui::Ui, pkg: &DeliverablePackage) {
@@ -681,5 +704,171 @@ fn render_destinations_view(
         .clicked()
     {
         state.status_notification = Some(format!("Dispatched {} to destination", pkg.name));
+    }
+}
+
+fn render_export_report_modal(
+    ui: &mut egui::Ui,
+    state: &mut DeliverViewState,
+    deliverables: &[DeliverablePackage],
+) {
+    if !state.show_export_report_modal {
+        return;
+    }
+
+    let pkg = match deliverables.get(state.selected_deliverable_idx) {
+        Some(p) => p.clone(),
+        None => return,
+    };
+
+    let mut close = false;
+    let mut do_export = false;
+
+    egui::Window::new("Export Technical Validation Report (MD-14)")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .fixed_size([540.0, 380.0])
+        .show(ui.ctx(), |ui| {
+            ui.heading(
+                RichText::new("Technical Validation & Delivery Certificate")
+                    .size(13.5)
+                    .strong(),
+            );
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(
+                    "Generate a signed verification certificate documenting container integrity, \
+                     audio loudness compliance (EBU R128), and objective quality metrics (VMAF/PSNR/SSIM).",
+                )
+                .size(10.5)
+                .color(Color32::GRAY),
+            );
+
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Package Name:").strong().size(11.0));
+                ui.label(
+                    RichText::new(&pkg.name)
+                        .size(11.0)
+                        .color(Color32::from_rgb(180, 210, 255)),
+                );
+            });
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Target Profile:").strong().size(11.0));
+                ui.label(RichText::new(&pkg.profile_name).size(11.0));
+            });
+
+            ui.add_space(8.0);
+            ui.label(RichText::new("Report Format:").strong().size(11.0));
+            ui.horizontal(|ui| {
+                ui.radio_value(
+                    &mut state.export_report_format_html,
+                    true,
+                    "Standalone HTML Certificate (.html) — Printable & Browsable",
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.radio_value(
+                    &mut state.export_report_format_html,
+                    false,
+                    "Machine-Readable JSON Receipt (.json) — Automation & Archival",
+                );
+            });
+
+            ui.add_space(10.0);
+            let ext = if state.export_report_format_html {
+                "html"
+            } else {
+                "json"
+            };
+            let export_dest = format!("/tmp/{}_validation_report.{}", pkg.id, ext);
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Output Path:").strong().size(11.0));
+                ui.label(
+                    RichText::new(&export_dest)
+                        .size(10.0)
+                        .monospace()
+                        .color(Color32::from_rgb(140, 180, 240)),
+                );
+            });
+
+            ui.add_space(16.0);
+            ui.separator();
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    close = true;
+                }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .button(
+                            RichText::new("✔ Generate & Save Certificate")
+                                .strong()
+                                .color(Color32::from_rgb(80, 230, 120)),
+                        )
+                        .clicked()
+                    {
+                        do_export = true;
+                    }
+                });
+            });
+        });
+
+    if close {
+        state.show_export_report_modal = false;
+    }
+
+    if do_export {
+        let ext = if state.export_report_format_html {
+            "html"
+        } else {
+            "json"
+        };
+        let export_path = PathBuf::from(format!("/tmp/{}_validation_report.{}", pkg.id, ext));
+
+        let report = mediacraft_catalog::generate_sample_delivery_report(
+            &pkg.name,
+            pkg.path.clone(),
+            &pkg.profile_name,
+            pkg.size_bytes,
+            &pkg.sha256_receipt,
+            pkg.vmaf_score,
+            pkg.psnr_db,
+            pkg.ssim_score,
+            pkg.audio_true_peak_dbtp,
+            pkg.audio_lufs,
+        );
+
+        let res = if state.export_report_format_html {
+            report.write_html_report(&export_path)
+        } else {
+            match report.to_json() {
+                Ok(j) => craft_atomic::atomic_write(&export_path, j.as_bytes())
+                    .map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            }
+        };
+
+        match res {
+            Ok(_) => {
+                state.status_notification = Some(format!(
+                    "Successfully exported delivery certificate to {}",
+                    export_path.display()
+                ));
+            }
+            Err(e) => {
+                state.status_notification = Some(format!("Export error: {e}"));
+            }
+        }
+
+        state.show_export_report_modal = false;
     }
 }

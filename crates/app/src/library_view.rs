@@ -94,6 +94,7 @@ impl Default for LibraryViewState {
 
 pub struct LibraryViewContext<'a> {
     pub active_collection: SmartCollection,
+    pub collection_label: &'a str,
     pub kind_filter: &'a mut Option<MediaKind>,
     pub kind_counts: &'a std::collections::HashMap<MediaKind, usize>,
     pub total_assets: usize,
@@ -109,7 +110,7 @@ pub fn render_library_view(
     ctx: LibraryViewContext<'_>,
 ) -> Option<LibraryAction> {
     let mut action = None;
-    let active_collection = ctx.active_collection;
+    let _active_collection = ctx.active_collection;
     let kind_filter = &mut *ctx.kind_filter;
     let kind_counts = ctx.kind_counts;
     let total_assets = ctx.total_assets;
@@ -365,7 +366,7 @@ pub fn render_library_view(
     // 2. Collection Header & Filter Chips
     ui.horizontal(|ui| {
         ui.heading(
-            RichText::new(active_collection.label())
+            RichText::new(ctx.collection_label)
                 .size(16.0)
                 .color(Color32::from_rgb(240, 245, 255)),
         );

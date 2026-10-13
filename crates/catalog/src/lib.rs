@@ -4,11 +4,20 @@
 //! faceted searching, and immutable derivative relationship tracking (originals -> proxies/deliveries).
 
 pub mod batch_rename;
+pub mod collections;
 pub mod contact_sheet;
+pub mod delivery_report;
 pub mod duplicates;
 pub mod relink;
 pub mod scanner;
+pub mod sidecar;
 pub mod stacks;
+
+pub use collections::{
+    CollectionManager, DynamicSmartCollection, LogicalOp, MatchRule, RuleGroup, StaticCollection,
+};
+pub use delivery_report::{DeliveryReport, VerificationCheckItem, generate_sample_delivery_report};
+pub use sidecar::{MediaSidecar, SidecarError, SidecarFormat, read_sidecar, write_sidecar};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -827,6 +836,10 @@ impl MediaCatalog {
             let idx = self.stacks.len().saturating_sub(1);
             &mut self.stacks[idx]
         }
+    }
+
+    pub fn all(&self) -> &[MediaAsset] {
+        &self.assets
     }
 
     pub fn get_by_id(&self, id: &str) -> Option<&MediaAsset> {

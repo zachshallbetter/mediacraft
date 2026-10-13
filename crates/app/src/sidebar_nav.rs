@@ -6,6 +6,8 @@ use std::collections::HashMap;
 
 pub struct SidebarNavState {
     pub selected_collection: SmartCollection,
+    pub selected_custom_collection_id: Option<String>,
+    pub selected_custom_label: Option<String>,
     pub selected_kind_filter: Option<MediaKind>,
     pub selected_location: String,
 }
@@ -14,6 +16,8 @@ impl Default for SidebarNavState {
     fn default() -> Self {
         Self {
             selected_collection: SmartCollection::AllMedia,
+            selected_custom_collection_id: None,
+            selected_custom_label: None,
             selected_kind_filter: None,
             selected_location: "Projects".to_string(),
         }
@@ -42,11 +46,14 @@ pub fn render_sidebar_nav(
             render_nav_item(
                 ui,
                 "🗃 All Media",
-                state.selected_collection == SmartCollection::AllMedia
+                state.selected_custom_collection_id.is_none()
+                    && state.selected_collection == SmartCollection::AllMedia
                     && state.selected_kind_filter.is_none(),
                 Some(total_assets),
                 || {
                     state.selected_collection = SmartCollection::AllMedia;
+                    state.selected_custom_collection_id = None;
+                    state.selected_custom_label = None;
                     state.selected_kind_filter = None;
                 },
             );
@@ -92,9 +99,9 @@ pub fn render_sidebar_nav(
             ui.add_space(8.0);
             ui.separator();
 
-            // 3. Collections & Smart Collections
+            // 3. Dynamic Smart Collections
             ui.label(
-                RichText::new("COLLECTIONS")
+                RichText::new("SMART COLLECTIONS")
                     .size(10.5)
                     .color(Color32::from_rgb(130, 145, 165))
                     .strong(),
@@ -127,9 +134,54 @@ pub fn render_sidebar_nav(
             ];
 
             for (col, label, badge) in collections {
-                let is_selected = state.selected_collection == col;
+                let is_selected = state.selected_custom_collection_id.is_none()
+                    && state.selected_collection == col;
                 render_nav_item(ui, label, is_selected, badge, || {
                     state.selected_collection = col;
+                    state.selected_custom_collection_id = None;
+                    state.selected_custom_label = None;
+                    state.selected_kind_filter = None;
+                });
+            }
+
+            // Dynamic rule-based collections
+            for (id, label, count) in [
+                ("smart_prores", "💎 ProRes Masters", 4),
+                ("smart_offline", "⚠ Offline Media", 1),
+            ] {
+                let is_selected = state.selected_custom_collection_id.as_deref() == Some(id);
+                render_nav_item(ui, label, is_selected, Some(count), || {
+                    state.selected_custom_collection_id = Some(id.to_string());
+                    state.selected_custom_label = Some(label.to_string());
+                    state.selected_kind_filter = None;
+                });
+            }
+
+            ui.add_space(8.0);
+            ui.separator();
+
+            // 4. User Reference Collections
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("USER COLLECTIONS")
+                        .size(10.5)
+                        .color(Color32::from_rgb(130, 145, 165))
+                        .strong(),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("＋").clicked() {}
+                });
+            });
+            ui.add_space(2.0);
+
+            for (id, label, count) in [
+                ("col_b_roll", "🎬 Select B-Roll", 2),
+                ("col_hero_takes", "⭐ Hero Takes", 1),
+            ] {
+                let is_selected = state.selected_custom_collection_id.as_deref() == Some(id);
+                render_nav_item(ui, label, is_selected, Some(count), || {
+                    state.selected_custom_collection_id = Some(id.to_string());
+                    state.selected_custom_label = Some(label.to_string());
                     state.selected_kind_filter = None;
                 });
             }
