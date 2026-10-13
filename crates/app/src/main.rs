@@ -108,6 +108,7 @@ pub struct MediaCraftApp {
     // Persistence settings
     settings_store: craft_settings::SettingsStore<settings::MediaCraftPreferences>,
     preferences_open: bool,
+    preferences_tab: usize,
 
     // Safe termination lifecycle via craft-quit
     show_quit_confirm: bool,
@@ -366,7 +367,13 @@ impl MediaCraftApp {
             None
         };
 
-        let open_preferences_initially = std::env::args().any(|a| a == "--preferences");
+        let open_preferences_initially =
+            std::env::args().any(|a| a == "--preferences" || a == "--hardware-settings");
+        let initial_preferences_tab = if std::env::args().any(|a| a == "--hardware-settings") {
+            1
+        } else {
+            0
+        };
 
         let initial_workspace = if std::env::args().any(|a| {
             a == "--queue"
@@ -497,6 +504,7 @@ impl MediaCraftApp {
             app_icon,
             settings_store,
             preferences_open: open_preferences_initially,
+            preferences_tab: initial_preferences_tab,
             show_quit_confirm: false,
             quit_confirmed: false,
             last_tick: Instant::now(),
@@ -1014,123 +1022,301 @@ impl MediaCraftApp {
         let mut close = false;
         let mut current_prefs = self.settings_store.get().clone();
         let mut changed = false;
+        let mut restore_defaults = false;
 
-        egui::Window::new("MediaCraft Preferences")
-            .fixed_size(Vec2::new(560.0, 360.0))
+        egui::Window::new("MediaCraft Preferences (MD-12 / MD-13)")
+            .fixed_size(Vec2::new(640.0, 440.0))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.add_space(8.0);
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("⚙ Application & Engine Preferences")
+                            .size(13.0)
+                            .strong()
+                            .color(Color32::from_rgb(240, 245, 255)),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            RichText::new("craft-settings v1.0 • Atomic TOML")
+                                .size(9.5)
+                                .monospace()
+                                .color(Color32::from_rgb(130, 145, 165)),
+                        );
+                    });
+                });
+                ui.add_space(2.0);
                 ui.label(
-                    RichText::new("Application & Pipeline Settings (Managed via craft-settings)")
-                        .size(11.0)
+                    RichText::new("Configure filesystem paths, hardware accelerators, color pipelines, and daemon hooks.")
+                        .size(10.0)
                         .color(Color32::GRAY),
                 );
+                ui.add_space(6.0);
                 ui.separator();
-                ui.add_space(8.0);
+                ui.add_space(4.0);
 
+                // Preference Tabs
+                let tabs = [
+                    "General & Storage (MD-12)",
+                    "Hardware & Encoders (MD-13)",
+                    "Color & Processing",
+                    "Audio & NLE Sync",
+                ];
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Default Output Directory:").strong().size(11.5));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut current_prefs.default_output_folder)
-                            .desired_width(280.0),
-                    );
-                });
-                ui.add_space(8.0);
-
-                ui.horizontal(|ui| {
-                    ui.label("Target Video Bitrate (kbps):");
-                    let mut br = current_prefs.target_bitrate_kbps;
-                    if ui
-                        .add(egui::Slider::new(&mut br, 2_000..=150_000).suffix(" kbps"))
-                        .changed()
-                    {
-                        current_prefs.target_bitrate_kbps = br;
-                        changed = true;
+                    for (idx, name) in tabs.iter().enumerate() {
+                        let selected = self.preferences_tab == idx;
+                        let text = if selected {
+                            RichText::new(*name).size(11.0).strong().color(Color32::from_rgb(255, 180, 80))
+                        } else {
+                            RichText::new(*name).size(11.0).color(Color32::from_rgb(180, 195, 215))
+                        };
+                        if ui.selectable_label(selected, text).clicked() {
+                            self.preferences_tab = idx;
+                        }
                     }
                 });
+                ui.add_space(4.0);
+                ui.separator();
                 ui.add_space(8.0);
 
-                if ui
-                    .checkbox(
-                        &mut current_prefs.faststart_enabled,
-                        "Enable FastStart ISO BMFF layout (moov before mdat)",
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
-                ui.label(
-                    RichText::new(
-                        "Enables progressive streaming and immediate playback on web and broadcast servers.",
-                    )
-                    .size(10.0)
-                    .color(Color32::GRAY),
-                );
-                ui.add_space(6.0);
+                // Tab Contents
+                match self.preferences_tab {
+                    0 => {
+                        // General & Storage (MD-12)
+                        ui.label(RichText::new("FILESYSTEM PATHS & STORAGE").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
 
-                if ui
-                    .checkbox(
-                        &mut current_prefs.audio_priming_enabled,
-                        "Sample-accurate AAC priming delay compensation (1024 samples)",
-                    )
-                    .changed()
-                {
-                    changed = true;
-                }
-                ui.label(
-                    RichText::new(
-                        "Trim initial encoder delay frames via edit list (elst) atom to ensure AV sync.",
-                    )
-                    .size(10.0)
-                    .color(Color32::GRAY),
-                );
-                ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Default Output Directory:").size(11.0));
+                            if ui.add(egui::TextEdit::singleline(&mut current_prefs.default_output_folder).desired_width(340.0)).changed() {
+                                changed = true;
+                            }
+                        });
+                        ui.add_space(6.0);
 
-                if ui
-                    .checkbox(
-                        &mut current_prefs.auto_pause_on_playback,
-                        "Auto-pause queue when external NLE playback is active (craft-daemon hook)",
-                    )
-                    .changed()
-                {
-                    changed = true;
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Scratch Disk Cache Directory:").size(11.0));
+                            if ui.add(egui::TextEdit::singleline(&mut current_prefs.scratch_disk_folder).desired_width(320.0)).changed() {
+                                changed = true;
+                            }
+                        });
+                        ui.label(
+                            RichText::new("Fast local NVMe directory for intermediate transcode frames and demuxed elementary streams.")
+                                .size(9.5)
+                                .color(Color32::GRAY),
+                        );
+                        ui.add_space(10.0);
+
+                        ui.label(RichText::new("CONTAINER PACKAGING & STREAMING").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
+
+                        if ui.checkbox(&mut current_prefs.faststart_enabled, "Enable FastStart ISO BMFF layout (moov atom before mdat)").changed() {
+                            changed = true;
+                        }
+                        ui.label(
+                            RichText::new("Enables progressive streaming and immediate Web/HLS playback without downloading the entire asset.")
+                                .size(9.5)
+                                .color(Color32::GRAY),
+                        );
+                        ui.add_space(8.0);
+
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Default Catalog Thumbnail Zoom:").size(11.0));
+                            if ui.add(egui::Slider::new(&mut current_prefs.thumbnail_zoom, 100.0..=280.0).suffix(" px")).changed() {
+                                changed = true;
+                            }
+                        });
+                    }
+                    1 => {
+                        // Hardware & Encoders (MD-13)
+                        ui.label(RichText::new("HARDWARE ACCELERATION ENGINE").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
+
+                        let engines = [
+                            "Apple VideoToolbox (Hardware)",
+                            "Intel QuickSync Video (QSV)",
+                            "NVIDIA NVENC / NVDEC",
+                            "Software CPU (libx264 / rav1e / svt-av1)",
+                        ];
+                        for eng in engines {
+                            let selected = current_prefs.hardware_engine == eng;
+                            if ui.radio(selected, eng).clicked() {
+                                current_prefs.hardware_engine = eng.to_string();
+                                changed = true;
+                            }
+                        }
+                        ui.add_space(6.0);
+
+                        if ui.checkbox(&mut current_prefs.hardware_decode, "Enable hardware-accelerated decode for source media").changed() {
+                            changed = true;
+                        }
+                        ui.label(
+                            RichText::new("Uses dedicated GPU silicon for high-throughput 10-bit HEVC, ProRes, and H.264 source decoding.")
+                                .size(9.5)
+                                .color(Color32::GRAY),
+                        );
+                        ui.add_space(10.0);
+
+                        ui.label(RichText::new("CONCURRENCY & MEMORY ARCHITECTURE").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
+
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Worker Thread Concurrency:").size(11.0));
+                            let mut wt = current_prefs.worker_threads;
+                            if ui.add(egui::Slider::new(&mut wt, 1..=32).suffix(" threads")).changed() {
+                                current_prefs.worker_threads = wt;
+                                changed = true;
+                            }
+                        });
+                        ui.add_space(4.0);
+
+                        if ui.checkbox(&mut current_prefs.zero_copy_buffers, "Zero-copy unified memory frame buffers (CVPixelBuffer / Metal)").changed() {
+                            changed = true;
+                        }
+                        if ui.checkbox(&mut current_prefs.thermal_throttling, "Thermal-aware throttling (suspend queue under high SoC temperature)").changed() {
+                            changed = true;
+                        }
+                    }
+                    2 => {
+                        // Color & Processing
+                        ui.label(RichText::new("COLOR MANAGEMENT & WORKING SPACE").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
+
+                        let spaces = [
+                            "Rec.709 (BT.709)",
+                            "Display P3 (Wide Gamut)",
+                            "Rec.2020 / UHD HDR",
+                        ];
+                        for sp in spaces {
+                            let selected = current_prefs.default_color_space == sp;
+                            if ui.radio(selected, sp).clicked() {
+                                current_prefs.default_color_space = sp.to_string();
+                                changed = true;
+                            }
+                        }
+                        ui.add_space(10.0);
+
+                        ui.label(RichText::new("HDR TONE MAPPING OPERATOR").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
+
+                        let ops = [
+                            "Hable / Filmic Curve",
+                            "Reinhard Global Operator",
+                            "ITU-R BT.2446 Method A",
+                        ];
+                        for op in ops {
+                            let selected = current_prefs.tone_mapping_operator == op;
+                            if ui.radio(selected, op).clicked() {
+                                current_prefs.tone_mapping_operator = op.to_string();
+                                changed = true;
+                            }
+                        }
+                        ui.add_space(10.0);
+
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Default Master Bitrate:").size(11.0));
+                            let mut br = current_prefs.target_bitrate_kbps;
+                            if ui.add(egui::Slider::new(&mut br, 2_000..=150_000).suffix(" kbps")).changed() {
+                                current_prefs.target_bitrate_kbps = br;
+                                changed = true;
+                            }
+                        });
+                    }
+                    _ => {
+                        // Audio & NLE Sync
+                        ui.label(RichText::new("SAMPLE ACCURACY & AV SYNCHRONIZATION").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
+
+                        if ui.checkbox(&mut current_prefs.audio_priming_enabled, "Sample-accurate AAC priming delay compensation (1024 samples elst trim)").changed() {
+                            changed = true;
+                        }
+                        ui.label(
+                            RichText::new("Ensures frame-accurate audio-video synchronization across QuickTime, Premiere, and web engines.")
+                                .size(9.5)
+                                .color(Color32::GRAY),
+                        );
+                        ui.add_space(10.0);
+
+                        ui.label(RichText::new("BROADCAST LOUDNESS TARGET").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
+
+                        let targets = [
+                            (-23.0, "EBU R128 (-23.0 LUFS) • European Broadcast Standard"),
+                            (-24.0, "ATSC A/85 (-24.0 LUFS) • North American Television Standard"),
+                            (-14.0, "Streaming Web / Podcast (-14.0 LUFS) • Spotify / YouTube / Apple"),
+                        ];
+                        for (lufs, desc) in targets {
+                            let selected = (current_prefs.target_loudness_lufs - lufs).abs() < 0.1;
+                            if ui.radio(selected, desc).clicked() {
+                                current_prefs.target_loudness_lufs = lufs;
+                                changed = true;
+                            }
+                        }
+                        ui.add_space(10.0);
+
+                        ui.label(RichText::new("INTER-APPLICATION DAEMON HOOKS").size(10.0).strong().color(Color32::from_rgb(140, 160, 185)));
+                        ui.add_space(4.0);
+
+                        if ui.checkbox(&mut current_prefs.auto_pause_on_playback, "Auto-pause queue when external NLE playback is active (craft-daemon hook)").changed() {
+                            changed = true;
+                        }
+                        ui.label(
+                            RichText::new("Automatically suspends background encodes to free GPU/CPU bandwidth during live editing in FilmCraft/SoundCraft.")
+                                .size(9.5)
+                                .color(Color32::GRAY),
+                        );
+                    }
                 }
-                ui.label(
-                    RichText::new(
-                        "Automatically suspends background encodes to free GPU/CPU bandwidth during live editing.",
-                    )
-                    .size(10.0)
-                    .color(Color32::GRAY),
-                );
-                ui.add_space(16.0);
+
+                ui.add_space(12.0);
                 ui.separator();
+                ui.add_space(6.0);
+
+                // Modal Footer
+                let btn_style = craft_theme::craft_icon_button_style();
+                let accent_style = craft_theme::craft_accent_button_style();
 
                 ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let btn_style = craft_theme::craft_icon_button_style();
-                        if craft_ui::buttons::IconButton::new(
-                            "Done",
-                            Vec2::new(80.0, 24.0),
-                            &btn_style,
-                        )
+                    if craft_ui::buttons::IconButton::new("Reset", Vec2::new(120.0, 24.0), &btn_style)
                         .show(ui, |ui, rect, tint| {
                             ui.painter().text(
                                 rect.center(),
                                 egui::Align2::CENTER_CENTER,
-                                "Done",
-                                egui::FontId::proportional(11.0),
+                                "Restore Defaults",
+                                egui::FontId::proportional(10.5),
                                 tint,
                             );
                         })
                         .clicked()
+                    {
+                        restore_defaults = true;
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if craft_ui::buttons::IconButton::new("Done", Vec2::new(80.0, 24.0), &accent_style)
+                            .show(ui, |ui, rect, tint| {
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "Done",
+                                    egui::FontId::proportional(11.0),
+                                    tint,
+                                );
+                            })
+                            .clicked()
                         {
                             close = true;
                         }
                     });
                 });
             });
+
+        if restore_defaults {
+            current_prefs = settings::MediaCraftPreferences::default();
+            changed = true;
+        }
 
         if changed {
             self.settings_store.update(|prefs| {
