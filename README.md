@@ -56,12 +56,13 @@ Rather than designing shared library abstractions in isolation, components are f
 - **Four Creative Document Paradigms**: Directly aligns MediaCraft cataloging, thumbnail extraction, and transcode services with the suite-wide compatibility matrix covering Raster (`.psd`/`.psb`), Vector (`.ai`/`.svg`/`.pdf`), Publishing (`.indd`/`.idml`), and Animation (`.fla`/`.xfl`/`.swf`).
 - **Four-Tier Claim Integrity**: Adheres to the strict claim governance ($\text{Documented} \neq \text{Implemented} \neq \text{Tested} \neq \text{Empirically Validated}$) across all media decoders and muxers.
 
-### 5. Testing, Interaction, Validation & Fallback Standards ([`CRAFT_METHODOLOGY.md`](../CRAFT_METHODOLOGY.md))
+### 5. Testing, Interaction, Validation & Fallback Standards ([`CRAFT_TESTING_AND_EVALUATION_SPEC.md`](../CRAFT_TESTING_AND_EVALUATION_SPEC.md))
 
 - **Empirical Testing**: Employs in-tree synthetic stream generators, property-based fuzzing (`proptest`), hostile boundary evaluation suites (`tests/evals.rs`), and differential verification oracles (`mediacraft-oracles`, `ffmpeg`, `ffprobe`).
 - **Autonomous Interaction**: Enforces headless-first execution (`mediacraft-cli`), in-process agent MCP server integration, loopback TCP control (`control.rs`), and live window framebuffer capture (`ui.screenshot`).
 - **Rigorous Validation**: Integrates cross-application compatibility runners (`cargo xtask compat`), pre-mutation diagnostic reports (`*DiagnosticReport`), and pure-Rust WebAssembly verification (`wasm32-unknown-unknown`).
 - **Safe Fallback Policies**: Implements causal timeline correction (backwards DTS clamping, PTS $\ge$ DTS enforcement), audio gap silence concealment, and atomic persistence fallbacks (`move_aside` on broken files with `.bak` recovery).
+- **Engineering Doctrine**: Operates in accordance with the complete suite development and infrastructure consolidation lifecycle in [`CRAFT_METHODOLOGY.md`](../CRAFT_METHODOLOGY.md).
 
 ---
 
