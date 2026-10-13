@@ -1,9 +1,11 @@
 mod app_icon;
+mod automate_view;
 pub mod craft_theme;
 mod inspector_view;
 mod library_view;
 mod process_view;
 mod queue_drawer;
+mod queue_view;
 pub mod receipts;
 pub mod settings;
 mod sidebar_nav;
@@ -23,10 +25,12 @@ use mediacraft_daemon::QueueEngine;
 use mediacraft_daemon::ipc::IpcServer;
 use mediacraft_protocol::{AudioCodec, ContainerFormat, EncodingPreset, JobState, VideoCodec};
 
+use automate_view::{AutomateViewState, render_automate_workspace};
 use inspector_view::{InspectorState, render_inspector_panel};
 use library_view::{LibraryViewState, render_library_view};
 use process_view::{ProcessViewState, render_process_panel};
 use queue_drawer::{QueueDrawerState, render_queue_drawer};
+use queue_view::{QueueViewState, render_queue_workspace};
 use sidebar_nav::{SidebarNavState, render_sidebar_nav};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +76,8 @@ pub struct MediaCraftApp {
     process_state: ProcessViewState,
     sidebar_state: SidebarNavState,
     drawer_state: QueueDrawerState,
+    queue_state: QueueViewState,
+    automate_state: AutomateViewState,
 
     // Docking layout for main workspace
     layout: Layout<Panel>,
@@ -312,18 +318,47 @@ impl MediaCraftApp {
             None
         };
 
+        let initial_workspace = if std::env::args().any(|a| a == "--queue" || a == "--empty-queue")
+        {
+            WorkspaceMode::Queue
+        } else if std::env::args().any(|a| a == "--automations") {
+            WorkspaceMode::Automations
+        } else if std::env::args().any(|a| a == "--process") {
+            WorkspaceMode::Process
+        } else {
+            WorkspaceMode::Library
+        };
+
+        if std::env::args().any(|a| a == "--empty-queue") {
+            engine_arc
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clear_all();
+        }
+
+        let mut inspector_state = InspectorState::default();
+        if std::env::args().any(|a| a == "--validation") {
+            inspector_state.active_tab = inspector_view::InspectorTab::Validation;
+        }
+        if std::env::args().any(|a| a == "--split-wipe") {
+            inspector_state.preview_mode = inspector_view::PreviewMode::ComparisonSplit;
+            inspector_state.split_pos = 0.52;
+        }
+
         Self {
             engine: engine_arc,
             ipc_server: Some(ipc_server),
             catalog,
             selected_asset_id: Some("A001_C001".to_string()),
             search_query: String::new(),
-            workspace_mode: WorkspaceMode::Library,
+            workspace_mode: initial_workspace,
             library_state: LibraryViewState::default(),
-            inspector_state: InspectorState::default(),
+            inspector_state,
             process_state: ProcessViewState::default(),
             sidebar_state: SidebarNavState::default(),
             drawer_state: QueueDrawerState::default(),
+            queue_state: QueueViewState::default(),
+            automate_state: AutomateViewState::default(),
             layout,
             presets,
             editing_preset: initial_editing_preset,
@@ -693,91 +728,110 @@ impl eframe::App for MediaCraftApp {
 
         ui.separator();
 
-        // 2. Central Docking Workspace Area
-        let mut style = DockStyle::from_ui(ui);
-        style.tab_height = 26.0;
-        style.background = Color32::from_rgb(16, 19, 24);
-        style.tab_background = Color32::from_rgb(25, 30, 38);
-        style.active_background = Color32::from_rgb(42, 50, 64);
-        style.text = Color32::from_rgb(235, 245, 255);
-        style.inactive_text = Color32::from_rgb(160, 175, 195);
-        style.accent = Color32::from_rgb(80, 190, 255);
-        style.font = FontId::proportional(11.5);
-        style.border = Stroke::new(1.0, Color32::from_rgb(45, 52, 65));
+        match self.workspace_mode {
+            WorkspaceMode::Queue => {
+                render_queue_workspace(
+                    ui,
+                    &mut self.queue_state,
+                    &self.engine,
+                    &self.presets,
+                    &mut self.editing_preset,
+                );
+            }
+            WorkspaceMode::Automations => {
+                render_automate_workspace(ui, &mut self.automate_state);
+            }
+            WorkspaceMode::Library | WorkspaceMode::Collections | WorkspaceMode::Process => {
+                // 2. Central Docking Workspace Area
+                let mut style = DockStyle::from_ui(ui);
+                style.tab_height = 26.0;
+                style.background = Color32::from_rgb(16, 19, 24);
+                style.tab_background = Color32::from_rgb(25, 30, 38);
+                style.active_background = Color32::from_rgb(42, 50, 64);
+                style.text = Color32::from_rgb(235, 245, 255);
+                style.inactive_text = Color32::from_rgb(160, 175, 195);
+                style.accent = Color32::from_rgb(80, 190, 255);
+                style.font = FontId::proportional(11.5);
+                style.border = Stroke::new(1.0, Color32::from_rgb(45, 52, 65));
 
-        let mut layout = std::mem::take(&mut self.layout);
+                let mut layout = std::mem::take(&mut self.layout);
 
-        let filtered_assets = self.catalog.query(
-            self.sidebar_state.selected_collection,
-            &self.search_query,
-            self.sidebar_state.selected_kind_filter,
-        );
+                let filtered_assets = self.catalog.query(
+                    self.sidebar_state.selected_collection,
+                    &self.search_query,
+                    self.sidebar_state.selected_kind_filter,
+                );
 
-        let selected_asset = self
-            .selected_asset_id
-            .as_deref()
-            .and_then(|id| self.catalog.get_by_id(id));
+                let selected_asset = self
+                    .selected_asset_id
+                    .as_deref()
+                    .and_then(|id| self.catalog.get_by_id(id));
 
-        let mut enqueue_job_action: Option<(EncodingPreset, String, String)> = None;
+                let mut enqueue_job_action: Option<(EncodingPreset, String, String)> = None;
 
-        let output = DockArea::new(egui::Id::new("mediacraft_workspace_dock")).show(
-            ui,
-            &layout,
-            &style,
-            |panel| panel.label().into(),
-            |_| Permissions::default(),
-            |ui, panel| match *panel {
-                Panel::Sidebar => {
-                    let total = self.catalog.all_assets().len();
-                    let counts = self.catalog.kind_counts();
-                    render_sidebar_nav(ui, &mut self.sidebar_state, &counts, total);
+                let output = DockArea::new(egui::Id::new("mediacraft_workspace_dock")).show(
+                    ui,
+                    &layout,
+                    &style,
+                    |panel| panel.label().into(),
+                    |_| Permissions::default(),
+                    |ui, panel| match *panel {
+                        Panel::Sidebar => {
+                            let total = self.catalog.all_assets().len();
+                            let counts = self.catalog.kind_counts();
+                            render_sidebar_nav(ui, &mut self.sidebar_state, &counts, total);
+                        }
+                        Panel::LibraryGrid => {
+                            render_library_view(
+                                ui,
+                                &mut self.library_state,
+                                self.sidebar_state.selected_collection,
+                                &mut self.search_query,
+                                &filtered_assets,
+                                &mut self.selected_asset_id,
+                            );
+                        }
+                        Panel::Inspector => {
+                            render_inspector_panel(
+                                ui,
+                                &mut self.inspector_state,
+                                selected_asset,
+                                self.catalog.graph(),
+                            );
+                        }
+                        Panel::ProcessSidebar => {
+                            render_process_panel(
+                                ui,
+                                &mut self.process_state,
+                                selected_asset,
+                                &self.presets,
+                                &mut enqueue_job_action,
+                            );
+                        }
+                    },
+                );
+
+                for action in output.actions {
+                    let _ = layout.apply(action);
                 }
-                Panel::LibraryGrid => {
-                    render_library_view(
-                        ui,
-                        &mut self.library_state,
-                        self.sidebar_state.selected_collection,
-                        &mut self.search_query,
-                        &filtered_assets,
-                        &mut self.selected_asset_id,
+                self.layout = layout;
+
+                // Handle enqueue action from process panel
+                if let Some((preset, src, out)) = enqueue_job_action {
+                    let _ = self.engine_lock().add_job(
+                        PathBuf::from(src),
+                        PathBuf::from(out),
+                        preset,
+                        5,
                     );
+                    self.drawer_state.is_expanded = true;
                 }
-                Panel::Inspector => {
-                    render_inspector_panel(
-                        ui,
-                        &mut self.inspector_state,
-                        selected_asset,
-                        self.catalog.graph(),
-                    );
-                }
-                Panel::ProcessSidebar => {
-                    render_process_panel(
-                        ui,
-                        &mut self.process_state,
-                        selected_asset,
-                        &self.presets,
-                        &mut enqueue_job_action,
-                    );
-                }
-            },
-        );
 
-        for action in output.actions {
-            let _ = layout.apply(action);
+                // 3. Bottom Activity Drawer (Queue & Watch Folders)
+                ui.separator();
+                render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
+            }
         }
-        self.layout = layout;
-
-        // Handle enqueue action from process panel
-        if let Some((preset, src, out)) = enqueue_job_action {
-            let _ = self
-                .engine_lock()
-                .add_job(PathBuf::from(src), PathBuf::from(out), preset, 5);
-            self.drawer_state.is_expanded = true;
-        }
-
-        // 3. Bottom Activity Drawer (Queue & Watch Folders)
-        ui.separator();
-        render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
 
         // 4. Modal Export Settings Window (if triggered)
         self.show_export_settings_modal(ui.ctx());

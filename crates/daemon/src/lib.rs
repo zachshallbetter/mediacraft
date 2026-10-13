@@ -239,6 +239,39 @@ impl QueueEngine {
         self.jobs.clone()
     }
 
+    /// Clear all completed, failed, or cancelled jobs.
+    pub fn clear_completed(&mut self) {
+        self.jobs.retain(|j| {
+            matches!(
+                j.state,
+                JobState::Queued | JobState::Running { .. } | JobState::Paused { .. }
+            )
+        });
+    }
+
+    /// Clear all jobs from the queue.
+    pub fn clear_all(&mut self) {
+        self.jobs.clear();
+    }
+
+    /// Remove a specific job by ID regardless of state.
+    pub fn remove_job(&mut self, id: JobId) -> bool {
+        let before = self.jobs.len();
+        self.jobs.retain(|j| j.id != id);
+        self.jobs.len() < before
+    }
+
+    /// Retry a failed or cancelled job by resetting it to queued state.
+    pub fn retry_job(&mut self, id: JobId) -> bool {
+        if let Some(job) = self.jobs.iter_mut().find(|j| j.id == id)
+            && matches!(job.state, JobState::Failed { .. } | JobState::Cancelled)
+        {
+            job.state = JobState::Queued;
+            return true;
+        }
+        false
+    }
+
     /// Compute the overall queue status.
     pub fn status(&self) -> QueueStatus {
         let mut active = 0;
@@ -400,5 +433,36 @@ mod tests {
         let s = engine.status();
         assert!(s.is_running);
         assert_eq!(s.pause_reason, None);
+    }
+
+    #[test]
+    fn queue_cleanup_and_retry() {
+        let mut engine = QueueEngine::new(2);
+        let j1 = engine.add_job(
+            PathBuf::from("/in/1.mov"),
+            PathBuf::from("/out/1.mp4"),
+            EncodingPreset::default(),
+            0,
+        );
+        let j2 = engine.add_job(
+            PathBuf::from("/in/2.mov"),
+            PathBuf::from("/out/2.mp4"),
+            EncodingPreset::default(),
+            0,
+        );
+        let _ = engine.complete_job(j1, 10.0, 5000);
+        let _ = engine.fail_job(j2, "Disk full".to_string());
+
+        assert!(engine.retry_job(j2));
+        assert!(matches!(
+            engine.get_job(j2).unwrap().state,
+            JobState::Queued
+        ));
+
+        assert!(engine.remove_job(j2));
+        assert_eq!(engine.get_job(j2), None);
+
+        engine.clear_completed();
+        assert_eq!(engine.list_jobs().len(), 0);
     }
 }
