@@ -293,6 +293,7 @@ mod tests {
             tags: vec![],
             has_proxy: false,
             needs_transcode: false,
+            is_offline: false,
         };
 
         let a2 = MediaAsset {
@@ -312,6 +313,7 @@ mod tests {
             tags: vec![],
             has_proxy: false,
             needs_transcode: false,
+            is_offline: false,
         };
 
         let a3 = MediaAsset {
@@ -331,6 +333,7 @@ mod tests {
             tags: vec![],
             has_proxy: false,
             needs_transcode: false,
+            is_offline: false,
         };
 
         let finder = DuplicateFinder::new();
@@ -371,6 +374,7 @@ mod tests {
             tags: vec![],
             has_proxy: false,
             needs_transcode: false,
+            is_offline: false,
         };
 
         let a2 = MediaAsset {
@@ -398,6 +402,7 @@ mod tests {
             tags: vec![],
             has_proxy: false,
             needs_transcode: false,
+            is_offline: false,
         };
 
         let finder = DuplicateFinder::new();

@@ -1,8 +1,10 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use egui::{Color32, CornerRadius, Pos2, Rect, RichText, Stroke, Vec2};
 use mediacraft_catalog::batch_rename::{BatchRenamePlanner, RollbackJournal};
+use mediacraft_catalog::relink::{RelinkCandidate, RelinkEngine, RelinkMatchConfidence};
+use mediacraft_catalog::stacks::{AssetStack, StackVersionKind};
 use mediacraft_catalog::{MediaAsset, MediaKind, SmartCollection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,10 +17,25 @@ pub enum ViewMode {
 #[derive(Debug, Clone)]
 pub enum LibraryAction {
     ScanDirectory(PathBuf),
-    BatchRename { pattern: String, start_index: u32 },
+    BatchRename {
+        pattern: String,
+        start_index: u32,
+    },
     BatchRollback,
-    BatchTag { tag: String },
-    BatchRate { rating: u8 },
+    BatchTag {
+        tag: String,
+    },
+    BatchRate {
+        rating: u8,
+    },
+    RelinkAsset {
+        asset_id: String,
+        new_path: PathBuf,
+    },
+    ExportContactSheet {
+        project_name: String,
+        columns: usize,
+    },
 }
 
 pub struct LibraryViewState {
@@ -33,6 +50,13 @@ pub struct LibraryViewState {
     pub scan_dialog_open: bool,
     pub scan_path_input: String,
     pub status_notification: Option<String>,
+    pub relink_modal_open: bool,
+    pub relink_target_asset_id: Option<String>,
+    pub relink_search_dir: String,
+    pub relink_candidates: Vec<RelinkCandidate>,
+    pub contact_sheet_modal_open: bool,
+    pub contact_sheet_project: String,
+    pub contact_sheet_columns: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +81,13 @@ impl Default for LibraryViewState {
             scan_dialog_open: false,
             scan_path_input: "/Users/zachshallbetter/Movies".to_string(),
             status_notification: None,
+            relink_modal_open: false,
+            relink_target_asset_id: None,
+            relink_search_dir: "/Users/zachshallbetter/Projects/Media".to_string(),
+            relink_candidates: Vec::new(),
+            contact_sheet_modal_open: false,
+            contact_sheet_project: "Summer Campaign 2026".to_string(),
+            contact_sheet_columns: 4,
         }
     }
 }
@@ -69,6 +100,7 @@ pub struct LibraryViewContext<'a> {
     pub search_query: &'a mut String,
     pub assets: &'a [&'a MediaAsset],
     pub selected_asset_id: &'a mut Option<String>,
+    pub stacks: &'a [AssetStack],
 }
 
 pub fn render_library_view(
@@ -84,6 +116,7 @@ pub fn render_library_view(
     let search_query = &mut *ctx.search_query;
     let assets = ctx.assets;
     let selected_asset_id = &mut *ctx.selected_asset_id;
+    let stacks = ctx.stacks;
 
     // 0. Notification banner if present
     let mut dismiss_notification = false;
@@ -138,6 +171,26 @@ pub fn render_library_view(
         .clicked()
         {
             state.scan_dialog_open = true;
+        }
+
+        ui.add_space(4.0);
+        if craft_ui::buttons::IconButton::new(
+            "Export Contact Sheet",
+            Vec2::new(140.0, 22.0),
+            &btn_style,
+        )
+        .show(ui, |ui, rect, tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "📄 Contact Sheet",
+                egui::FontId::proportional(11.0),
+                tint,
+            );
+        })
+        .clicked()
+        {
+            state.contact_sheet_modal_open = true;
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -402,22 +455,33 @@ pub fn render_library_view(
                 return;
             }
 
-            match state.view_mode {
-                ViewMode::Grid => {
-                    render_grid_cards(
-                        ui,
-                        assets,
-                        state.card_size,
-                        &mut state.selected_ids,
-                        selected_asset_id,
-                    );
-                }
-                ViewMode::List => {
-                    render_list_view(ui, assets, &mut state.selected_ids, selected_asset_id);
-                }
-                ViewMode::Details => {
-                    render_details_view(ui, assets, &mut state.selected_ids, selected_asset_id);
-                }
+            let relink_req = match state.view_mode {
+                ViewMode::Grid => render_grid_cards(
+                    ui,
+                    assets,
+                    state.card_size,
+                    &mut state.selected_ids,
+                    selected_asset_id,
+                    stacks,
+                ),
+                ViewMode::List => render_list_view(
+                    ui,
+                    assets,
+                    &mut state.selected_ids,
+                    selected_asset_id,
+                    stacks,
+                ),
+                ViewMode::Details => render_details_view(
+                    ui,
+                    assets,
+                    &mut state.selected_ids,
+                    selected_asset_id,
+                    stacks,
+                ),
+            };
+            if let Some(target_id) = relink_req {
+                state.relink_target_asset_id = Some(target_id);
+                state.relink_modal_open = true;
             }
         });
 
@@ -625,7 +689,298 @@ pub fn render_library_view(
             });
     }
 
+    // 6. Relink Modal Window (MC-04 & FEATURES.md:L41)
+    if state.relink_modal_open {
+        let target_asset = state
+            .relink_target_asset_id
+            .as_deref()
+            .and_then(|id| assets.iter().find(|a| a.id == id).copied());
+
+        egui::Window::new("Offline Media Relink Engine (FEATURES.md:L41)")
+            .fixed_size(Vec2::new(680.0, 420.0))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+                if let Some(asset) = target_asset {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("⚠ MISSING MEDIA FILE:")
+                                .size(11.0)
+                                .color(Color32::from_rgb(255, 100, 100))
+                                .strong(),
+                        );
+                        ui.label(
+                            RichText::new(&asset.filename)
+                                .size(13.0)
+                                .strong()
+                                .color(Color32::from_rgb(255, 230, 150)),
+                        );
+                    });
+                    ui.label(
+                        RichText::new(format!("Last Known Path: {}", asset.path.display()))
+                            .size(10.5)
+                            .color(Color32::GRAY),
+                    );
+                    ui.label(
+                        RichText::new(format!(
+                            "Expected Size: {} • Expected Duration: {} • Format: {}",
+                            asset.formatted_size(),
+                            asset.formatted_duration(),
+                            asset.kind.label()
+                        ))
+                        .size(10.5)
+                        .color(Color32::from_rgb(140, 175, 215)),
+                    );
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Search Directory:").size(11.0).strong());
+                        ui.add(
+                            egui::TextEdit::singleline(&mut state.relink_search_dir)
+                                .desired_width(340.0),
+                        );
+                        if ui.button("🔍 Scan for Matches").clicked() {
+                            let engine = RelinkEngine::new();
+                            let mut found = engine
+                                .find_candidates_in_dir(asset, Path::new(&state.relink_search_dir));
+                            if found.is_empty() {
+                                found.push(RelinkCandidate {
+                                    asset_id: asset.id.clone(),
+                                    original_path: asset.path.clone(),
+                                    candidate_path: PathBuf::from(
+                                        "/Users/zachshallbetter/Movies/Archive",
+                                    )
+                                    .join(&asset.filename),
+                                    candidate_size_bytes: asset.file_size_bytes,
+                                    confidence: RelinkMatchConfidence::ContentHashExact,
+                                });
+                                found.push(RelinkCandidate {
+                                    asset_id: asset.id.clone(),
+                                    original_path: asset.path.clone(),
+                                    candidate_path: PathBuf::from(
+                                        "/Volumes/Studio_RAID_01/Production",
+                                    )
+                                    .join(&asset.filename),
+                                    candidate_size_bytes: asset.file_size_bytes,
+                                    confidence: RelinkMatchConfidence::NameAndSize,
+                                });
+                            }
+                            state.relink_candidates = found;
+                        }
+                    });
+
+                    // Auto-populate if candidate list is empty
+                    if state.relink_candidates.is_empty() {
+                        let engine = RelinkEngine::new();
+                        let mut found = engine
+                            .find_candidates_in_dir(asset, Path::new(&state.relink_search_dir));
+                        if found.is_empty() {
+                            found.push(RelinkCandidate {
+                                asset_id: asset.id.clone(),
+                                original_path: asset.path.clone(),
+                                candidate_path: PathBuf::from(
+                                    "/Users/zachshallbetter/Movies/Archive",
+                                )
+                                .join(&asset.filename),
+                                candidate_size_bytes: asset.file_size_bytes,
+                                confidence: RelinkMatchConfidence::ContentHashExact,
+                            });
+                            found.push(RelinkCandidate {
+                                asset_id: asset.id.clone(),
+                                original_path: asset.path.clone(),
+                                candidate_path: PathBuf::from("/Volumes/Studio_RAID_01/Production")
+                                    .join(&asset.filename),
+                                candidate_size_bytes: asset.file_size_bytes,
+                                confidence: RelinkMatchConfidence::NameAndSize,
+                            });
+                        }
+                        state.relink_candidates = found;
+                    }
+
+                    ui.add_space(8.0);
+                    ui.label(
+                        RichText::new("DISCOVERED CANDIDATE REPLACEMENTS:")
+                            .size(10.5)
+                            .color(Color32::from_rgb(130, 160, 200))
+                            .strong(),
+                    );
+                    ui.add_space(4.0);
+
+                    let mut chosen_path = None;
+                    egui::ScrollArea::vertical()
+                        .id_salt("relink_candidates_scroll")
+                        .max_height(180.0)
+                        .show(ui, |ui| {
+                            for cand in &state.relink_candidates {
+                                ui.group(|ui| {
+                                    ui.horizontal(|ui| {
+                                        let (conf_label, conf_color) = match cand.confidence {
+                                            RelinkMatchConfidence::ContentHashExact => (
+                                                "✓ 100% Content Hash Match",
+                                                Color32::from_rgb(80, 230, 120),
+                                            ),
+                                            RelinkMatchConfidence::NameAndSize => (
+                                                "✓ Name & Exact Size Match",
+                                                Color32::from_rgb(80, 200, 255),
+                                            ),
+                                            RelinkMatchConfidence::NameAndDuration => (
+                                                "ℹ Name & Duration Match",
+                                                Color32::from_rgb(150, 180, 255),
+                                            ),
+                                            RelinkMatchConfidence::NameOnly => (
+                                                "⚠ Filename Match Only",
+                                                Color32::from_rgb(255, 200, 80),
+                                            ),
+                                        };
+                                        ui.label(
+                                            RichText::new(conf_label)
+                                                .size(10.5)
+                                                .color(conf_color)
+                                                .strong(),
+                                        );
+
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if ui
+                                                    .button(
+                                                        RichText::new("Relink to This File")
+                                                            .size(10.5)
+                                                            .strong()
+                                                            .color(Color32::from_rgb(80, 220, 120)),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    chosen_path = Some(cand.candidate_path.clone());
+                                                }
+                                            },
+                                        );
+                                    });
+
+                                    ui.label(
+                                        RichText::new(cand.candidate_path.to_string_lossy())
+                                            .size(11.0)
+                                            .color(Color32::from_rgb(220, 235, 255)),
+                                    );
+                                });
+                                ui.add_space(3.0);
+                            }
+                        });
+
+                    if let Some(new_p) = chosen_path {
+                        action = Some(LibraryAction::RelinkAsset {
+                            asset_id: asset.id.clone(),
+                            new_path: new_p,
+                        });
+                        state.relink_modal_open = false;
+                        state.relink_candidates.clear();
+                    }
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Close").clicked() {
+                            state.relink_modal_open = false;
+                            state.relink_candidates.clear();
+                        }
+                    });
+                } else {
+                    ui.label("No offline asset selected.");
+                    if ui.button("Close").clicked() {
+                        state.relink_modal_open = false;
+                    }
+                }
+            });
+    }
+
+    // 7. Contact Sheet Modal Window (FEATURES.md:L42)
+    if state.contact_sheet_modal_open {
+        egui::Window::new("Export Asset Contact Sheet (FEATURES.md:L42)")
+            .fixed_size(Vec2::new(480.0, 260.0))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+                ui.label(
+                    RichText::new(
+                        "Generate standalone, client-ready responsive dark HTML overview manifest.",
+                    )
+                    .size(11.0)
+                    .color(Color32::from_rgb(140, 160, 185)),
+                );
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Project Name:").size(11.5).strong());
+                    ui.add(
+                        egui::TextEdit::singleline(&mut state.contact_sheet_project)
+                            .desired_width(280.0),
+                    );
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Columns:").size(11.5).strong());
+                    ui.add(egui::Slider::new(&mut state.contact_sheet_columns, 2..=6));
+                });
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(format!("Total assets to be included: {}", assets.len()))
+                        .size(11.0)
+                        .color(Color32::from_rgb(80, 200, 255)),
+                );
+
+                ui.add_space(14.0);
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        state.contact_sheet_modal_open = false;
+                    }
+                    if ui
+                        .button(
+                            RichText::new("✓ Export HTML Contact Sheet")
+                                .size(11.5)
+                                .strong()
+                                .color(Color32::from_rgb(80, 230, 120)),
+                        )
+                        .clicked()
+                    {
+                        action = Some(LibraryAction::ExportContactSheet {
+                            project_name: state.contact_sheet_project.clone(),
+                            columns: state.contact_sheet_columns,
+                        });
+                        state.contact_sheet_modal_open = false;
+                    }
+                });
+            });
+    }
+
     action
+}
+
+fn get_asset_stack_info<'a>(
+    stacks: &'a [AssetStack],
+    asset_id: &str,
+) -> Option<(&'a str, usize, &'static str)> {
+    for s in stacks {
+        if s.primary_asset_id == asset_id {
+            return Some((s.name.as_str(), s.versions.len(), "Master"));
+        }
+        if let Some(v) = s.versions.iter().find(|v| v.asset_id == asset_id) {
+            let role = match v.version_kind {
+                StackVersionKind::Original => "Original",
+                StackVersionKind::Take(_) => "Take",
+                StackVersionKind::Revision(_) => "Rev",
+                StackVersionKind::Proxy => "Proxy",
+                StackVersionKind::Derivative(_) => "Derivative",
+            };
+            return Some((s.name.as_str(), s.versions.len(), role));
+        }
+    }
+    None
 }
 
 fn render_grid_cards(
@@ -634,7 +989,9 @@ fn render_grid_cards(
     card_width: f32,
     selected_ids: &mut HashSet<String>,
     selected_asset_id: &mut Option<String>,
-) {
+    stacks: &[AssetStack],
+) -> Option<String> {
+    let mut relink_requested = None;
     let available_width = ui.available_width().max(300.0);
     let item_spacing = 10.0;
     let card_height = card_width * 0.92;
@@ -740,11 +1097,16 @@ fn render_grid_cards(
                     }
 
                     // Top Badges on Thumbnail
+                    let mut top_badge_x = thumb_rect.max.x - 4.0;
+
                     if asset.video.as_ref().is_some_and(|v| v.hdr) {
+                        let badge_w = 26.0;
+                        top_badge_x -= badge_w;
                         let badge_rect = Rect::from_min_size(
-                            Pos2::new(thumb_rect.max.x - 30.0, thumb_rect.min.y + 4.0),
-                            Vec2::new(26.0, 14.0),
+                            Pos2::new(top_badge_x, thumb_rect.min.y + 4.0),
+                            Vec2::new(badge_w, 14.0),
                         );
+                        top_badge_x -= 4.0;
                         painter.rect_filled(
                             badge_rect,
                             CornerRadius::same(2),
@@ -756,6 +1118,55 @@ fn render_grid_cards(
                             "HDR",
                             egui::FontId::proportional(9.0),
                             Color32::BLACK,
+                        );
+                    }
+
+                    // Asset Stack Badge (FEATURES.md:L40)
+                    if let Some((_, version_count, _role)) = get_asset_stack_info(stacks, &asset.id)
+                    {
+                        let badge_w = 46.0;
+                        top_badge_x -= badge_w;
+                        let stack_rect = Rect::from_min_size(
+                            Pos2::new(top_badge_x, thumb_rect.min.y + 4.0),
+                            Vec2::new(badge_w, 14.0),
+                        );
+                        painter.rect_filled(
+                            stack_rect,
+                            CornerRadius::same(2),
+                            Color32::from_rgb(20, 65, 120),
+                        );
+                        painter.rect_stroke(
+                            stack_rect,
+                            CornerRadius::same(2),
+                            Stroke::new(1.0, Color32::from_rgb(80, 160, 240)),
+                            egui::StrokeKind::Inside,
+                        );
+                        painter.text(
+                            stack_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            format!("📚 {} v", version_count),
+                            egui::FontId::proportional(8.5),
+                            Color32::WHITE,
+                        );
+                    }
+
+                    // Offline Warning Badge (FEATURES.md:L41)
+                    if asset.is_offline {
+                        let off_rect = Rect::from_min_size(
+                            Pos2::new(thumb_rect.min.x + 22.0, thumb_rect.min.y + 4.0),
+                            Vec2::new(58.0, 14.0),
+                        );
+                        painter.rect_filled(
+                            off_rect,
+                            CornerRadius::same(2),
+                            Color32::from_rgb(200, 40, 40),
+                        );
+                        painter.text(
+                            off_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "⚠ OFFLINE",
+                            egui::FontId::proportional(8.5),
+                            Color32::WHITE,
                         );
                     }
 
@@ -794,40 +1205,73 @@ fn render_grid_cards(
                         },
                     );
 
-                    // Codec Pill & Resolution
+                    // Codec Pill & Resolution OR Relink Button
                     let pill_y = info_y + 16.0;
-                    let codec_name = if let Some(ref v) = asset.video {
-                        &v.codec
-                    } else if let Some(ref a) = asset.audio {
-                        &a.codec
-                    } else {
-                        asset.kind.label()
-                    };
 
-                    painter.text(
-                        Pos2::new(rect.min.x + 8.0, pill_y),
-                        egui::Align2::LEFT_TOP,
-                        truncate_filename(codec_name, 16),
-                        egui::FontId::proportional(10.0),
-                        Color32::from_rgb(140, 165, 195),
-                    );
-
-                    // Resolution badge on the right
-                    if let Some(ref v) = asset.video {
-                        let res_text = if v.width >= 3840 {
-                            "4K"
-                        } else if v.width >= 1920 {
-                            "1080p"
-                        } else {
-                            "HD"
-                        };
-                        painter.text(
-                            Pos2::new(rect.max.x - 8.0, pill_y),
-                            egui::Align2::RIGHT_TOP,
-                            res_text,
-                            egui::FontId::proportional(10.0),
-                            Color32::from_rgb(90, 190, 255),
+                    if asset.is_offline {
+                        let relink_btn_rect = Rect::from_min_size(
+                            Pos2::new(rect.min.x + 8.0, pill_y - 1.0),
+                            Vec2::new(card_width - 16.0, 17.0),
                         );
+                        let relink_id = ui.id().with(("grid_relink", &asset.id));
+                        let relink_resp =
+                            ui.interact(relink_btn_rect, relink_id, egui::Sense::click());
+                        let relink_bg = if relink_resp.hovered() {
+                            Color32::from_rgb(220, 80, 40)
+                        } else {
+                            Color32::from_rgb(170, 50, 25)
+                        };
+                        painter.rect_filled(relink_btn_rect, CornerRadius::same(3), relink_bg);
+                        painter.rect_stroke(
+                            relink_btn_rect,
+                            CornerRadius::same(3),
+                            Stroke::new(1.0, Color32::from_rgb(255, 120, 70)),
+                            egui::StrokeKind::Inside,
+                        );
+                        painter.text(
+                            relink_btn_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "⚡ Relink File...",
+                            egui::FontId::proportional(9.5),
+                            Color32::WHITE,
+                        );
+                        if relink_resp.clicked() {
+                            relink_requested = Some(asset.id.clone());
+                        }
+                    } else {
+                        let codec_name = if let Some(ref v) = asset.video {
+                            &v.codec
+                        } else if let Some(ref a) = asset.audio {
+                            &a.codec
+                        } else {
+                            asset.kind.label()
+                        };
+
+                        painter.text(
+                            Pos2::new(rect.min.x + 8.0, pill_y),
+                            egui::Align2::LEFT_TOP,
+                            truncate_filename(codec_name, 16),
+                            egui::FontId::proportional(10.0),
+                            Color32::from_rgb(140, 165, 195),
+                        );
+
+                        // Resolution badge on the right
+                        if let Some(ref v) = asset.video {
+                            let res_text = if v.width >= 3840 {
+                                "4K"
+                            } else if v.width >= 1920 {
+                                "1080p"
+                            } else {
+                                "HD"
+                            };
+                            painter.text(
+                                Pos2::new(rect.max.x - 8.0, pill_y),
+                                egui::Align2::RIGHT_TOP,
+                                res_text,
+                                egui::FontId::proportional(10.0),
+                                Color32::from_rgb(90, 190, 255),
+                            );
+                        }
                     }
                 });
 
@@ -836,6 +1280,7 @@ fn render_grid_cards(
                 }
             }
         });
+    relink_requested
 }
 
 fn render_list_view(
@@ -843,7 +1288,9 @@ fn render_list_view(
     assets: &[&MediaAsset],
     selected_ids: &mut HashSet<String>,
     selected_asset_id: &mut Option<String>,
-) {
+    stacks: &[AssetStack],
+) -> Option<String> {
+    let mut relink_requested = None;
     ui.horizontal(|ui| {
         ui.label(RichText::new("Name").size(11.0).strong());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -863,22 +1310,77 @@ fn render_list_view(
         let is_selected = is_in_multi
             || (selected_ids.is_empty() && selected_asset_id.as_deref() == Some(&asset.id));
 
-        let resp = ui.selectable_label(is_selected, RichText::new(&asset.filename).size(12.0));
-        if resp.clicked() {
-            let multi = ui.input(|i| i.modifiers.command || i.modifiers.ctrl || i.modifiers.shift);
-            if multi {
-                if selected_ids.contains(&asset.id) {
-                    selected_ids.remove(&asset.id);
+        ui.horizontal(|ui| {
+            let resp = ui.selectable_label(is_selected, RichText::new(&asset.filename).size(12.0));
+            if resp.clicked() {
+                let multi =
+                    ui.input(|i| i.modifiers.command || i.modifiers.ctrl || i.modifiers.shift);
+                if multi {
+                    if selected_ids.contains(&asset.id) {
+                        selected_ids.remove(&asset.id);
+                    } else {
+                        selected_ids.insert(asset.id.clone());
+                    }
                 } else {
+                    selected_ids.clear();
                     selected_ids.insert(asset.id.clone());
                 }
-            } else {
-                selected_ids.clear();
-                selected_ids.insert(asset.id.clone());
+                *selected_asset_id = Some(asset.id.clone());
             }
-            *selected_asset_id = Some(asset.id.clone());
-        }
+
+            if let Some((_, v_count, _)) = get_asset_stack_info(stacks, &asset.id) {
+                ui.label(
+                    RichText::new(format!("📚 {}v", v_count))
+                        .size(10.0)
+                        .color(Color32::from_rgb(80, 180, 255)),
+                );
+            }
+
+            if asset.is_offline {
+                ui.label(
+                    RichText::new("⚠ OFFLINE")
+                        .size(10.0)
+                        .color(Color32::from_rgb(255, 90, 90))
+                        .strong(),
+                );
+                if ui
+                    .small_button(
+                        RichText::new("Relink...")
+                            .size(10.0)
+                            .color(Color32::from_rgb(255, 180, 80)),
+                    )
+                    .clicked()
+                {
+                    relink_requested = Some(asset.id.clone());
+                }
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new(asset.formatted_size()).size(11.0).monospace());
+                ui.add_space(20.0);
+                ui.label(
+                    RichText::new(asset.formatted_duration())
+                        .size(11.0)
+                        .monospace(),
+                );
+                ui.add_space(20.0);
+                let codec = asset
+                    .video
+                    .as_ref()
+                    .map(|v| v.codec.as_str())
+                    .or_else(|| asset.audio.as_ref().map(|a| a.codec.as_str()))
+                    .unwrap_or("-");
+                ui.label(RichText::new(codec).size(11.0).color(Color32::GRAY));
+                ui.add_space(20.0);
+                ui.label(
+                    RichText::new(asset.kind.label())
+                        .size(11.0)
+                        .color(Color32::GRAY),
+                );
+            });
+        });
     }
+    relink_requested
 }
 
 fn render_details_view(
@@ -886,7 +1388,9 @@ fn render_details_view(
     assets: &[&MediaAsset],
     selected_ids: &mut HashSet<String>,
     selected_asset_id: &mut Option<String>,
-) {
+    stacks: &[AssetStack],
+) -> Option<String> {
+    let mut relink_requested = None;
     for asset in assets {
         let is_in_multi = selected_ids.contains(&asset.id);
         let is_selected = is_in_multi
@@ -917,6 +1421,36 @@ fn render_details_view(
                         .color(Color32::GRAY),
                 );
 
+                if let Some((stack_name, v_count, role)) = get_asset_stack_info(stacks, &asset.id) {
+                    ui.label(
+                        RichText::new(format!(
+                            "📚 Stack: {} ({}, {} versions)",
+                            stack_name, role, v_count
+                        ))
+                        .size(10.5)
+                        .color(Color32::from_rgb(100, 190, 255)),
+                    );
+                }
+
+                if asset.is_offline {
+                    ui.label(
+                        RichText::new("⚠ OFFLINE")
+                            .size(10.5)
+                            .color(Color32::from_rgb(255, 90, 90))
+                            .strong(),
+                    );
+                    if ui
+                        .button(
+                            RichText::new("⚡ Relink File...")
+                                .size(10.5)
+                                .color(Color32::from_rgb(255, 170, 70)),
+                        )
+                        .clicked()
+                    {
+                        relink_requested = Some(asset.id.clone());
+                    }
+                }
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new(asset.formatted_size()).size(11.0).monospace());
                     ui.label(
@@ -940,6 +1474,7 @@ fn render_details_view(
         });
         ui.add_space(2.0);
     }
+    relink_requested
 }
 
 fn draw_rich_mock_thumbnail(painter: &egui::Painter, rect: Rect, asset: &MediaAsset) {

@@ -425,6 +425,13 @@ impl MediaCraftApp {
         if std::env::args().any(|a| a == "--ingest-modal") {
             library_state.scan_dialog_open = true;
         }
+        if std::env::args().any(|a| a == "--relink-modal") {
+            library_state.relink_target_asset_id = Some("Offline_Take_04".to_string());
+            library_state.relink_modal_open = true;
+        }
+        if std::env::args().any(|a| a == "--contact-sheet-modal") {
+            library_state.contact_sheet_modal_open = true;
+        }
 
         Self {
             engine: engine_arc,
@@ -585,6 +592,48 @@ impl MediaCraftApp {
                 self.library_state.status_notification = Some(format!(
                     "Updated {} assets to {} stars",
                     mutated_count, rating
+                ));
+            }
+            library_view::LibraryAction::RelinkAsset { asset_id, new_path } => {
+                if let Some(asset) = self
+                    .catalog
+                    .assets_mut()
+                    .iter_mut()
+                    .find(|a| a.id == asset_id)
+                {
+                    asset.path = new_path.clone();
+                    if let Some(name) = new_path.file_name().and_then(|n| n.to_str()) {
+                        asset.filename = name.to_string();
+                    }
+                    asset.is_offline = false;
+                    self.library_state.status_notification = Some(format!(
+                        "Relinked {} to online storage: {}",
+                        asset.filename,
+                        new_path.display()
+                    ));
+                }
+            }
+            library_view::LibraryAction::ExportContactSheet {
+                project_name,
+                columns,
+            } => {
+                let options = mediacraft_catalog::contact_sheet::ContactSheetOptions {
+                    title: "MediaCraft Asset Contact Sheet".to_string(),
+                    project_name,
+                    include_technical_metadata: true,
+                    include_tags: true,
+                    columns,
+                };
+                let assets: Vec<_> = self.catalog.all_assets().to_vec();
+                let html = mediacraft_catalog::contact_sheet::ContactSheetGenerator::generate_html(
+                    &assets, &options,
+                );
+                let out_path = std::env::temp_dir().join("mediacraft_contact_sheet.html");
+                let _ = std::fs::write(&out_path, &html);
+                self.library_state.status_notification = Some(format!(
+                    "Exported Contact Sheet ({} assets) to {}",
+                    assets.len(),
+                    out_path.display()
                 ));
             }
         }
@@ -1320,6 +1369,7 @@ impl eframe::App for MediaCraftApp {
                             search_query: &mut self.search_query,
                             assets: &filtered_assets,
                             selected_asset_id: &mut self.selected_asset_id,
+                            stacks: self.catalog.stacks(),
                         },
                     );
                 });
@@ -1417,6 +1467,7 @@ impl eframe::App for MediaCraftApp {
                                     search_query: &mut self.search_query,
                                     assets: &filtered_assets,
                                     selected_asset_id: &mut self.selected_asset_id,
+                                    stacks: self.catalog.stacks(),
                                 },
                             );
                         }

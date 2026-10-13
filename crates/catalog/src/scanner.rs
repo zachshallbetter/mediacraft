@@ -147,6 +147,7 @@ pub fn probe_file(path: &Path) -> Option<MediaAsset> {
         tags: Vec::new(),
         has_proxy: false,
         needs_transcode: false,
+        is_offline: false,
     })
 }
 

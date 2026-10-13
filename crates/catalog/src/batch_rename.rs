@@ -283,6 +283,7 @@ mod tests {
             tags: vec![],
             has_proxy: false,
             needs_transcode: false,
+            is_offline: false,
         };
 
         let asset2 = MediaAsset {
@@ -302,6 +303,7 @@ mod tests {
             tags: vec![],
             has_proxy: false,
             needs_transcode: false,
+            is_offline: false,
         };
 
         let plan = planner.plan(&[asset1, asset2]);

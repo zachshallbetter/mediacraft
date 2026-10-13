@@ -180,6 +180,7 @@ mod tests {
             tags: vec!["hero".to_string(), "master".to_string()],
             has_proxy: true,
             needs_transcode: false,
+            is_offline: false,
         }];
 
         let html = ContactSheetGenerator::generate_html(&assets, &ContactSheetOptions::default());

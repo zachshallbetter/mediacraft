@@ -92,9 +92,15 @@ pub struct MediaAsset {
     pub tags: Vec<String>,
     pub has_proxy: bool,
     pub needs_transcode: bool,
+    #[serde(default)]
+    pub is_offline: bool,
 }
 
 impl MediaAsset {
+    pub fn is_online(&self) -> bool {
+        !self.is_offline
+    }
+
     pub fn formatted_size(&self) -> String {
         let bytes = self.file_size_bytes;
         if bytes >= 1_000_000_000 {
@@ -289,6 +295,7 @@ impl MediaCatalog {
                 ],
                 has_proxy: false,
                 needs_transcode: true,
+                is_offline: false,
             },
             MediaAsset {
                 id: "B002_C014".to_string(),
@@ -321,6 +328,7 @@ impl MediaCatalog {
                 tags: vec!["interview".to_string()],
                 has_proxy: true,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "C003_C007".to_string(),
@@ -347,6 +355,7 @@ impl MediaCatalog {
                 tags: vec!["hero".to_string()],
                 has_proxy: false,
                 needs_transcode: true,
+                is_offline: false,
             },
             MediaAsset {
                 id: "IMG_8342".to_string(),
@@ -365,6 +374,7 @@ impl MediaCatalog {
                 tags: vec!["raw".to_string(), "photo".to_string()],
                 has_proxy: false,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Surf_001".to_string(),
@@ -391,6 +401,7 @@ impl MediaCatalog {
                 tags: vec!["slowmo".to_string()],
                 has_proxy: false,
                 needs_transcode: true,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Podcast_Interview".to_string(),
@@ -415,6 +426,7 @@ impl MediaCatalog {
                 tags: vec!["dialogue".to_string(), "audio".to_string()],
                 has_proxy: false,
                 needs_transcode: true,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Motion_Graphics".to_string(),
@@ -441,6 +453,7 @@ impl MediaCatalog {
                 tags: vec!["vfx".to_string(), "alpha".to_string()],
                 has_proxy: false,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Drone_003".to_string(),
@@ -467,6 +480,7 @@ impl MediaCatalog {
                 tags: vec!["aerial".to_string()],
                 has_proxy: false,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Color_Bars".to_string(),
@@ -499,6 +513,7 @@ impl MediaCatalog {
                 tags: vec!["test".to_string(), "calibration".to_string()],
                 has_proxy: false,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Ski_Day_01".to_string(),
@@ -525,6 +540,7 @@ impl MediaCatalog {
                 tags: vec!["action".to_string()],
                 has_proxy: false,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Waterfall_Exr".to_string(),
@@ -543,6 +559,7 @@ impl MediaCatalog {
                 tags: vec!["exr".to_string(), "vfx".to_string()],
                 has_proxy: false,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Interview_B_Roll".to_string(),
@@ -569,6 +586,7 @@ impl MediaCatalog {
                 tags: vec!["interview".to_string()],
                 has_proxy: false,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Product_Shot".to_string(),
@@ -587,6 +605,7 @@ impl MediaCatalog {
                 tags: vec!["product".to_string(), "packshot".to_string()],
                 has_proxy: false,
                 needs_transcode: false,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Aerial_Utah".to_string(),
@@ -613,6 +632,7 @@ impl MediaCatalog {
                 tags: vec!["aerial".to_string(), "hdr".to_string()],
                 has_proxy: false,
                 needs_transcode: true,
+                is_offline: false,
             },
             MediaAsset {
                 id: "Car_Commercial".to_string(),
@@ -645,6 +665,34 @@ impl MediaCatalog {
                 tags: vec!["commercial".to_string(), "deliverable".to_string()],
                 has_proxy: true,
                 needs_transcode: false,
+                is_offline: false,
+            },
+            MediaAsset {
+                id: "Offline_Take_04".to_string(),
+                path: PathBuf::from("/Volumes/Extreme_Pro/Offline_Take_04.mov"),
+                filename: "Offline_Take_04.mov".to_string(),
+                file_size_bytes: 1_450_000_000,
+                kind: MediaKind::Video,
+                duration_secs: Some(45.5),
+                timecode_start: "00:04:12:00".to_string(),
+                video: Some(VideoStreamInfo {
+                    codec: "Apple ProRes 422 HQ".to_string(),
+                    width: 3840,
+                    height: 2160,
+                    fps: 23.976,
+                    color_space: "Rec. 709".to_string(),
+                    hdr: false,
+                    bit_depth: 10,
+                }),
+                audio: None,
+                camera_model: Some("ARRI Alexa Mini".to_string()),
+                date_created: "2026-07-11 10:15:00".to_string(),
+                geo_location: None,
+                rating: 4,
+                tags: vec!["offline".to_string(), "b-roll".to_string()],
+                has_proxy: false,
+                needs_transcode: false,
+                is_offline: true,
             },
         ];
 
@@ -848,11 +896,13 @@ mod tests {
     #[test]
     fn test_mock_corpus_loading() {
         let cat = MediaCatalog::with_standard_mock_corpus();
-        assert_eq!(cat.all_assets().len(), 15);
+        assert_eq!(cat.all_assets().len(), 16);
         let counts = cat.kind_counts();
-        assert_eq!(*counts.get(&MediaKind::Video).unwrap_or(&0), 11);
+        assert_eq!(*counts.get(&MediaKind::Video).unwrap_or(&0), 12);
         assert_eq!(*counts.get(&MediaKind::Audio).unwrap_or(&0), 1);
         assert_eq!(*counts.get(&MediaKind::RawDng).unwrap_or(&0), 1);
+        let offline_count = cat.all_assets().iter().filter(|a| a.is_offline).count();
+        assert_eq!(offline_count, 1);
     }
 
     #[test]

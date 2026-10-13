@@ -55,7 +55,7 @@ impl RelinkEngine {
 
     /// Checks whether an asset's file is currently online and readable on the filesystem.
     pub fn is_asset_online(asset: &MediaAsset) -> bool {
-        asset.path.is_file()
+        !asset.is_offline && asset.path.is_file()
     }
 
     /// Finds candidate relink files for a given offline asset within a search directory.
@@ -132,6 +132,7 @@ impl RelinkEngine {
             if candidate.candidate_size_bytes > 0 {
                 asset.file_size_bytes = candidate.candidate_size_bytes;
             }
+            asset.is_offline = false;
             true
         } else {
             false
@@ -170,6 +171,7 @@ mod tests {
             tags: vec!["interview".to_string()],
             has_proxy: false,
             needs_transcode: false,
+            is_offline: true,
         };
 
         // Initially offline
