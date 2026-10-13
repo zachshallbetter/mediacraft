@@ -17,7 +17,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod ipc;
+pub mod pipeline;
 pub mod watch_folder;
+pub mod wav;
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -354,61 +356,92 @@ impl QueueEngine {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        // 2. Generate actual media bytes according to the requested container format
-        let media_bytes = match preset.container {
-            mediacraft_protocol::ContainerFormat::Mp4
-            | mediacraft_protocol::ContainerFormat::M4a
-            | mediacraft_protocol::ContainerFormat::Mov => {
-                let sample_rate = preset.audio_sample_rate.unwrap_or(48_000);
-                let channels = preset.audio_channels.unwrap_or(2);
-                let priming = preset.audio_priming_samples;
-                let faststart = preset.faststart;
-                // Generate 4 seconds of 128kbps AAC audio frames (16000 bytes)
-                let dummy_audio = vec![0x21u8; 16000];
-                mediacraft_bitstream::isobmff::build_synthetic_m4a(
-                    &dummy_audio,
-                    sample_rate,
-                    channels,
-                    priming,
-                    faststart,
-                )
-            }
-            mediacraft_protocol::ContainerFormat::Wav => {
-                let mut buf = Vec::with_capacity(44 + 48000 * 4);
-                buf.extend_from_slice(b"RIFF");
-                let total_len = (36 + 48000 * 4) as u32;
-                buf.extend_from_slice(&total_len.to_le_bytes());
-                buf.extend_from_slice(b"WAVEfmt ");
-                buf.extend_from_slice(&16u32.to_le_bytes());
-                buf.extend_from_slice(&1u16.to_le_bytes());
-                buf.extend_from_slice(&2u16.to_le_bytes());
-                buf.extend_from_slice(&48000u32.to_le_bytes());
-                buf.extend_from_slice(&(48000u32 * 4).to_le_bytes());
-                buf.extend_from_slice(&4u16.to_le_bytes());
-                buf.extend_from_slice(&16u16.to_le_bytes());
-                buf.extend_from_slice(b"data");
-                buf.extend_from_slice(&(48000u32 * 4).to_le_bytes());
-                buf.resize(44 + 48000 * 4, 0);
-                buf
-            }
-            mediacraft_protocol::ContainerFormat::Mxf => {
-                // Generate standard MXF header and partition structure
-                let mut buf = Vec::with_capacity(16384);
-                buf.extend_from_slice(&[
-                    0x06, 0x0e, 0x2b, 0x34, 0x02, 0x05, 0x01, 0x01, 0x0d, 0x01, 0x02, 0x01, 0x01,
-                    0x02, 0x04, 0x00,
-                ]);
-                buf.resize(16384, 0);
-                buf
-            }
+        // 2. Generate actual media bytes or invoke real transcode pipeline
+        let is_real_wav_source = source_path.exists()
+            && source_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("wav"))
+                .unwrap_or(false);
+
+        let (bytes_len, duration_secs, media_bytes) = if is_real_wav_source
+            && matches!(
+                preset.container,
+                mediacraft_protocol::ContainerFormat::M4a
+                    | mediacraft_protocol::ContainerFormat::Mp4
+            ) {
+            let bitrate_bps = preset.audio_bitrate_kbps.unwrap_or(128) * 1000;
+            let receipt = pipeline::WavToM4aPipeline::transcode(
+                &source_path,
+                &output_path,
+                bitrate_bps,
+                preset.faststart,
+                None::<fn(f32)>,
+            )
+            .map_err(|e| format!("Real audio transcode failed: {e}"))?;
+
+            let bytes = std::fs::read(&output_path)
+                .map_err(|e| format!("Failed to read produced deliverable: {e}"))?;
+            let dur = receipt.total_input_frames as f64 / receipt.sample_rate.max(1) as f64;
+            (receipt.total_output_bytes, dur, bytes)
+        } else {
+            let media_bytes = match preset.container {
+                mediacraft_protocol::ContainerFormat::Mp4
+                | mediacraft_protocol::ContainerFormat::M4a
+                | mediacraft_protocol::ContainerFormat::Mov => {
+                    let sample_rate = preset.audio_sample_rate.unwrap_or(48_000);
+                    let channels = preset.audio_channels.unwrap_or(2);
+                    let priming = preset.audio_priming_samples;
+                    let faststart = preset.faststart;
+                    // Generate 4 seconds of 128kbps AAC audio frames (16000 bytes)
+                    let dummy_audio = vec![0x21u8; 16000];
+                    mediacraft_bitstream::isobmff::build_synthetic_m4a(
+                        &dummy_audio,
+                        sample_rate,
+                        channels,
+                        priming,
+                        faststart,
+                    )
+                }
+                mediacraft_protocol::ContainerFormat::Wav => {
+                    let mut buf = Vec::with_capacity(44 + 48000 * 4);
+                    buf.extend_from_slice(b"RIFF");
+                    let total_len = (36 + 48000 * 4) as u32;
+                    buf.extend_from_slice(&total_len.to_le_bytes());
+                    buf.extend_from_slice(b"WAVEfmt ");
+                    buf.extend_from_slice(&16u32.to_le_bytes());
+                    buf.extend_from_slice(&1u16.to_le_bytes());
+                    buf.extend_from_slice(&2u16.to_le_bytes());
+                    buf.extend_from_slice(&48000u32.to_le_bytes());
+                    buf.extend_from_slice(&(48000u32 * 4).to_le_bytes());
+                    buf.extend_from_slice(&4u16.to_le_bytes());
+                    buf.extend_from_slice(&16u16.to_le_bytes());
+                    buf.extend_from_slice(b"data");
+                    buf.extend_from_slice(&(48000u32 * 4).to_le_bytes());
+                    buf.resize(44 + 48000 * 4, 0);
+                    buf
+                }
+                mediacraft_protocol::ContainerFormat::Mxf => {
+                    // Generate standard MXF header and partition structure
+                    let mut buf = Vec::with_capacity(16384);
+                    buf.extend_from_slice(&[
+                        0x06, 0x0e, 0x2b, 0x34, 0x02, 0x05, 0x01, 0x01, 0x0d, 0x01, 0x02, 0x01,
+                        0x01, 0x02, 0x04, 0x00,
+                    ]);
+                    buf.resize(16384, 0);
+                    buf
+                }
+            };
+
+            let bytes_len = media_bytes.len() as u64;
+            let duration_secs = 4.0;
+
+            // Atomically write the deliverable output file using craft-atomic
+            craft_atomic::atomic_write(&output_path, &media_bytes)
+                .map_err(|e| format!("Atomic write of deliverable failed: {e}"))?;
+
+            (bytes_len, duration_secs, media_bytes)
         };
-
-        let bytes_len = media_bytes.len() as u64;
-        let duration_secs = 4.0;
-
-        // 3. Atomically write the deliverable output file using craft-atomic
-        craft_atomic::atomic_write(&output_path, &media_bytes)
-            .map_err(|e| format!("Atomic write of deliverable failed: {e}"))?;
 
         // 4. Generate SHA-256 cryptographic receipt and write atomically
         let receipt_path = output_path.with_extension(format!(
@@ -863,6 +896,61 @@ mod tests {
         // Cleanup test directory
         let _ = std::fs::remove_file(&out_file);
         let _ = std::fs::remove_file(&receipt_file);
+        let _ = std::fs::remove_file(&contract_file);
+        let _ = std::fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn real_wav_to_m4a_transcode_via_queue_engine() {
+        let mut engine = QueueEngine::new(1);
+        let temp_dir =
+            std::env::temp_dir().join(format!("mediacraft_test_wav_queue_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let input_wav = temp_dir.join("source_audio.wav");
+        let output_m4a = temp_dir.join("encoded_audio.m4a");
+
+        // Write 1.5 seconds of 48kHz stereo test audio
+        let sample_rate = 48_000;
+        let channels = 2;
+        let frames = 72_000; // 1.5s
+        let left: Vec<f32> = (0..frames).map(|i| (i as f32 * 0.05).sin() * 0.8).collect();
+        let right: Vec<f32> = (0..frames).map(|i| (i as f32 * 0.10).cos() * 0.8).collect();
+        crate::wav::write_wav_file(&input_wav, channels, sample_rate, &[&left, &right]).unwrap();
+
+        let preset = EncodingPreset {
+            container: mediacraft_protocol::ContainerFormat::M4a,
+            audio_bitrate_kbps: Some(192),
+            audio_sample_rate: Some(48_000),
+            audio_channels: Some(2),
+            faststart: true,
+            ..Default::default()
+        };
+
+        let job_id = engine.add_job(input_wav.clone(), output_m4a.clone(), preset, 10);
+        let res = engine.execute_job_to_completion(job_id);
+        assert!(res.is_ok(), "transcode failed: {:?}", res.err());
+
+        let (duration, bytes) = res.unwrap();
+        assert!(
+            (duration - 1.5).abs() < 0.05,
+            "duration mismatch: {duration}"
+        );
+        assert!(bytes > 1000, "bytes too small: {bytes}");
+
+        assert!(output_m4a.exists());
+        let meta = std::fs::metadata(&output_m4a).unwrap();
+        assert_eq!(meta.len(), bytes);
+
+        // Verify receipt
+        let receipt_file = temp_dir.join("encoded_audio.m4a.receipt.json");
+        assert!(receipt_file.exists());
+
+        // Cleanup
+        let _ = std::fs::remove_file(&input_wav);
+        let _ = std::fs::remove_file(&output_m4a);
+        let _ = std::fs::remove_file(&receipt_file);
+        let contract_file = temp_dir.join("encoded_audio.m4a.contract.json");
         let _ = std::fs::remove_file(&contract_file);
         let _ = std::fs::remove_dir(&temp_dir);
     }

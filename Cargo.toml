@@ -32,6 +32,10 @@ mediacraft-daemon = { path = "crates/daemon" }
 mediacraft-oracles = { path = "crates/oracles" }
 mediacraft-catalog = { path = "crates/catalog" }
 
+filmcraft-bitstream = { path = "../craft-compat/filmcraft/crates/bitstream" }
+filmcraft-aac = { path = "../craft-compat/filmcraft/crates/aac" }
+filmcraft-isobmff = { path = "../craft-compat/filmcraft/crates/isobmff" }
+
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }
 craft-quit = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }
 craft-settings = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }
