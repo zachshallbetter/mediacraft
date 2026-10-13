@@ -743,3 +743,87 @@ gantt
   * Implement `craft-media-enc` and `craft-media-dec` execution pipelines.
   * Connect MediaCraft desktop and headless CLI to `craft-media-enc` for batch queue transcoding, watch folder automation, and export receipts.
   * Execute comprehensive `cargo xtask compat` suite run across all 10 Craft applications.
+
+---
+
+## 10. MediaCraft Local Processing Architecture & Upstream Migration Strategy
+
+### 10.1 The Governance Invariant
+
+$$\textbf{MediaCraft owns integration; craft-libs owns shared infrastructure only after acceptance.}$$
+
+MediaCraft must not wait on upstream `craft-libs` pull requests to develop its media-processing capabilities. Simultaneously, MediaCraft must not create competing permanent implementations or prematurely name local crates `craft-*`. Instead, MediaCraft develops its media-processing infrastructure locally by adapting qualified, appropriately licensed Craft implementations (primarily from FilmCraft), isolating them behind strict local interfaces. When upstream `craft-libs` PRs land, migration becomes a controlled dependency replacement rather than an application restructuring.
+
+### 10.2 Decoupled Pipeline Architecture
+
+```text
+MediaCraft
+│
+├── 1. Application Layer (crates/app)
+│   ├── Queue Workspace & Drawers
+│   ├── Inspect & Source Monitor
+│   ├── Presets & Settings Editor
+│   ├── Automate & Watch Folders
+│   └── Deliver & Validation Results
+│
+├── 2. Media Pipeline Orchestration (crates/daemon)
+│   ├── Probe & Stream Discovery
+│   ├── Decode & Packet Ingest
+│   ├── Audio / Video Processing Filters
+│   ├── Encode Coordination
+│   ├── Mux & Container Packaging
+│   └── Verification & Receipt Generation
+│
+├── 3. Media Contracts & Types (crates/protocol & local contracts)
+│   ├── Stream Descriptors & Track Types
+│   ├── Frame & Audio Sample Buffers
+│   ├── Signed Media Ticks & Timestamps
+│   ├── Capability Descriptors & Codec Registries
+│   └── Typed Pipeline Errors
+│
+└── 4. Codec & Container Backends (crates/bitstream & adapters)
+    ├── AAC Adapter (Qualified FilmCraft AAC-LC Engine)
+    ├── ISO BMFF Adapter (Qualified FilmCraft MP4/M4A Engine)
+    ├── Audio DSP (Polyphase Resampling, EBU R128 Loudness)
+    ├── FLAC / Opus Adapters (Evaluated Implementations)
+    ├── H.264 / ProRes / DNx Adapters (Evaluated FilmCraft Codecs)
+    └── Hardware Acceleration Adapters (VideoToolbox / QSV / NVENC with CPU Fallback)
+```
+
+Each codec and container backend implements a local MediaCraft contract rather than exposing external crate APIs throughout the application.
+
+### 10.3 Priority Matrix for Local Development
+
+| Priority | Component | MediaCraft Implementation Plan | Qualification Target |
+| :--- | :--- | :--- | :--- |
+| **P0** | **Media Contracts** | Local stream metadata, buffer structures, media ticks, capability negotiation, and typed errors. | Zero external dependencies; WASM-clean. |
+| **P0** | **Bitstream Primitives** | Extend `mediacraft-bitstream` with ISO BMFF box parsing/serialization and bit-level I/O. | Idempotent Faststart, bounded allocations. |
+| **P0** | **AAC Codec** | Integrate qualified `filmcraft-aac` engine behind local adapter. | Planar `f32`, CBR/VBR, 1024-sample priming. |
+| **P0** | **MP4 / M4A Packaging** | Integrate qualified `filmcraft-isobmff` functionality for M4A/MP4 muxing. | Faststart layout (`moov` before `mdat`), `elst` edit list. |
+| **P0** | **End-to-End Pipeline** | Connect decode → process → encode → mux for real audio assets. | Sample-exact WAV $\to$ AAC $\to$ M4A export. |
+| **P1** | **Audio Processing** | Polyphase bandlimited resampling, mono/stereo conversion, BS.1770-4 loudness, peak normalization. | SNR $> 100$ dB, sample rate conversion transparency. |
+| **P1** | **FLAC & Opus** | Evaluate existing FilmCraft, SoundCraft, and EffectCraft implementations. | Lossless bit-transparency for FLAC; 20 ms framing for Opus. |
+| **P1** | **H.264 Video Codec** | Integrate and qualify FilmCraft's in-tree H.264 implementation. | Baseline, Main, High profiles; Annex-B byte streams. |
+| **P1** | **Video Processing** | Bilinear / Lanczos frame scaling, chroma subsampling (4:2:0/4:2:2/4:4:4), Rec.709/sRGB matrices. | Numerical stability; high-bit-depth preservation. |
+| **P2** | **ProRes & DNx** | Evaluate existing FilmCraft ProRes/DNx implementations. | 10-bit editing intermediate conformance. |
+| **P2** | **MXF Containers** | Evaluate FilmCraft broadcast MXF OP1a container muxer. | SMPTE 377M compliance. |
+| **P2** | **Hardware Acceleration** | Apple VideoToolbox, Intel QSV, NVIDIA NVENC with software CPU fallback. | Headless & software fallback determinism. |
+| **P2** | **Quality Verification** | Independent decode, ITU BS.1770-4 compliance, VMAF objective scoring. | External `ffprobe` / `ffmpeg` parity checks. |
+
+### 10.4 First Implementation Milestone: End-to-End WAV $\to$ AAC $\to$ M4A Pipeline
+
+The initial real-media milestone focuses exclusively on producing verified, playable MPEG-4 audio:
+1. **Source Ingest**: Ingest standard PCM WAV files (16-bit, 24-bit, and 32-bit float; 44.1 kHz and 48 kHz).
+2. **Audio Processing**: De-interleave and buffer PCM samples into planar `f32` normalized arrays.
+3. **AAC-LC Encoding**: Encode audio frames via the qualified pure-Rust AAC-LC encoder (targeting 64–320 kbps CBR).
+4. **M4A Multiplexing**: Package compressed elementary stream into an ISO BMFF (`.m4a`) container, writing:
+   * `ftyp` with `M4A ` major brand.
+   * `moov` with `elst` (edit list) atom trimming the 1024-sample encoder delay.
+   * `mdat` containing raw AAC frames.
+5. **Faststart Layout**: Position `moov` ahead of `mdat` for progressive streaming.
+6. **Independent Empirical Validation**: Validate output using external `/opt/homebrew/bin/ffprobe` and `/opt/homebrew/bin/ffmpeg`:
+   * Decoded duration matches source duration within 1 frame (< 23 ms).
+   * Sample count matches source sample count exactly via edit list trimming.
+   * Format identified by `ffprobe` as `m4a` / `aac`.
+   * Decode test passes cleanly: `ffmpeg -v error -i output.m4a -f null -`.
+
