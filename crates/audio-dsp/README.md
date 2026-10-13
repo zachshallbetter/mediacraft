@@ -56,7 +56,7 @@ id, name, range, default, `Unit`, log-scale hint and choice labels so UIs can be
 | `speech_enhance` | Enhance Speech DSP chain: 80 Hz HPF, de-mud cut (250 / 350 Hz −3 dB), presence (2.5 / 4 kHz +4 dB) and air (+2 dB @ 10 kHz) boosts by `tone`, downward expander below −50 dBFS (3:1, ≤ 18 dB), 3:1 soft-knee compressor above −24 dBFS, +3 dB make-up, `mix` |
 | `stereo_width` | mid/side width 0–200 % (100 % = identity, 0 % = mono) |
 | `graphic_eq_10/20/30` | constant-Q peaking bands at octave / half-octave / third-octave ISO centres (Q from the bandwidth), ±24 dB, master gain |
-| `parametric_eq_full` | Premiere's Parametric Equalizer: master gain, high-pass and low-pass (12–48 dB/oct Butterworth cascades), low shelf, 5 peaking bands, high shelf |
+| `parametric_eq_full` | Professional parametric equalizer: master gain, high-pass and low-pass (12–48 dB/oct Butterworth cascades), low shelf, 5 peaking bands, high shelf |
 | `notch_filter` | 6 constant-bandwidth cuts (`FilterType::Cut` = 1 + (g − 1)·BP: the width stays f/Q however deep), Narrow / Very Narrow / Super Narrow |
 | `scientific_filter` | Bessel / Butterworth / Chebyshev I / elliptic, LP / HP / BP / BS, order 1–12 (`design`: analog prototype → frequency transform at pre-warped edges → bilinear → biquads; elliptic via Landen-transformation Jacobi functions after Orfanidis) |
 | `fft_filter` | 8-point gain curve (log-frequency, linear or smoothstep), applied zero-phase by √Hann STFT at 75 % overlap (latency = FFT size) |

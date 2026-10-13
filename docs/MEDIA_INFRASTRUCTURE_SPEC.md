@@ -633,7 +633,7 @@ Every shared media crate must pass rigorous conformance qualification before dow
    * IDR recovery point signaling for random-access seeking.
 3. **Apple ProRes Conformance**:
    * Apple ProRes bitstream syntax compliance (frame header, picture header, slice dimensions, DC/AC quantizer matrices).
-   * Verified pixel decode match against Apple QuickTime Pro / Final Cut Pro reference decoders within 1 LSB tolerance.
+   * Verified pixel decode match against standard platform reference decoders within 1 LSB tolerance.
 
 ### 7.2 Container Integrity & Faststart Multiplexing
 
