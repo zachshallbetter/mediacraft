@@ -368,10 +368,17 @@ impl MediaCraftApp {
 
         let open_preferences_initially = std::env::args().any(|a| a == "--preferences");
 
-        let initial_workspace = if std::env::args().any(|a| a == "--queue" || a == "--empty-queue")
-        {
+        let initial_workspace = if std::env::args().any(|a| {
+            a == "--queue"
+                || a == "--empty-queue"
+                || a == "--error-modal"
+                || a == "--unsupported-modal"
+                || a == "--batch-edit-modal"
+        }) {
             WorkspaceMode::Queue
-        } else if std::env::args().any(|a| a == "--automations") {
+        } else if std::env::args()
+            .any(|a| a == "--automations" || a == "--workflow-builder" || a == "--ingest-schedules")
+        {
             WorkspaceMode::Automations
         } else if std::env::args().any(|a| a.starts_with("--deliver")) {
             WorkspaceMode::Deliver
@@ -392,6 +399,29 @@ impl MediaCraftApp {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clear_all();
+        }
+
+        let mut queue_state = QueueViewState::default();
+        if std::env::args().any(|a| a == "--error-modal") {
+            queue_state.show_error_modal = true;
+        } else if std::env::args().any(|a| a == "--unsupported-modal") {
+            queue_state.show_unsupported_modal = true;
+        } else if std::env::args().any(|a| a == "--batch-edit-modal") {
+            queue_state.show_batch_edit_modal = true;
+            let jobs = engine_arc
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .list_jobs();
+            for j in jobs.iter().take(3) {
+                queue_state.selected_jobs.insert(j.id);
+            }
+        }
+
+        let mut automate_state = AutomateViewState::default();
+        if std::env::args().any(|a| a == "--workflow-builder") {
+            automate_state.active_tab = automate_view::AutomateTab::WorkflowPipelines;
+        } else if std::env::args().any(|a| a == "--ingest-schedules") {
+            automate_state.active_tab = automate_view::AutomateTab::IngestSchedules;
         }
 
         let mut preset_state = PresetViewState::default();
@@ -453,8 +483,8 @@ impl MediaCraftApp {
             process_state: ProcessViewState::default(),
             sidebar_state: SidebarNavState::default(),
             drawer_state: QueueDrawerState::default(),
-            queue_state: QueueViewState::default(),
-            automate_state: AutomateViewState::default(),
+            queue_state,
+            automate_state,
             deliver_state,
             preset_state,
             layout,

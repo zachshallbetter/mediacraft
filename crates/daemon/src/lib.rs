@@ -273,6 +273,30 @@ impl QueueEngine {
         false
     }
 
+    /// Update settings for a job (preset, output_path, priority).
+    pub fn update_job_settings(
+        &mut self,
+        id: JobId,
+        preset: Option<EncodingPreset>,
+        output_path: Option<PathBuf>,
+        priority: Option<u32>,
+    ) -> bool {
+        if let Some(job) = self.jobs.iter_mut().find(|j| j.id == id) {
+            if let Some(p) = preset {
+                job.preset = p;
+            }
+            if let Some(o) = output_path {
+                job.output_path = o;
+            }
+            if let Some(prio) = priority {
+                job.priority = prio;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     /// Compute the overall queue status.
     pub fn status(&self) -> QueueStatus {
         let mut active = 0;
@@ -841,5 +865,37 @@ mod tests {
         let _ = std::fs::remove_file(&receipt_file);
         let _ = std::fs::remove_file(&contract_file);
         let _ = std::fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn test_update_job_settings() {
+        let mut engine = QueueEngine::new(1);
+        let id = engine.add_job(
+            PathBuf::from("/sources/clip1.mov"),
+            PathBuf::from("/out/clip1.mp4"),
+            EncodingPreset::default(),
+            5,
+        );
+
+        let custom_preset = EncodingPreset {
+            name: "Custom ProRes Batch".to_string(),
+            ..Default::default()
+        };
+
+        let updated = engine.update_job_settings(
+            id,
+            Some(custom_preset),
+            Some(PathBuf::from("/new_dest/clip1_master.mov")),
+            Some(9),
+        );
+        assert!(updated);
+
+        let info = engine.get_job(id).unwrap();
+        assert_eq!(info.preset.name, "Custom ProRes Batch");
+        assert_eq!(
+            info.output_path,
+            PathBuf::from("/new_dest/clip1_master.mov")
+        );
+        assert_eq!(info.priority, 9);
     }
 }
