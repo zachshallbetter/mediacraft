@@ -102,3 +102,50 @@ fn eval_isobmff_diagnostics_and_faststart_verification() {
     assert_eq!(track_rep.kind, "video");
     assert!(!track_rep.has_b_frames);
 }
+
+#[test]
+fn eval_isobmff_diagnostics_detects_causal_pts_violation() {
+    let opts = WriterOptions::new(Brand::Mp4);
+    let mut w = Mp4Writer::new(Cursor::new(Vec::new()), opts).expect("writer init should succeed");
+
+    let avc = AvcConfig::new(
+        vec![vec![0x67, 0x64, 0, 0x28, 1, 2]],
+        vec![vec![0x68, 3]],
+        4,
+    );
+    let v_entry = SampleEntry::avc(avc, 640, 480);
+    let track_id = w
+        .add_track(TrackConfig::new(v_entry, 1000))
+        .expect("add track should succeed");
+
+    // Write a sample with negative composition offset (PTS < DTS)
+    let payload = vec![0xAA; 64];
+    w.write_sample(
+        track_id,
+        WriteSample {
+            data: &payload,
+            duration: 100,
+            composition_offset: -50, // Causal violation: PTS is DTS - 50
+            is_sync: true,
+        },
+    )
+    .expect("write sample should succeed");
+
+    let file_bytes = w
+        .finish_faststart()
+        .expect("finish_faststart should succeed")
+        .into_inner();
+    let mp4 = open(file_bytes.as_slice()).expect("open should succeed");
+
+    let report = mp4.diagnose();
+    let track_rep = &report.tracks[0];
+    assert!(track_rep.has_b_frames);
+    assert!(
+        track_rep
+            .warnings
+            .iter()
+            .any(|w| w.contains("causal violation") && w.contains("PTS -50 is less than DTS 0")),
+        "diagnostics must warn on causal PTS < DTS anomaly, got warnings: {:?}",
+        track_rep.warnings
+    );
+}

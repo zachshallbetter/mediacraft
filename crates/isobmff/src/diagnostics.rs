@@ -143,6 +143,13 @@ fn diagnose_track(track: &Track) -> TrackDiagnosticReport {
             has_b_frames = true;
         }
 
+        if s.pts < s.dts {
+            warnings.push(format!(
+                "causal violation: PTS {} is less than DTS {}",
+                s.pts, s.dts
+            ));
+        }
+
         if let Some(prev) = last_dts
             && s.dts < prev
         {
