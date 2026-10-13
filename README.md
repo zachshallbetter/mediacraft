@@ -18,6 +18,13 @@ It provides:
 5. The **Desktop Workspace UI** (`mediacraft-app`): A dark-mode desktop interface built with `craft-ui`, `craft-settings`, `craft-atomic`, and `craft-quit`.
 6. A headless testing CLI (`mediacraft-cli`).
 
+### Ecosystem Testbed & Staging Ground
+
+MediaCraft serves as the primary empirical testbed and staging harness for capabilities proposed for `storytold/craft-libs`. Rather than designing shared abstractions in the abstract, components are first implemented, stress-tested, and proven here in accordance with authoritative suite specifications:
+- [`CRAFT_UI_SCHEMA.md`](../CRAFT_UI_SCHEMA.md): Presentation widget contracts, docking layout, dark theme tokens, and canvas controls tested live in `mediacraft-app`.
+- [`CRAFT_MEDIA_RFC.md`](../CRAFT_MEDIA_RFC.md): Clean-room media codecs, bitstream I/O, audio DSP, and stream-copy remuxing proven against ffmpeg verification oracles.
+- [`CRAFT_LIBS_RFC.md`](../CRAFT_LIBS_RFC.md): Shared library architecture, atomic persistence (`craft-atomic`), configuration self-healing (`craft-settings`), lifecycle termination (`craft-quit`), ISO 32000 PDF parsing (`craft-pdf`), and safe packaging (`craft-archive`).
+
 ---
 
 ## 2. Workspace Topology
