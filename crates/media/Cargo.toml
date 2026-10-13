@@ -1,0 +1,18 @@
+[package]
+name = "craft-media"
+description = "Common media stream metadata, buffer descriptors, error contracts, and rational time primitives"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

@@ -9,6 +9,13 @@ members = [
     "crates/catalog",
     "crates/client",
     "crates/app",
+    "crates/media",
+    "crates/aac",
+    "crates/isobmff",
+    "crates/flac",
+    "crates/opus",
+    "crates/prores",
+    "crates/h264",
 ]
 
 [workspace.package]
@@ -33,6 +40,13 @@ mediacraft-daemon = { path = "crates/daemon" }
 mediacraft-client = { path = "crates/client" }
 mediacraft-oracles = { path = "crates/oracles" }
 mediacraft-catalog = { path = "crates/catalog" }
+craft-media = { path = "crates/media" }
+craft-aac = { path = "crates/aac" }
+craft-isobmff = { path = "crates/isobmff" }
+craft-flac = { path = "crates/flac" }
+craft-opus = { path = "crates/opus" }
+craft-prores = { path = "crates/prores" }
+craft-h264 = { path = "crates/h264" }
 
 filmcraft-bitstream = { path = "../craft-compat/filmcraft/crates/bitstream" }
 filmcraft-aac = { path = "../craft-compat/filmcraft/crates/aac" }

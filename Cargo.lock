@@ -378,11 +378,80 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-aac"
+version = "0.1.0"
+dependencies = [
+ "craft-media",
+ "mediacraft-bitstream",
+ "proptest",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "craft-atomic"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=666c358065261a2816b376fa3bb10538dbf53040#666c358065261a2816b376fa3bb10538dbf53040"
 dependencies = [
  "rustix 1.1.5",
+]
+
+[[package]]
+name = "craft-flac"
+version = "0.1.0"
+dependencies = [
+ "craft-media",
+ "mediacraft-bitstream",
+ "proptest",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-h264"
+version = "0.1.0"
+dependencies = [
+ "craft-media",
+ "mediacraft-bitstream",
+ "proptest",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-isobmff"
+version = "0.1.0"
+dependencies = [
+ "craft-media",
+ "mediacraft-bitstream",
+ "proptest",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-media"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-opus"
+version = "0.1.0"
+dependencies = [
+ "craft-media",
+ "proptest",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-prores"
+version = "0.1.0"
+dependencies = [
+ "craft-media",
+ "mediacraft-bitstream",
+ "proptest",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

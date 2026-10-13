@@ -1,0 +1,20 @@
+[package]
+name = "craft-isobmff"
+description = "Clean-room ISO BMFF (MP4) and QuickTime (MOV) demuxer and progressive faststart muxer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mediacraft-bitstream = { workspace = true }
+craft-media = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
