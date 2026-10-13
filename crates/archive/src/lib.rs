@@ -15,7 +15,9 @@ pub mod inspect;
 pub mod safety;
 
 pub use detect::{ArchiveFormat, ZipKind, detect_bytes, detect_format, zip_kind_for_path};
-pub use extract::extract_archive;
+pub use extract::{
+    ExtractionPolicy, ExtractionReport, SkippedEntry, extract_archive, extract_archive_with_report,
+};
 pub use inspect::{ArchiveEntryInfo, ArchiveSummary, inspect_archive, inspect_bytes};
 pub use safety::{ResourceBudget, assert_tree_contained, safe_destination, sanitize_entry_name};
 

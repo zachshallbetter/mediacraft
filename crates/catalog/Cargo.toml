@@ -12,6 +12,7 @@ mediacraft-bitstream = { workspace = true }
 craft-pdf = { workspace = true }
 craft-archive = { workspace = true }
 craft-atomic = { workspace = true }
+tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

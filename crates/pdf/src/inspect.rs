@@ -139,6 +139,84 @@ impl PdfInspector {
         self.traverse_pages(root, &mut current_idx, target_index)
     }
 
+    /// Produces a comprehensive diagnostic receipt evaluating declared vs actual page tree geometry, encryption, and metadata.
+    pub fn diagnose(&self) -> PdfDiagnosticReport {
+        let mut warnings = Vec::new();
+        let mut page_dimensions = Vec::new();
+
+        // Enumerate reachable pages
+        let mut actual_pages = 0;
+        if let Some(root) = self.pages_root {
+            actual_pages = self.count_reachable_pages(root, 0);
+        }
+
+        for i in 0..actual_pages {
+            if let Some(dims) = self.dimensions(i) {
+                page_dimensions.push(dims);
+            }
+        }
+
+        if actual_pages != self.page_count {
+            warnings.push(format!(
+                "Declared page count ({}) differs from actual reachable pages ({})",
+                self.page_count, actual_pages
+            ));
+        }
+
+        if self.is_encrypted() {
+            warnings.push("Document has active encryption (Standard Security Handler)".to_string());
+        }
+
+        tracing::debug!(
+            version = %self.version(),
+            declared_pages = self.page_count,
+            actual_pages,
+            encrypted = self.is_encrypted(),
+            "pdf diagnostics generated"
+        );
+
+        PdfDiagnosticReport {
+            version: self.version().to_string(),
+            is_encrypted: self.is_encrypted(),
+            page_count_declared: self.page_count,
+            page_count_actual: actual_pages,
+            title: self.title(),
+            author: self.author(),
+            creator: self.creator(),
+            subject: self.subject(),
+            creation_date: self.creation_date(),
+            page_dimensions,
+            warnings,
+        }
+    }
+
+    fn count_reachable_pages(&self, node_ref: ObjRef, depth: usize) -> usize {
+        if depth > 32 {
+            // Guard against cyclic or absurdly deep page trees
+            return 0;
+        }
+        let node_obj = self.doc.get(node_ref);
+        let dict = match node_obj.as_ref() {
+            Object::Dict(d) => d,
+            _ => return 0,
+        };
+
+        if dict.name(b"Type") == Some(b"Page") {
+            return 1;
+        }
+
+        let mut count: usize = 0;
+        if let Some(Object::Array(kids)) = dict.get(b"Kids") {
+            for kid in kids {
+                if let Object::Ref(kr) = kid {
+                    count = count
+                        .saturating_add(self.count_reachable_pages(*kr, depth.saturating_add(1)));
+                }
+            }
+        }
+        count
+    }
+
     fn traverse_pages(
         &self,
         node_ref: ObjRef,
@@ -173,4 +251,20 @@ impl PdfInspector {
         }
         None
     }
+}
+
+/// Comprehensive diagnostic report of a PDF file's structure, encryption, metadata, and geometry.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PdfDiagnosticReport {
+    pub version: String,
+    pub is_encrypted: bool,
+    pub page_count_declared: usize,
+    pub page_count_actual: usize,
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub creator: Option<String>,
+    pub subject: Option<String>,
+    pub creation_date: Option<String>,
+    pub page_dimensions: Vec<[f64; 4]>,
+    pub warnings: Vec<String>,
 }

@@ -17,6 +17,9 @@ pub use collections::{
     CollectionManager, DynamicSmartCollection, LogicalOp, MatchRule, RuleGroup, StaticCollection,
 };
 pub use delivery_report::{DeliveryReport, VerificationCheckItem, generate_sample_delivery_report};
+pub use scanner::{
+    ScanErrorItem, ScanOptions, ScanReport, probe_file, scan_path, scan_path_with_report,
+};
 pub use sidecar::{MediaSidecar, SidecarError, SidecarFormat, read_sidecar, write_sidecar};
 
 use serde::{Deserialize, Serialize};

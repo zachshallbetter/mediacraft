@@ -1,6 +1,6 @@
 //! # craft-psd
 //!
-//! Faithful, lossless reader and writer for Adobe Photoshop PSD (version 1)
+//! Faithful, lossless reader and writer for standard PSD (version 1)
 //! and PSB (version 2, "large document format") files.
 //!
 //! * [`PsdFile::from_bytes`] parses a file into a format-level model;
@@ -14,9 +14,7 @@
 //!   caller supplies the merged composite (this crate never composites).
 //! * [`descriptor`] parses and writes ActionDescriptors.
 //!
-//! Implemented clean-room from Adobe's public "Photoshop File Formats
-//! Specification". Undocumented details that follow MIT-licensed psd-tools
-//! or ag-psd behavior are noted in comments.
+//! Implemented clean-room from public PSD/PSB file format specifications.
 //!
 //! The parser never panics on malformed input and enforces limits
 //! (dimensions ≤ 300000, bounded allocations, bounded descriptor nesting).
@@ -58,6 +56,7 @@ pub mod blend;
 pub mod builder;
 pub mod compression;
 pub mod descriptor;
+pub mod diagnostics;
 pub mod error;
 pub mod file;
 pub mod filter_effects;
@@ -86,6 +85,7 @@ pub use blend::BlendMode;
 pub use builder::{GroupSpec, LayerSpec, MaskSpec, PixelData, PsdBuilder};
 pub use compression::{Compression, PlaneLayout};
 pub use descriptor::{Descriptor, VersionedDescriptor};
+pub use diagnostics::PsdDiagnosticReport;
 pub use error::{PsdError, Result};
 pub use file::{GlobalLayerMask, LayerInfoPlacement, PsdFile};
 pub use header::{ColorMode, Header, Version};

@@ -94,10 +94,22 @@ impl PsdFile {
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         let mut r = Reader::new(data);
         let header = Header::read(&mut r)?;
+        tracing::debug!(
+            version = ?header.version,
+            width = header.width,
+            height = header.height,
+            channels = header.channels,
+            depth = header.depth,
+            "parsed PSD header"
+        );
         let psb = header.version.is_psb();
         let cmd_len = r.u32()?;
         let color_mode_data = r.bytes_u64(u64::from(cmd_len))?.to_vec();
         let resources = resources::read_section(&mut r)?;
+        tracing::debug!(
+            resource_count = resources.len(),
+            "parsed image resources section"
+        );
 
         let lm_len = r.len_field(psb)?;
         let mut s = r.sub(lm_len)?;

@@ -447,6 +447,7 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror 2.0.21",
+ "tracing",
  "zip",
 ]
 
@@ -511,15 +512,20 @@ dependencies = [
  "craft-media",
  "mediacraft-bitstream",
  "proptest",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
 name = "craft-matroska"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -529,6 +535,7 @@ dependencies = [
  "proptest",
  "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -548,10 +555,12 @@ dependencies = [
  "flate2",
  "md-5",
  "proptest",
+ "serde",
  "serde_json",
  "sha2",
  "stringprep",
  "thiserror 2.0.21",
+ "tracing",
  "weezl 0.2.1",
 ]
 
@@ -574,6 +583,7 @@ dependencies = [
  "proptest",
  "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -1511,6 +1521,7 @@ dependencies = [
  "mediacraft-protocol",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

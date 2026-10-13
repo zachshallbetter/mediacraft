@@ -30,22 +30,60 @@ impl Default for ScanOptions {
     }
 }
 
-/// Recursively scans a filesystem path for media assets.
+/// Detailed diagnostic report of a catalog directory scan.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ScanReport {
+    pub assets_indexed: usize,
+    pub files_scanned: usize,
+    pub directories_visited: usize,
+    pub skipped_unsupported: usize,
+    pub skipped_too_small: usize,
+    pub errors: Vec<ScanErrorItem>,
+}
+
+/// Information about an error encountered while scanning a specific path.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ScanErrorItem {
+    pub path: String,
+    pub error: String,
+}
+
+/// Recursively scans a filesystem path for media assets, returning the collected assets.
 pub fn scan_path(root: &Path, options: &ScanOptions) -> Vec<MediaAsset> {
+    scan_path_with_report(root, options).0
+}
+
+/// Recursively scans a filesystem path for media assets, returning both collected assets and a full diagnostic scan report.
+pub fn scan_path_with_report(root: &Path, options: &ScanOptions) -> (Vec<MediaAsset>, ScanReport) {
     let mut results = Vec::new();
+    let mut report = ScanReport::default();
+
     if !root.exists() {
-        return results;
+        tracing::warn!(path = %root.display(), "scan path does not exist");
+        return (results, report);
     }
 
     if root.is_file() {
+        report.files_scanned = 1;
         if let Some(asset) = probe_file(root) {
+            report.assets_indexed = 1;
             results.push(asset);
+        } else {
+            report.skipped_unsupported = 1;
         }
-        return results;
+        return (results, report);
     }
 
-    scan_dir_recursive(root, 0, options, &mut results);
-    results
+    scan_dir_recursive(root, 0, options, &mut results, &mut report);
+    tracing::info!(
+        indexed = report.assets_indexed,
+        scanned = report.files_scanned,
+        directories = report.directories_visited,
+        errors = report.errors.len(),
+        "catalog scan complete"
+    );
+
+    (results, report)
 }
 
 fn scan_dir_recursive(
@@ -53,14 +91,24 @@ fn scan_dir_recursive(
     current_depth: usize,
     options: &ScanOptions,
     results: &mut Vec<MediaAsset>,
+    report: &mut ScanReport,
 ) {
     if current_depth > options.max_depth {
         return;
     }
 
+    report.directories_visited = report.directories_visited.saturating_add(1);
+
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return,
+        Err(e) => {
+            tracing::warn!(dir = %dir.display(), error = %e, "unable to read directory");
+            report.errors.push(ScanErrorItem {
+                path: dir.to_string_lossy().to_string(),
+                error: e.to_string(),
+            });
+            return;
+        }
     };
 
     for entry in entries.flatten() {
@@ -72,17 +120,28 @@ fn scan_dir_recursive(
         }
 
         if path.is_dir() {
-            scan_dir_recursive(&path, current_depth.saturating_add(1), options, results);
+            scan_dir_recursive(
+                &path,
+                current_depth.saturating_add(1),
+                options,
+                results,
+                report,
+            );
         } else if path.is_file() {
+            report.files_scanned = report.files_scanned.saturating_add(1);
             if entry
                 .metadata()
                 .map(|m| m.len() < options.min_file_size_bytes)
                 .unwrap_or(false)
             {
+                report.skipped_too_small = report.skipped_too_small.saturating_add(1);
                 continue;
             }
             if let Some(asset) = probe_file(&path) {
+                report.assets_indexed = report.assets_indexed.saturating_add(1);
                 results.push(asset);
+            } else {
+                report.skipped_unsupported = report.skipped_unsupported.saturating_add(1);
             }
         }
     }
@@ -430,6 +489,53 @@ startxref\n\
 
         let _ = fs::remove_file(&pdf_path);
         let _ = fs::remove_file(&zip_path);
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn scanner_reports_accurate_diagnostics_and_skipped_stats() {
+        let temp_dir = std::env::temp_dir().join("mediacraft_diag_test");
+        let _ = fs::create_dir_all(&temp_dir);
+
+        // Valid WAV file
+        let wav_path = temp_dir.join("tone.wav");
+        let mut wav_bytes = vec![0u8; 44];
+        wav_bytes[0..4].copy_from_slice(b"RIFF");
+        wav_bytes[8..12].copy_from_slice(b"WAVE");
+        wav_bytes[22] = 2; // stereo
+        wav_bytes[24] = 0x80;
+        wav_bytes[25] = 0xbb; // 48000 Hz
+        wav_bytes[34] = 16; // 16-bit
+        let _ = fs::write(&wav_path, &wav_bytes);
+
+        // Tiny file (too small)
+        let tiny_path = temp_dir.join("small.wav");
+        let _ = fs::write(&tiny_path, b"tiny");
+
+        // Unsupported extension
+        let unsupported_path = temp_dir.join("readme.xyz");
+        let _ = fs::write(
+            &unsupported_path,
+            b"some unsupported content here that is big enough",
+        );
+
+        let options = ScanOptions {
+            max_depth: 2,
+            include_hidden: false,
+            min_file_size_bytes: 32,
+        };
+
+        let (assets, report) = scan_path_with_report(&temp_dir, &options);
+        assert_eq!(assets.len(), 1);
+        assert_eq!(report.assets_indexed, 1);
+        assert_eq!(report.files_scanned, 3);
+        assert_eq!(report.skipped_too_small, 1);
+        assert_eq!(report.skipped_unsupported, 1);
+        assert!(report.directories_visited >= 1);
+
+        let _ = fs::remove_file(&wav_path);
+        let _ = fs::remove_file(&tiny_path);
+        let _ = fs::remove_file(&unsupported_path);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }

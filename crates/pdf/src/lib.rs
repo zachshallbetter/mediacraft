@@ -20,4 +20,4 @@ pub use cos::{
     write_full, write_incremental,
 };
 pub use filters::{Filter, FilterError};
-pub use inspect::PdfInspector;
+pub use inspect::{PdfDiagnosticReport, PdfInspector};

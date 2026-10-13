@@ -24,6 +24,7 @@
 
 mod codec;
 mod demux;
+pub mod diagnostics;
 pub mod ebml;
 mod error;
 mod ids;
@@ -36,6 +37,7 @@ mod track;
 
 pub use codec::Codec;
 pub use demux::{Demuxer, Keyframe, MkvFile, OpenOptions, Packet, SeekPoint, open, open_with};
+pub use diagnostics::{MatroskaDiagnosticReport, MatroskaTrackReport};
 pub use error::{Error, Result};
 pub use meta::{
     Attachment, Chapter, ChapterDisplay, ClusterInfo, CuePoint, CuePosition, Edition, SeekEntry,

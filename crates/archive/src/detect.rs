@@ -22,6 +22,15 @@ impl ArchiveFormat {
             Self::GzipSingle => "GZIP",
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Zip => "zip",
+            Self::Tar => "tar",
+            Self::TarGz => "tar.gz",
+            Self::GzipSingle => "gz",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

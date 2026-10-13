@@ -11,6 +11,7 @@
 MediaCraft is a filesystem-native desktop application and background service for discovering, organizing, inspecting, transforming, validating, and delivering media assets across the Craft ecosystem.
 
 It provides:
+
 1. The **Asset Engine & Digital Asset Management** (`mediacraft-catalog`): Fast visual browsing, smart collections, metadata facets, and derivative relationship tracking.
 2. The **Background Transcode Queue & Concurrency Engine** (`mediacraft-daemon`): Multi-source batch execution, watch folder automation, and priority scheduling.
 3. The **IPC Protocol & Remote Client Commands** (`mediacraft-protocol`): Typed socket communication allowing FilmCraft and EffectCraft to dispatch background encoding jobs without blocking timeline playback.
@@ -27,11 +28,13 @@ MediaCraft is the primary empirical testbed and staging harness for architectura
 Rather than designing shared library abstractions in isolation, components are first implemented, stress-tested, and empirically verified inside MediaCraft under real multi-gigabyte production workloads before being extracted upstream:
 
 ### 1. Shared UI Contracts & Presentation Engine ([`CRAFT_UI_SCHEMA.md`](../CRAFT_UI_SCHEMA.md))
+
 - **Active Reference Consumer**: `mediacraft-app` acts as the reference workbench and testbed for `craft-ui` across its 5 primary workspaces (Catalog, Inspector, Queue, Automations, Settings).
 - **Component Qualification**: Empirically validates presentation widgets, dockable panel hierarchies, tabbed workspaces, facet filter chips, canvas controls, and rich procedural thumbnails without causing event loop latency or window dormancy.
 - **Service Decoupling**: Proves seamless integration with `craft-quit` for non-blocking shutdown confirmation, `craft-settings` for schema-validated configuration storage, and `craft-atomic` for crash-safe state persistence.
 
 ### 2. Clean-Room Media Infrastructure ([`CRAFT_MEDIA_RFC.md`](../CRAFT_MEDIA_RFC.md))
+
 - **5-Layer Media Stack**: Implements and stages the complete clean-room media pipeline proposed in `CRAFT_MEDIA_RFC.md`:
   - *Bitstream Primitives*: Pure-Rust MSB/LSB bit readers/writers, Exp-Golomb, and RBSP handling (`craft-bitstream`).
   - *Audio Infrastructure*: AAC-LC encoder/decoder (`craft-aac`), lossless FLAC (`craft-flac`), and Opus (`craft-opus`).
@@ -41,11 +44,17 @@ Rather than designing shared library abstractions in isolation, components are f
 - **Empirical Oracles**: Codec implementations are verified against rigorous mathematical and ffmpeg/ffprobe verification oracles (`mediacraft-oracles`), proving bit-exactness, zero panics, and conformance.
 
 ### 3. Shared Library Architecture & Document Packaging ([`CRAFT_LIBS_RFC.md`](../CRAFT_LIBS_RFC.md))
+
 - **System Contracts**: Proves adherence to `craft-libs` core non-negotiables: crash-safe atomic write ordering (`sync_file < rename < sync_dir` in `craft-atomic`), self-healing configuration backups in `craft-settings`, and signed 64-bit media time in `craft-time`.
 - **Document & Archive Staging**: Houses the initial staging and consumer testing for:
   - *`craft-pdf`*: Pure-Rust ISO 32000 COS object graph, stream filters (Flate, LZW, ASCII85), crypt security handlers (RC4, AES-128/256), and metadata inspection.
   - *`craft-archive`*: Safe multi-format unarchiver (ZIP, TAR, TAR.GZ) with `ResourceBudget` decompression limits, path containment, and Zip Slip traversal prevention.
-  - *`craft-psd`*: Adobe Photoshop layered raster image decoder for multi-app asset ingestion.
+  - *`craft-psd`*: Layered raster image decoder for multi-app asset ingestion.
+
+### 4. Creative File Format & Conversion Reference ([`FORMAT_COMPATIBILITY_REFERENCE.md`](../FORMAT_COMPATIBILITY_REFERENCE.md))
+
+- **Four Creative Document Paradigms**: Directly aligns MediaCraft cataloging, thumbnail extraction, and transcode services with the suite-wide compatibility matrix covering Raster (`.psd`/`.psb`), Vector (`.ai`/`.svg`/`.pdf`), Publishing (`.indd`/`.idml`), and Animation (`.fla`/`.xfl`/`.swf`).
+- **Four-Tier Claim Integrity**: Adheres to the strict claim governance ($\text{Documented} \neq \text{Implemented} \neq \text{Tested} \neq \text{Empirically Validated}$) across all media decoders and muxers.
 
 ---
 
@@ -102,6 +111,7 @@ mediacraft/
 ## 4. Strict Non-Negotiables
 
 All crates in this workspace adhere to the authoritative Craft shared library standards:
+
 - `#![forbid(unsafe_code)]` enforced across every crate.
 - `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]` on all shipped code.
 - Clean compilation for `wasm32-unknown-unknown` on all media, document, and packaging crates.

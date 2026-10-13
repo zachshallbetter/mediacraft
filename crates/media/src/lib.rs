@@ -25,7 +25,9 @@ pub mod video;
 
 pub use audio::{AudioBuffer, AudioBufferRef, ChannelLayout, SampleFormat};
 pub use descriptor::{
-    AudioStreamDescriptor, CodecParameters, Packet, StreamKind, VideoStreamDescriptor,
+    AudioStreamDescriptor, CodecParameters, Packet, PacketTimelineValidator,
+    StreamDiagnosticReport, StreamKind, TimelineAnomaly, TimelineFallbackPolicy, TimelineSummary,
+    VideoStreamDescriptor,
 };
 pub use error::{MediaError, Result};
 pub use time::{MediaTime, Rational};

@@ -1,6 +1,6 @@
 [package]
 name = "craft-psd"
-description = "Faithful, lossless reader and writer for Adobe Photoshop PSD (v1) and PSB (v2) files"
+description = "Faithful, lossless reader and writer for standard PSD (v1) and PSB (v2) image files"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -22,6 +22,7 @@ testgen = []
 thiserror = { workspace = true }
 flate2 = { workspace = true }
 serde = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

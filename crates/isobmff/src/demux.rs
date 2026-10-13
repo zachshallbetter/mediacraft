@@ -261,14 +261,22 @@ pub fn open<S: ByteSource>(src: S) -> Result<Mp4File> {
     let mut ftyp: Option<Vec<u8>> = None;
     let mut moov: Option<(u64, Vec<u8>)> = None;
     let mut moofs: Vec<(u64, Vec<u8>)> = Vec::new();
-    while offset + 8 <= len {
+    while offset.saturating_add(8) <= len {
         let n = (len - offset).min(32) as usize;
         let mut hb = [0u8; 32];
         src.read_at(offset, &mut hb[..n])?;
         let h = parse_box_header(&hb[..n])?;
-        let size = h.size.unwrap_or(len - offset);
+        let size = match h.size {
+            Some(s) => {
+                if offset.saturating_add(s) > len {
+                    return Err(Error::Truncated("box payload"));
+                }
+                s
+            }
+            None => len - offset,
+        };
         let end = offset.saturating_add(size).min(len);
-        let body_len = end.saturating_sub(offset + h.header_len);
+        let body_len = end.saturating_sub(offset.saturating_add(h.header_len));
         let read_body = |max: u64| -> Result<Vec<u8>> {
             if body_len > max {
                 return Err(Error::TooLarge("header box"));
@@ -276,17 +284,35 @@ pub fn open<S: ByteSource>(src: S) -> Result<Mp4File> {
             read_range(&src, offset + h.header_len, body_len)
         };
         match &h.kind.0 {
-            b"ftyp" if ftyp.is_none() => ftyp = Some(read_body(1 << 16)?),
-            b"moov" if moov.is_none() => moov = Some((offset, read_body(MAX_HEADER_BOX)?)),
-            b"moof" => moofs.push((offset, read_body(MAX_HEADER_BOX)?)),
+            b"ftyp" if ftyp.is_none() => {
+                ftyp = Some(read_body(1 << 16)?);
+                tracing::debug!("discovered ftyp box at offset {}", offset);
+            }
+            b"moov" if moov.is_none() => {
+                moov = Some((offset, read_body(MAX_HEADER_BOX)?));
+                tracing::debug!("discovered moov box at offset {}", offset);
+            }
+            b"moof" => {
+                moofs.push((offset, read_body(MAX_HEADER_BOX)?));
+                tracing::debug!("discovered moof fragment at offset {}", offset);
+            }
             _ => {}
         }
-        if h.size.is_none() {
+        if h.size.is_none() || size == 0 {
             break;
         }
-        offset = offset.saturating_add(size);
+        let next_offset = offset.saturating_add(size);
+        if next_offset <= offset {
+            break;
+        }
+        offset = next_offset;
     }
     let (moov_offset, moov) = moov.ok_or(Error::NoMoov)?;
+    tracing::debug!(
+        moov_offset = moov_offset,
+        fragment_count = moofs.len(),
+        "parsing moov container"
+    );
     let mut file = Mp4File {
         major_brand: FourCc::default(),
         minor_version: 0,
