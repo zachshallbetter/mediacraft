@@ -43,7 +43,7 @@ pub enum ContainerFormat {
 }
 
 /// Target video codec.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VideoCodec {
     H264,
@@ -56,12 +56,14 @@ pub enum VideoCodec {
 }
 
 /// Target audio codec.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioCodec {
     AacLc,
     Pcm16Le,
     Pcm24Le,
+    Flac,
+    Opus,
     PassThrough,
     None,
 }

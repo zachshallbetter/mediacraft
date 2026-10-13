@@ -37,6 +37,11 @@ filmcraft-aac = { path = "../craft-compat/filmcraft/crates/aac" }
 filmcraft-isobmff = { path = "../craft-compat/filmcraft/crates/isobmff" }
 filmcraft-h264 = { path = "../craft-compat/filmcraft/crates/h264" }
 filmcraft-h264enc = { path = "../craft-compat/filmcraft/crates/h264enc" }
+filmcraft-audio-dsp = { path = "../craft-compat/filmcraft/crates/audio-dsp" }
+filmcraft-flac = { path = "../craft-compat/filmcraft/crates/flac" }
+filmcraft-prores = { path = "../craft-compat/filmcraft/crates/prores" }
+filmcraft-opus = { path = "../craft-compat/filmcraft/crates/opus" }
+filmcraft-hevc = { path = "../craft-compat/filmcraft/crates/hevc" }
 
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }
 craft-quit = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }

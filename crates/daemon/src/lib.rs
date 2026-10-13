@@ -16,8 +16,11 @@
 )]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod hardware;
 pub mod ipc;
 pub mod pipeline;
+pub mod plan;
+pub mod quality;
 pub mod scheduler;
 pub mod watch_folder;
 pub mod wav;
@@ -349,7 +352,21 @@ impl QueueEngine {
             )
         };
 
-        // 1. Ensure output parent directory exists if safe
+        // 1. Compile execution plan according to contract (Milestone 6)
+        let plan = match plan::compile_execution_plan(&source_path, &output_path, &preset) {
+            Ok(p) => p,
+            Err(err) => {
+                let err_msg = format!("Preflight plan compilation failed: {err}");
+                if let Some(j) = self.jobs.iter_mut().find(|j| j.id == id) {
+                    j.state = JobState::Failed {
+                        error_message: err_msg.clone(),
+                    };
+                }
+                return Err(err_msg);
+            }
+        };
+
+        // 2. Ensure output parent directory exists if safe
         if let Some(parent) = output_path.parent()
             && !parent.as_os_str().is_empty()
             && !parent.exists()
@@ -357,7 +374,19 @@ impl QueueEngine {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        // 2. Generate actual media bytes or invoke real transcode pipeline
+        // 3. Hardware acceleration discovery (Milestone 8)
+        let hw_caps = hardware::HardwareCapabilities::detect();
+
+        // 4. Execute according to plan route and measure real quality (Milestone 7)
+        let mut quality_report = quality::QualityReport {
+            video_psnr_db: None,
+            video_ssim: None,
+            audio_integrated_lufs: None,
+            audio_true_peak_dbtp: None,
+            audio_sample_peak_dbfs: None,
+            is_simulated: false,
+        };
+
         let is_real_wav_source = source_path.exists()
             && source_path
                 .extension()
@@ -365,86 +394,260 @@ impl QueueEngine {
                 .map(|e| e.eq_ignore_ascii_case("wav"))
                 .unwrap_or(false);
 
-        let (bytes_len, duration_secs, media_bytes) = if is_real_wav_source
-            && matches!(
-                preset.container,
-                mediacraft_protocol::ContainerFormat::M4a
-                    | mediacraft_protocol::ContainerFormat::Mp4
-            ) {
-            let bitrate_bps = preset.audio_bitrate_kbps.unwrap_or(128) * 1000;
-            let receipt = pipeline::WavToM4aPipeline::transcode(
-                &source_path,
-                &output_path,
-                bitrate_bps,
-                preset.faststart,
-                None::<fn(f32)>,
-            )
-            .map_err(|e| format!("Real audio transcode failed: {e}"))?;
+        let (bytes_len, duration_secs, media_bytes) = match plan.route {
+            plan::ExecutionRoute::AudioOnly => {
+                if is_real_wav_source {
+                    let wav_data = wav::read_wav_file(&source_path)
+                        .map_err(|e| format!("Failed to read WAV source: {e}"))?;
 
-            let bytes = std::fs::read(&output_path)
-                .map_err(|e| format!("Failed to read produced deliverable: {e}"))?;
-            let dur = receipt.total_input_frames as f64 / receipt.sample_rate.max(1) as f64;
-            (receipt.total_output_bytes, dur, bytes)
-        } else {
-            let media_bytes = match preset.container {
-                mediacraft_protocol::ContainerFormat::Mp4
-                | mediacraft_protocol::ContainerFormat::M4a
-                | mediacraft_protocol::ContainerFormat::Mov => {
-                    let sample_rate = preset.audio_sample_rate.unwrap_or(48_000);
-                    let channels = preset.audio_channels.unwrap_or(2);
-                    let priming = preset.audio_priming_samples;
-                    let faststart = preset.faststart;
-                    // Generate 4 seconds of 128kbps AAC audio frames (16000 bytes)
-                    let dummy_audio = vec![0x21u8; 16000];
-                    mediacraft_bitstream::isobmff::build_synthetic_m4a(
-                        &dummy_audio,
-                        sample_rate,
-                        channels,
-                        priming,
-                        faststart,
+                    if let Ok(summary) =
+                        quality::measure_audio_loudness(&wav_data.samples, wav_data.sample_rate)
+                    {
+                        quality_report.audio_integrated_lufs = Some(summary.integrated_lufs);
+                        quality_report.audio_true_peak_dbtp = Some(summary.true_peak_dbtp);
+                        quality_report.audio_sample_peak_dbfs = Some(summary.sample_peak_dbfs);
+                    }
+
+                    if plan.audio_codec == mediacraft_protocol::AudioCodec::Flac {
+                        let int_chans: Vec<Vec<i32>> = wav_data
+                            .samples
+                            .iter()
+                            .map(|c| {
+                                c.iter()
+                                    .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i32)
+                                    .collect()
+                            })
+                            .collect();
+                        let written = pipeline::flac_adapter::encode_to_flac(
+                            &int_chans,
+                            wav_data.sample_rate,
+                            16,
+                            &output_path,
+                        )
+                        .map_err(|e| format!("FLAC transcode failed: {e}"))?;
+
+                        let bytes = std::fs::read(&output_path)
+                            .map_err(|e| format!("Failed to read output FLAC: {e}"))?;
+                        let dur = if wav_data.sample_rate > 0 {
+                            wav_data.samples.first().map(|c| c.len()).unwrap_or(0) as f64
+                                / wav_data.sample_rate as f64
+                        } else {
+                            1.0
+                        };
+                        (written as u64, dur, bytes)
+                    } else {
+                        let bitrate_bps = plan.audio_bitrate_kbps * 1000;
+                        let receipt = pipeline::WavToM4aPipeline::transcode(
+                            &source_path,
+                            &output_path,
+                            bitrate_bps,
+                            plan.faststart,
+                            None::<fn(f32)>,
+                        )
+                        .map_err(|e| format!("Real audio transcode failed: {e}"))?;
+
+                        let bytes = std::fs::read(&output_path)
+                            .map_err(|e| format!("Failed to read produced deliverable: {e}"))?;
+                        let dur =
+                            receipt.total_input_frames as f64 / receipt.sample_rate.max(1) as f64;
+                        (receipt.total_output_bytes, dur, bytes)
+                    }
+                } else {
+                    return Err("Unsupported audio source format for AudioOnly route".to_string());
+                }
+            }
+            plan::ExecutionRoute::AudioVideo => {
+                if is_real_wav_source {
+                    let wav_data = wav::read_wav_file(&source_path)
+                        .map_err(|e| format!("Failed to read WAV audio source: {e}"))?;
+
+                    if let Ok(summary) =
+                        quality::measure_audio_loudness(&wav_data.samples, wav_data.sample_rate)
+                    {
+                        quality_report.audio_integrated_lufs = Some(summary.integrated_lufs);
+                        quality_report.audio_true_peak_dbtp = Some(summary.true_peak_dbtp);
+                        quality_report.audio_sample_peak_dbfs = Some(summary.sample_peak_dbfs);
+                    }
+
+                    let num_samples = wav_data.samples.first().map(|c| c.len()).unwrap_or(0);
+                    let audio_frame = mediacraft_protocol::stream::AudioFrame {
+                        samples: wav_data.samples.clone(),
+                        sample_rate: wav_data.sample_rate,
+                        channels: wav_data.channels,
+                        pts: 0,
+                        timebase: mediacraft_protocol::stream::Rational::new(
+                            1,
+                            wav_data.sample_rate,
+                        ),
+                    };
+
+                    let dur_sec = num_samples as f64 / wav_data.sample_rate.max(1) as f64;
+                    let fps = (plan.fps_num as f64 / plan.fps_den.max(1) as f64).max(1.0);
+                    let num_video_frames = (dur_sec * fps).round().max(1.0) as usize;
+
+                    let mut video_frames = Vec::with_capacity(num_video_frames);
+                    for i in 0..num_video_frames {
+                        let pts = (i as u32) * plan.fps_den;
+                        video_frames.push(mediacraft_protocol::stream::VideoFrame::black(
+                            plan.width,
+                            plan.height,
+                            pts as i64,
+                            mediacraft_protocol::stream::Rational::new(plan.fps_den, plan.fps_num),
+                        ));
+                    }
+
+                    let config = pipeline::av_pipeline::AvPipelineConfig {
+                        width: plan.width,
+                        height: plan.height,
+                        fps_num: plan.fps_num,
+                        fps_den: plan.fps_den,
+                        video_bitrate_kbps: preset.video_bitrate_kbps,
+                        video_crf: Some(plan.crf as f32),
+                        audio_sample_rate: wav_data.sample_rate,
+                        audio_channels: wav_data.channels,
+                        audio_bitrate_bps: plan.audio_bitrate_kbps * 1000,
+                        faststart: plan.faststart,
+                    };
+
+                    let pipeline = pipeline::av_pipeline::AvPipeline::new(config);
+                    let receipt = pipeline
+                        .transcode(&output_path, &video_frames, &audio_frame, None::<fn(f32)>)
+                        .map_err(|e| format!("AV transcode failed: {e}"))?;
+
+                    let bytes = std::fs::read(&output_path)
+                        .map_err(|e| format!("Failed to read produced deliverable: {e}"))?;
+                    let dur = receipt.video_frames_encoded as f64
+                        / (plan.fps_num as f64 / plan.fps_den.max(1) as f64);
+                    (receipt.total_output_bytes, dur, bytes)
+                } else {
+                    let decoded_frames =
+                        pipeline::video_demux_adapter::VideoDemuxer::decode_all_frames(
+                            &source_path,
+                        )
+                        .map_err(|e| format!("Failed to demux/decode video source: {e}"))?;
+                    if decoded_frames.is_empty() {
+                        return Err(
+                            "Source video container contains no decodable video frames".to_string()
+                        );
+                    }
+
+                    let dummy_audio = mediacraft_protocol::stream::AudioFrame {
+                        samples: vec![vec![0.0f32; 48000], vec![0.0f32; 48000]],
+                        sample_rate: 48000,
+                        channels: 2,
+                        pts: 0,
+                        timebase: mediacraft_protocol::stream::Rational::HZ_48000,
+                    };
+
+                    let config = pipeline::av_pipeline::AvPipelineConfig {
+                        width: plan.width,
+                        height: plan.height,
+                        fps_num: plan.fps_num,
+                        fps_den: plan.fps_den,
+                        video_bitrate_kbps: preset.video_bitrate_kbps,
+                        video_crf: Some(plan.crf as f32),
+                        audio_sample_rate: 48000,
+                        audio_channels: 2,
+                        audio_bitrate_bps: plan.audio_bitrate_kbps * 1000,
+                        faststart: plan.faststart,
+                    };
+
+                    let pipeline = pipeline::av_pipeline::AvPipeline::new(config);
+                    let receipt = pipeline
+                        .transcode(&output_path, &decoded_frames, &dummy_audio, None::<fn(f32)>)
+                        .map_err(|e| format!("AV transcode failed: {e}"))?;
+
+                    if let Some(first_orig) = decoded_frames.first()
+                        && let Ok(Some(first_reencoded)) =
+                            pipeline::video_demux_adapter::VideoDemuxer::decode_preview_frame(
+                                &output_path,
+                                0.0,
+                            )
+                    {
+                        if let Ok(psnr) = quality::calculate_psnr(first_orig, &first_reencoded) {
+                            quality_report.video_psnr_db = Some(psnr);
+                        }
+                        if let Ok(ssim) = quality::calculate_ssim(first_orig, &first_reencoded) {
+                            quality_report.video_ssim = Some(ssim);
+                        }
+                    }
+
+                    let bytes = std::fs::read(&output_path)
+                        .map_err(|e| format!("Failed to read produced deliverable: {e}"))?;
+                    let dur = receipt.video_frames_encoded as f64
+                        / (plan.fps_num as f64 / plan.fps_den.max(1) as f64);
+                    (receipt.total_output_bytes, dur, bytes)
+                }
+            }
+            plan::ExecutionRoute::VideoOnly => {
+                let decoded_frames =
+                    pipeline::video_demux_adapter::VideoDemuxer::decode_all_frames(&source_path)
+                        .map_err(|e| format!("Failed to demux/decode video source: {e}"))?;
+                if decoded_frames.is_empty() {
+                    return Err(
+                        "Source video container contains no decodable video frames".to_string()
+                    );
+                }
+
+                if matches!(
+                    plan.video_codec,
+                    mediacraft_protocol::VideoCodec::ProRes422
+                        | mediacraft_protocol::VideoCodec::ProRes4444
+                ) {
+                    let mut prores_enc = pipeline::prores_adapter::ProResEncoderAdapter::new(
+                        plan.width,
+                        plan.height,
+                    );
+                    let mut bitstream = Vec::new();
+                    for frame in &decoded_frames {
+                        let frame_bytes = prores_enc
+                            .encode_frame(frame)
+                            .map_err(|e| format!("ProRes encoding failed: {e}"))?;
+                        bitstream.extend_from_slice(&frame_bytes);
+                    }
+                    craft_atomic::atomic_write(&output_path, &bitstream)
+                        .map_err(|e| format!("Failed to write ProRes output: {e}"))?;
+                    let dur = decoded_frames.len() as f64
+                        / (plan.fps_num as f64 / plan.fps_den.max(1) as f64);
+                    (bitstream.len() as u64, dur, bitstream)
+                } else {
+                    let mut h264_enc = pipeline::h264_adapter::H264EncoderAdapter::new(
+                        plan.width,
+                        plan.height,
+                        plan.fps_num,
+                        plan.fps_den,
+                        Some(plan.crf as f32),
+                        preset.video_bitrate_kbps,
+                        0,
                     )
-                }
-                mediacraft_protocol::ContainerFormat::Wav => {
-                    let mut buf = Vec::with_capacity(44 + 48000 * 4);
-                    buf.extend_from_slice(b"RIFF");
-                    let total_len = (36 + 48000 * 4) as u32;
-                    buf.extend_from_slice(&total_len.to_le_bytes());
-                    buf.extend_from_slice(b"WAVEfmt ");
-                    buf.extend_from_slice(&16u32.to_le_bytes());
-                    buf.extend_from_slice(&1u16.to_le_bytes());
-                    buf.extend_from_slice(&2u16.to_le_bytes());
-                    buf.extend_from_slice(&48000u32.to_le_bytes());
-                    buf.extend_from_slice(&(48000u32 * 4).to_le_bytes());
-                    buf.extend_from_slice(&4u16.to_le_bytes());
-                    buf.extend_from_slice(&16u16.to_le_bytes());
-                    buf.extend_from_slice(b"data");
-                    buf.extend_from_slice(&(48000u32 * 4).to_le_bytes());
-                    buf.resize(44 + 48000 * 4, 0);
-                    buf
-                }
-                mediacraft_protocol::ContainerFormat::Mxf => {
-                    // Generate standard MXF header and partition structure
-                    let mut buf = Vec::with_capacity(16384);
-                    buf.extend_from_slice(&[
-                        0x06, 0x0e, 0x2b, 0x34, 0x02, 0x05, 0x01, 0x01, 0x0d, 0x01, 0x02, 0x01,
-                        0x01, 0x02, 0x04, 0x00,
-                    ]);
-                    buf.resize(16384, 0);
-                    buf
-                }
-            };
+                    .map_err(|e| format!("H264 encoder init failed: {e}"))?;
 
-            let bytes_len = media_bytes.len() as u64;
-            let duration_secs = 4.0;
+                    let mut bitstream = Vec::new();
+                    for frame in &decoded_frames {
+                        let nalus = h264_enc
+                            .encode(frame)
+                            .map_err(|e| format!("H264 encode failed: {e}"))?;
+                        for pkt in nalus {
+                            bitstream.extend_from_slice(&pkt.data);
+                        }
+                    }
+                    let flushed = h264_enc
+                        .flush()
+                        .map_err(|e| format!("H264 flush failed: {e}"))?;
+                    for pkt in flushed {
+                        bitstream.extend_from_slice(&pkt.data);
+                    }
 
-            // Atomically write the deliverable output file using craft-atomic
-            craft_atomic::atomic_write(&output_path, &media_bytes)
-                .map_err(|e| format!("Atomic write of deliverable failed: {e}"))?;
-
-            (bytes_len, duration_secs, media_bytes)
+                    craft_atomic::atomic_write(&output_path, &bitstream)
+                        .map_err(|e| format!("Failed to write H264 output: {e}"))?;
+                    let dur = decoded_frames.len() as f64
+                        / (plan.fps_num as f64 / plan.fps_den.max(1) as f64);
+                    (bitstream.len() as u64, dur, bitstream)
+                }
+            }
         };
 
-        // 4. Generate SHA-256 cryptographic receipt and write atomically
+        // 5. Generate SHA-256 cryptographic receipt and write atomically
         let receipt_path = output_path.with_extension(format!(
             "{}.receipt.json",
             output_path
@@ -456,24 +659,30 @@ impl QueueEngine {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let receipt_json = format!(
-            "{{\n  \"target_file\": \"{}\",\n  \"source_file\": \"{}\",\n  \"preset_id\": \"{}\",\n  \"bytes\": {},\n  \"duration_secs\": {},\n  \"faststart_compliant\": true,\n  \"priming_delay_samples\": 1024,\n  \"created_unix_ts\": {}\n}}\n",
-            output_path.display(),
-            source_path.display(),
-            preset.id,
-            bytes_len,
-            duration_secs,
-            created_ts,
-        );
-        let _ = craft_atomic::atomic_write(&receipt_path, receipt_json.as_bytes());
+        let receipt_data = serde_json::json!({
+            "target_file": output_path.display().to_string(),
+            "source_file": source_path.display().to_string(),
+            "preset_id": preset.id,
+            "bytes": bytes_len,
+            "duration_secs": duration_secs,
+            "faststart_compliant": preset.faststart,
+            "priming_delay_samples": preset.audio_priming_samples,
+            "hardware_backend": hw_caps.preferred_backend,
+            "quality_report": quality_report,
+            "created_unix_ts": created_ts,
+        });
+        if let Ok(receipt_json) = serde_json::to_string_pretty(&receipt_data) {
+            let _ = craft_atomic::atomic_write(&receipt_path, receipt_json.as_bytes());
+        }
 
-        // 5. Evaluate delivery contract and persist .contract.json report atomically
+        // 6. Evaluate delivery contract and persist .contract.json report atomically
         if let Some(report) = validate_deliverable(
             &source_path,
             &output_path,
             &media_bytes,
             &preset,
             duration_secs,
+            Some(&quality_report),
         ) {
             let contract_path = output_path.with_extension(format!(
                 "{}.contract.json",
@@ -487,7 +696,7 @@ impl QueueEngine {
             }
         }
 
-        // 6. Update engine job state to Completed
+        // 7. Update engine job state to Completed
         if let Some(job) = self.jobs.iter_mut().find(|j| j.id == id) {
             job.state = JobState::Completed {
                 duration_secs,
@@ -575,6 +784,7 @@ pub fn validate_deliverable(
     media_bytes: &[u8],
     preset: &EncodingPreset,
     duration_secs: f64,
+    quality_report: Option<&quality::QualityReport>,
 ) -> Option<ValidationReport> {
     let contract = preset.contract.as_ref()?;
     let mut findings = Vec::new();
@@ -650,18 +860,28 @@ pub fn validate_deliverable(
         });
     }
 
-    // 3. Audio True Peak Limit
+    // 3. Audio True Peak Limit (ITU-R BS.1770-4)
     if let Some(max_peak) = contract.max_true_peak_dbfs {
-        let observed_peak = -1.2f32;
-        let (passed, severity) = if observed_peak <= max_peak {
-            (true, ValidationSeverity::Accept)
-        } else {
-            (false, ValidationSeverity::Reject)
-        };
+        let (passed, observed, severity) =
+            if let Some(peak) = quality_report.and_then(|q| q.audio_true_peak_dbtp) {
+                let observed_peak = peak as f32;
+                let (p, s) = if observed_peak <= max_peak {
+                    (true, ValidationSeverity::Accept)
+                } else {
+                    (false, ValidationSeverity::Reject)
+                };
+                (p, format!("{observed_peak:.1} dBTP"), s)
+            } else {
+                (
+                    true,
+                    "Not metered / audio stream not measured".to_string(),
+                    ValidationSeverity::Accept,
+                )
+            };
 
         findings.push(ValidationFinding {
             criterion: "Audio True Peak Limit (ITU-R BS.1770-4)".to_string(),
-            observed: format!("{observed_peak:.1} dBFS"),
+            observed,
             expected: format!("≤ {max_peak:.1} dBFS"),
             severity,
             passed,
@@ -671,19 +891,29 @@ pub fn validate_deliverable(
     // 4. Integrated Loudness (LUFS)
     if let Some(target_lufs) = contract.target_lufs {
         let tolerance = contract.lufs_tolerance.unwrap_or(1.0);
-        let observed_lufs = -23.8f32;
-        let delta = (observed_lufs - target_lufs).abs();
-        let (passed, severity) = if delta <= tolerance {
-            (true, ValidationSeverity::Accept)
-        } else if delta <= tolerance * 2.0 {
-            (true, ValidationSeverity::Warn)
-        } else {
-            (false, ValidationSeverity::Reject)
-        };
+        let (passed, observed, severity) =
+            if let Some(lufs) = quality_report.and_then(|q| q.audio_integrated_lufs) {
+                let observed_lufs = lufs as f32;
+                let delta = (observed_lufs - target_lufs).abs();
+                let (p, s) = if delta <= tolerance {
+                    (true, ValidationSeverity::Accept)
+                } else if delta <= tolerance * 2.0 {
+                    (true, ValidationSeverity::Warn)
+                } else {
+                    (false, ValidationSeverity::Reject)
+                };
+                (p, format!("{observed_lufs:.1} LUFS (Δ {delta:.1} LU)"), s)
+            } else {
+                (
+                    true,
+                    "Not metered / audio stream not measured".to_string(),
+                    ValidationSeverity::Accept,
+                )
+            };
 
         findings.push(ValidationFinding {
             criterion: "Integrated Loudness (EBU R128 / ITU-R BS.1770)".to_string(),
-            observed: format!("{observed_lufs:.1} LUFS (Δ {delta:.1} LU)"),
+            observed,
             expected: format!("{target_lufs:.1} ± {tolerance:.1} LUFS"),
             severity,
             passed,
@@ -723,6 +953,27 @@ pub fn validate_deliverable(
             criterion: "Maximum Deliverable Size".to_string(),
             observed: format!("{actual_bytes} bytes"),
             expected: format!("≤ {max_bytes} bytes"),
+            severity,
+            passed,
+        });
+    }
+
+    // 7. Video Reconstruction Fidelity (PSNR / SSIM)
+    if let Some(psnr) = quality_report.and_then(|q| q.video_psnr_db) {
+        let ssim_str = quality_report
+            .and_then(|q| q.video_ssim)
+            .map(|s| format!(", SSIM {s:.4}"))
+            .unwrap_or_default();
+        let passed = psnr >= 25.0;
+        let severity = if passed {
+            ValidationSeverity::Accept
+        } else {
+            ValidationSeverity::Warn
+        };
+        findings.push(ValidationFinding {
+            criterion: "Video Reconstruction Fidelity (PSNR/SSIM)".to_string(),
+            observed: format!("{psnr:.2} dB{ssim_str}"),
+            expected: "≥ 25.00 dB PSNR (Broadcast Quality)".to_string(),
             severity,
             passed,
         });
@@ -862,15 +1113,26 @@ mod tests {
         let _ = std::fs::create_dir_all(&temp_dir);
         let out_file = temp_dir.join("render_output.mp4");
 
-        let job_id = engine.add_job(
-            PathBuf::from("/sources/raw_footage.mov"),
-            out_file.clone(),
-            EncodingPreset::default(),
-            10,
-        );
+        let src_file = temp_dir.join("test_input.wav");
+        let left = vec![0.05f32; 48000];
+        let right = vec![-0.05f32; 48000];
+        crate::wav::write_wav_file(&src_file, 2, 48000, &[&left, &right]).unwrap();
+
+        let preset = EncodingPreset {
+            width: Some(640),
+            height: Some(360),
+            video_bitrate_kbps: Some(2000),
+            contract: Some(mediacraft_protocol::DeliveryContract {
+                target_lufs: None,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let job_id = engine.add_job(src_file.clone(), out_file.clone(), preset, 10);
 
         let res = engine.execute_job_to_completion(job_id);
-        assert!(res.is_ok());
+        assert!(res.is_ok(), "transcode failed: {:?}", res.err());
         let (duration, bytes) = res.unwrap();
         assert!(duration > 0.0);
         assert!(bytes > 0);
@@ -895,6 +1157,7 @@ mod tests {
         assert!(report.findings.len() >= 4);
 
         // Cleanup test directory
+        let _ = std::fs::remove_file(&src_file);
         let _ = std::fs::remove_file(&out_file);
         let _ = std::fs::remove_file(&receipt_file);
         let _ = std::fs::remove_file(&contract_file);

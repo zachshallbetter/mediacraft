@@ -17,6 +17,11 @@ filmcraft-aac = { workspace = true }
 filmcraft-isobmff = { workspace = true }
 filmcraft-h264 = { workspace = true }
 filmcraft-h264enc = { workspace = true }
+filmcraft-audio-dsp = { workspace = true }
+filmcraft-flac = { workspace = true }
+filmcraft-prores = { workspace = true }
+filmcraft-opus = { workspace = true }
+filmcraft-hevc = { workspace = true }
 craft-atomic = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -5,9 +5,11 @@
 
 pub mod aac_adapter;
 pub mod av_pipeline;
+pub mod flac_adapter;
 pub mod h264_adapter;
 pub mod m4a_adapter;
 pub mod mp4_mux_adapter;
+pub mod prores_adapter;
 pub mod video_demux_adapter;
 
 use std::fs::File;

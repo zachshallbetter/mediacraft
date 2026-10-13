@@ -747,8 +747,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-audio-dsp"
+version = "0.7.2"
+
+[[package]]
 name = "filmcraft-bitstream"
 version = "0.7.2"
+
+[[package]]
+name = "filmcraft-flac"
+version = "0.7.2"
+dependencies = [
+ "filmcraft-bitstream",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "filmcraft-h264"
@@ -769,10 +781,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-hevc"
+version = "0.7.2"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "filmcraft-isobmff"
 version = "0.7.2"
 dependencies = [
  "filmcraft-bitstream",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "filmcraft-opus"
+version = "0.7.2"
+
+[[package]]
+name = "filmcraft-prores"
+version = "0.7.2"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
  "thiserror 2.0.21",
 ]
 
@@ -1296,10 +1330,15 @@ version = "0.1.0"
 dependencies = [
  "craft-atomic",
  "filmcraft-aac",
+ "filmcraft-audio-dsp",
  "filmcraft-bitstream",
+ "filmcraft-flac",
  "filmcraft-h264",
  "filmcraft-h264enc",
+ "filmcraft-hevc",
  "filmcraft-isobmff",
+ "filmcraft-opus",
+ "filmcraft-prores",
  "mediacraft-bitstream",
  "mediacraft-protocol",
  "proptest",

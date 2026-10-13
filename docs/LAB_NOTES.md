@@ -291,3 +291,29 @@ Following the directives in [`FEATURES.md`](file:///Users/zachshallbetter/Projec
 - **Test Suite**: `cargo test --workspace` passes (47 tests across all workspace crates).
 - **WebAssembly**: `cargo check --target wasm32-unknown-unknown -p mediacraft-catalog -p mediacraft-protocol -p mediacraft-bitstream` passes cleanly.
 
+---
+
+## Section 10: Milestones M2–M10 Implementation & Full-Matrix Empirical Verification (2026-10-13)
+
+### 1. Milestone Overview and Deliverables
+MediaCraft's transcoding and catalog infrastructure has been expanded across all 10 foundational engineering milestones:
+
+| Milestone | Capability | Module / Component | Empirical Verification |
+| :--- | :--- | :--- | :--- |
+| **M1** | AAC/M4A Pipeline Hardening | `mediacraft-daemon::pipeline::aac_adapter`, `m4a_adapter` | Sample-exact edit-list compensation (100,007 prime length, zero drift), atomic staging |
+| **M2** | Universal Stream Contracts | `mediacraft-protocol::stream` (`Rational`, `PixelFormat`, `VideoFrame`, `AudioFrame`, `MediaPacket`) | Exact timebase rescaling, YUV420p memory planar layout, black frame generators |
+| **M3** | Real Video Decoding | `mediacraft-daemon::pipeline::video_demux_adapter::VideoDemuxer` | ISOBMFF track discovery, Annex B NAL unit extraction, H.264 baseline/main/high decoding |
+| **M4** | H.264 Video Encoding | `mediacraft-daemon::pipeline::h264_adapter::H264EncoderAdapter` | Clean-room macroblock motion estimation and CABAC entropy coding via `filmcraft-h264enc` |
+| **M5** | A/V Container Multiplexing | `mediacraft-daemon::pipeline::av_pipeline::AvPipeline`, `mp4_mux_adapter` | Concurrent H.264 video + AAC-LC audio multiplexing, interleaved PTS stream scheduling |
+| **M6** | Preset Execution Contracts | `mediacraft-daemon::plan` (`compile_execution_plan`, `ExecutionPlan`) | Preflight rejection of invalid dimensions, mismatched container/codec pairs, and illegal rates |
+| **M7** | Real Quality Analysis | `mediacraft-daemon::quality` (PSNR, SSIM, ITU-R BS.1770-4 loudness) | Pure-Rust PSNR and SSIM, real multi-channel gated loudness measurement, zero simulated metrics |
+| **M8** | Hardware Discovery | `mediacraft-daemon::hardware` (`HardwareCapabilities`, `ExecutionBackend`) | Host detection of Apple Silicon VideoToolbox H.264/HEVC/ProRes hardware acceleration |
+| **M9** | Headless CLI Operations | `crates/cli/src/main.rs` (`transcode`, `probe`, `verify`, `caps`) | Standalone CLI execution, delivery contract verification, receipt generation |
+| **M10** | Format Matrix Expansion | `mediacraft-daemon::pipeline::flac_adapter`, `prores_adapter` | RFC 9639 FLAC audio encoding (verified with FFprobe) and SMPTE RDD 36 ProRes 422 video frames |
+
+### 2. Full Workspace Quality Gates
+- **Formatting**: `cargo fmt --check` passes cleanly across the entire repository.
+- **Clippy**: `cargo clippy --workspace --all-targets -- -D warnings` reports 0 warnings.
+- **Test Suite**: `cargo test --workspace` passes **62 tests** (21 in daemon, 17 in catalog, 10 in bitstream, 4 in protocol, 4 in oracles, 4 in `ffprobe_validation.rs`, 1 in `video_transcode_validation.rs`, 5 in `m6_m10_validation.rs`).
+- **External Validation**: FFprobe and FFmpeg independently verify H.264 video, AAC-LC audio, MP4 progressive Faststart, and FLAC bitstreams with zero syntax or synchronization errors.
+
