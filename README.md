@@ -22,19 +22,46 @@ It provides:
 
 ## 2. Workspace Topology
 
+MediaCraft is organized as an integrated cargo workspace containing 22 high-performance, `#![forbid(unsafe_code)]` member crates:
+
 ```text
 mediacraft/
 ├── Cargo.toml                  (Workspace root; MSRV 1.95, Edition 2024, forbid unsafe)
 ├── crates/
-│   ├── bitstream/              (Pure bit I/O, MSB/LSB readers/writers, Exp-Golomb, RBSP)
-│   ├── protocol/               (Typed IPC messages, job descriptors, encoding presets)
-│   ├── daemon/                 (Priority transcode queue, state machine, playback hook)
-│   ├── oracles/                (Synthetic AV sync generator, 1024-sample priming oracle)
-│   ├── cli/                    (Headless CLI binary: status, add, pause, oracle-test)
-│   └── app/                    (Dockable desktop UI using craft-ui docking & craft-quit)
+│   ├── Application & Service Layer:
+│   │   ├── app/                (Desktop workspace UI using craft-ui docking, theme & craft-quit)
+│   │   ├── catalog/            (Digital Asset Management engine: audio, video, image, doc, archive facets)
+│   │   ├── daemon/             (Priority transcode queue, state machine, playback hook)
+│   │   ├── client/             (High-level async client library connecting over domain sockets)
+│   │   ├── protocol/           (Typed IPC messages, job descriptors, encoding presets)
+│   │   ├── cli/                (Headless CLI binary: status, add, pause, oracle-test)
+│   │   └── oracles/            (Synthetic AV sync generator, 1024-sample priming oracle)
+│   │
+│   ├── Clean-Room Audio Infrastructure (Staged for craft-libs):
+│   │   ├── aac/                (MPEG-4 AAC-LC encoder & decoder, ADTS parsing, psychoacoustics)
+│   │   ├── flac/               (Lossless FLAC encoder & decoder, LPC prediction, Rice coding)
+│   │   ├── opus/               (Opus audio decoder, Ogg demuxing, SILK/CELT mode parsing)
+│   │   └── audio-dsp/          (EBU R128 loudness, true-peak, cross-correlation, dynamic range)
+│   │
+│   ├── Clean-Room Video Infrastructure (Staged for craft-libs):
+│   │   ├── h264/               (H.264 / AVC video decoder, CAVLC/CABAC entropy, deblocking)
+│   │   ├── h264enc/            (H.264 / AVC video encoder, rate control, multi-pass VBR)
+│   │   ├── hevc/               (H.265 / HEVC video encoder & decoder, SAO, wavefront processing)
+│   │   └── prores/             (Apple ProRes 422/4444 decoder, frame headers, DCT reconstruction)
+│   │
+│   ├── Container & Bitstream Primitives (Staged for craft-libs):
+│   │   ├── bitstream/          (Pure bit I/O, MSB/LSB readers/writers, Exp-Golomb, RBSP)
+│   │   ├── isobmff/            (ISO Base Media File Format parser/muxer: MP4, MOV, faststart)
+│   │   ├── matroska/           (Matroska / WebM container parser: EBML header, Cluster parsing)
+│   │   └── media/              (Stream-copy remuxing facade and media routing pipeline)
+│   │
+│   └── Documents, Layered Images & Safe Packaging (Staged for craft-libs):
+│       ├── pdf/                (craft-pdf: Clean-room ISO 32000 PDF COS parser, filters, crypt, content)
+│       ├── archive/            (craft-archive: Safe ZIP/TAR inspection, Zip Slip defense, ResourceBudget)
+│       └── psd/                (craft-psd: Adobe Photoshop PSD/PSB layered raster image decoder)
 └── docs/
     ├── INTERFACE.md            (UI Screen Map: 5 workspaces, 20 screens, 14 panels)
-    ├── MEDIA_INFRASTRUCTURE_SPEC.md (5-layer shared library architecture)
+    ├── MEDIA_INFRASTRUCTURE_SPEC.md (Shared media library architecture)
     ├── CONTRACT.md             (Product & system contract, boundaries, invariants)
     ├── DEFINITION.md           (Product definition and lifecycle model)
     ├── FEATURES.md             (Comprehensive feature & capability inventory)
@@ -46,10 +73,11 @@ mediacraft/
 ## 3. Strict Non-Negotiables
 
 All crates in this workspace adhere to the authoritative Craft shared library standards:
-- `#![forbid(unsafe_code)]` enforced across all crates.
-- `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]` on shipped code.
-- Clean compilation for `wasm32-unknown-unknown` on leaf crates (`bitstream`, `protocol`, `oracles`).
+- `#![forbid(unsafe_code)]` enforced across every crate.
+- `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]` on all shipped code.
+- Clean compilation for `wasm32-unknown-unknown` on all media, document, and packaging crates.
 - Clean formatting (`cargo fmt --check`) and zero warnings (`cargo clippy --all-targets -- -D warnings`).
+- Defensive input handling: All user files and IPC messages are treated as hostile, with bounded allocation budgets and strict path containment.
 
 ---
 
@@ -57,16 +85,16 @@ All crates in this workspace adhere to the authoritative Craft shared library st
 
 ```bash
 # Run all unit and property tests across workspace
-cargo test
+cargo test --workspace
 
 # Run clippy quality gate
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 
 # Verify formatting
 cargo fmt --check
 
-# Verify WebAssembly target compilation
-cargo check --target wasm32-unknown-unknown -p mediacraft-bitstream -p mediacraft-protocol -p mediacraft-oracles
+# Verify WebAssembly target compilation on staged library crates
+cargo check --target wasm32-unknown-unknown -p craft-pdf -p craft-archive -p craft-psd -p craft-matroska -p craft-isobmff -p craft-aac -p craft-flac -p craft-opus
 
 # Run AV sync and priming delay verification oracle
 cargo run -p mediacraft-cli -- oracle-test
