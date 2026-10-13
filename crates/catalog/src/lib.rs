@@ -4,6 +4,7 @@
 //! faceted searching, and immutable derivative relationship tracking (originals -> proxies/deliveries).
 
 pub mod batch_rename;
+pub mod duplicates;
 pub mod scanner;
 
 use serde::{Deserialize, Serialize};
@@ -771,6 +772,14 @@ impl MediaCatalog {
             *counts.entry(a.kind).or_insert(0) += 1;
         }
         counts
+    }
+
+    /// Detects exact and near-duplicate assets across the indexed catalog.
+    pub fn find_duplicate_clusters(&self) -> Vec<duplicates::DuplicateCluster> {
+        let finder = duplicates::DuplicateFinder::new();
+        let mut clusters = finder.find_exact_duplicates(&self.assets);
+        clusters.extend(finder.find_near_duplicates(&self.assets));
+        clusters
     }
 }
 

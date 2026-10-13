@@ -28,6 +28,8 @@ use mediacraft_protocol::{
 };
 
 use automate_view::{AutomateViewState, render_automate_workspace};
+mod deliver_view;
+use deliver_view::{DeliverViewState, render_deliver_workspace};
 use inspector_view::{InspectorState, render_inspector_panel};
 use library_view::{LibraryViewContext, LibraryViewState, render_library_view};
 use process_view::{ProcessViewState, render_process_panel};
@@ -43,6 +45,7 @@ pub enum WorkspaceMode {
     Process,
     Queue,
     Automations,
+    Deliver,
 }
 
 /// Docking panels in the primary workspace layout.
@@ -82,6 +85,7 @@ pub struct MediaCraftApp {
     drawer_state: QueueDrawerState,
     queue_state: QueueViewState,
     automate_state: AutomateViewState,
+    deliver_state: DeliverViewState,
 
     // Docking layout for main workspace
     layout: Layout<Panel>,
@@ -364,6 +368,8 @@ impl MediaCraftApp {
             WorkspaceMode::Queue
         } else if std::env::args().any(|a| a == "--automations") {
             WorkspaceMode::Automations
+        } else if std::env::args().any(|a| a.starts_with("--deliver")) {
+            WorkspaceMode::Deliver
         } else if std::env::args().any(|a| a == "--process") {
             WorkspaceMode::Process
         } else if std::env::args().any(|a| a == "--inspect") {
@@ -379,6 +385,15 @@ impl MediaCraftApp {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clear_all();
+        }
+
+        let mut deliver_state = DeliverViewState::default();
+        if std::env::args().any(|a| a == "--deliver-validation") {
+            deliver_state.active_tab = deliver_view::DeliverTab::Validation;
+        } else if std::env::args().any(|a| a == "--deliver-quality") {
+            deliver_state.active_tab = deliver_view::DeliverTab::QualityAnalysis;
+        } else if std::env::args().any(|a| a == "--deliver-destinations") {
+            deliver_state.active_tab = deliver_view::DeliverTab::Destinations;
         }
 
         let mut inspector_state = InspectorState::default();
@@ -415,6 +430,7 @@ impl MediaCraftApp {
             drawer_state: QueueDrawerState::default(),
             queue_state: QueueViewState::default(),
             automate_state: AutomateViewState::default(),
+            deliver_state,
             layout,
             presets,
             editing_preset: initial_editing_preset,
@@ -1097,15 +1113,16 @@ impl eframe::App for MediaCraftApp {
                 ("⚡ Process", WorkspaceMode::Process),
                 ("📋 Queue", WorkspaceMode::Queue),
                 ("⚙ Automations", WorkspaceMode::Automations),
+                ("📦 Deliver", WorkspaceMode::Deliver),
             ];
             let active_idx = tabs
                 .iter()
                 .position(|(_, m)| *m == self.workspace_mode)
                 .unwrap_or(0);
             let tab_fit = craft_ui::tabs::fit(
-                &[82.0, 84.0, 104.0, 84.0, 82.0, 112.0],
+                &[82.0, 84.0, 104.0, 84.0, 82.0, 112.0, 86.0],
                 active_idx,
-                ui.available_width().min(580.0),
+                ui.available_width().min(680.0),
                 50.0,
                 20.0,
             );
@@ -1244,6 +1261,9 @@ impl eframe::App for MediaCraftApp {
                     &mut queue_lock,
                     &self.presets,
                 );
+            }
+            WorkspaceMode::Deliver => {
+                render_deliver_workspace(ui, &mut self.deliver_state);
             }
             WorkspaceMode::Inspect => {
                 let selected_asset = self
