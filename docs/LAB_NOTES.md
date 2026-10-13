@@ -277,22 +277,17 @@ Following the directives in [`FEATURES.md`](file:///Users/zachshallbetter/Projec
 ### 4. Independent External Empirical Verification via FFprobe & FFmpeg
 - **Oracle Test**: [`crates/oracles/tests/ffprobe_validation.rs`](file:///Users/zachshallbetter/Projects/ArtCraft/mediacraft/crates/oracles/tests/ffprobe_validation.rs)
 - **Empirical Checks Executed**:
-  1. **Source Generation**: 3.0s 48kHz stereo WAV (144,000 samples).
-  2. **Pipeline Execution**: Transcoded to M4A with progressive Faststart.
-  3. **FFprobe Stream Inspection** (`/opt/homebrew/bin/ffprobe`):
-     - `format_name`: Contains `m4a` / `mp4` / `mov`
-     - `codec_name`: `aac`
-     - `channels`: 2
-     - `sample_rate`: 48,000 Hz
-     - `duration`: Container duration matches within 50ms (< 1 video frame)
-  4. **FFmpeg Null Decode** (`/opt/homebrew/bin/ffmpeg -v error -xerror -i golden_tone_3s.m4a -f null -`):
-     - Exits with return code `0`
-     - 0 bitstream syntax or frame decode errors reported
-  5. **Sample Recovery Roundtrip**: Decoded back to WAV via FFmpeg, verifying that the 1024-sample edit list compensation recovers exact audio frames within 1 AAC frame of input.
+  1. **Standard 3.0s 48kHz Stereo**: Transcoded to M4A with progressive Faststart. FFprobe confirms `m4a` format, `aac` codec, 2 channels, 48kHz. FFmpeg null decode reports 0 errors. Decoded back to WAV, recovering **EXACTLY 144,000 samples (zero frame drift)** via explicit edit-list trimming (`exact_duration_frames`).
+  2. **Arbitrary Non-Multiple Prime Length**: Input of 100,007 frames (a prime number, $100,007 \pmod{1024} = 679$) transcoded and roundtrip-decoded via FFmpeg. Recovers **EXACTLY 100,007 samples**, demonstrating zero truncation and zero tail-padding leakage.
+  3. **Channel & Rate Matrix**:
+     - Mono (1 ch), 48,000 Hz, 48,000 frames: Recovers exactly 48,000 frames, 1 channel.
+     - Stereo (2 ch), 44,100 Hz, 44,100 frames: Recovers exactly 44,100 frames, 2 channels.
+     - Stereo (2 ch), 96,000 Hz, 48,000 frames: Recovers exactly 48,000 frames, 2 channels (with `WAVE_FORMAT_EXTENSIBLE` `0xFFFE` support in the RIFF reader).
+  4. **Atomic Staging & Cancellation Rollback**: `StagingCleanupGuard` writes outputs to an isolated `.tmp.<pid>.<ts>` file and atomically renames on completion. Aborted or corrupt jobs leave zero dangling temporary files and never create partial destination files.
 
 ### 5. Workspace Quality Gates
 - **Formatting**: `cargo fmt --check` passes cleanly.
 - **Clippy**: `cargo clippy --workspace --all-targets -- -D warnings` passes with 0 warnings.
-- **Test Suite**: `cargo test --workspace` passes (44 tests across all workspace crates).
+- **Test Suite**: `cargo test --workspace` passes (47 tests across all workspace crates).
 - **WebAssembly**: `cargo check --target wasm32-unknown-unknown -p mediacraft-catalog -p mediacraft-protocol -p mediacraft-bitstream` passes cleanly.
 

@@ -104,7 +104,7 @@ pub fn read_wav_bytes(bytes: &[u8]) -> Result<WavAudio, WavError> {
             if chunk_payload.len() < 16 {
                 return Err(WavError::InvalidHeader);
             }
-            let format_tag = u16::from_le_bytes([chunk_payload[0], chunk_payload[1]]);
+            let mut format_tag = u16::from_le_bytes([chunk_payload[0], chunk_payload[1]]);
             let channels = u16::from_le_bytes([chunk_payload[2], chunk_payload[3]]);
             let sample_rate = u32::from_le_bytes([
                 chunk_payload[4],
@@ -113,6 +113,13 @@ pub fn read_wav_bytes(bytes: &[u8]) -> Result<WavAudio, WavError> {
                 chunk_payload[7],
             ]);
             let bits_per_sample = u16::from_le_bytes([chunk_payload[14], chunk_payload[15]]);
+
+            if format_tag == 0xFFFE {
+                // WAVE_FORMAT_EXTENSIBLE: SubFormat GUID begins at offset 24
+                if chunk_payload.len() >= 26 {
+                    format_tag = u16::from_le_bytes([chunk_payload[24], chunk_payload[25]]);
+                }
+            }
 
             if format_tag != 1 && format_tag != 3 {
                 return Err(WavError::UnsupportedFormat(format_tag));

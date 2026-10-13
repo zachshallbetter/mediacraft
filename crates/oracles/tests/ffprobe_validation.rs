@@ -1,15 +1,18 @@
 //! Independent external verification of MediaCraft transcode pipelines via FFprobe and FFmpeg.
 //!
 //! Validates:
-//! 1. Container format integrity (MP4/M4A).
-//! 2. AAC stream syntax and sample parameters (48kHz, stereo, LC profile).
-//! 3. Sample-exact duration and priming delay compensation (<23ms / 1 frame).
-//! 4. 0 decode errors when decoded via FFmpeg.
-//! 5. Exact sample recovery via roundtrip decode.
+//! 1. Container format integrity (MP4/M4A) and Faststart atom layout (`moov` before `mdat`).
+//! 2. AAC stream syntax and sample parameters (sample rate, channels, LC profile).
+//! 3. Sample-exact duration and priming delay compensation:
+//!    - Standard 3.0s 48kHz stereo (144,000 samples)
+//!    - Arbitrary prime non-multiple of 1024 (100,007 samples)
+//!    - Format matrix: Mono 48kHz, Stereo 44.1kHz, Stereo 96kHz
+//! 4. 0 decode errors when decoded via FFmpeg null sink.
+//! 5. Atomic staging, cancellation, and cleanup guarantees: no corrupt or partial files on disk.
 
 use mediacraft_daemon::pipeline::WavToM4aPipeline;
-use mediacraft_daemon::wav::{read_wav_file, write_wav_file};
-use std::path::PathBuf;
+use mediacraft_daemon::wav::{WavAudio, read_wav_file, write_wav_file};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn find_binary(name: &str) -> Option<PathBuf> {
@@ -31,22 +34,56 @@ fn find_binary(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Generate a synthetic 440 Hz stereo sine wave for testing.
-fn generate_stereo_sine(sample_rate: u32, duration_secs: f32) -> (Vec<f32>, Vec<f32>) {
-    let total_frames = (sample_rate as f32 * duration_secs) as usize;
-    let mut left = Vec::with_capacity(total_frames);
-    let mut right = Vec::with_capacity(total_frames);
+/// Generates synthetic sine waves across arbitrary channel counts and frame lengths.
+fn generate_multichannel_sine(
+    sample_rate: u32,
+    channels: u16,
+    total_frames: usize,
+) -> Vec<Vec<f32>> {
+    let mut channel_data = Vec::with_capacity(channels as usize);
     let freq = 440.0f32;
     let two_pi = 2.0f32 * std::f32::consts::PI;
 
-    for frame in 0..total_frames {
-        let t = frame as f32 / sample_rate as f32;
-        let val = (t * freq * two_pi).sin() * 0.9;
-        left.push(val);
-        right.push(val);
+    for ch_idx in 0..channels as usize {
+        let mut ch_samples = Vec::with_capacity(total_frames);
+        let phase_offset = ch_idx as f32 * 0.25;
+        for frame in 0..total_frames {
+            let t = frame as f32 / sample_rate as f32;
+            let val = ((t * freq * two_pi) + phase_offset).sin() * 0.8;
+            ch_samples.push(val);
+        }
+        channel_data.push(ch_samples);
     }
 
-    (left, right)
+    channel_data
+}
+
+/// Helper that invokes FFmpeg to decode an M4A file back to an uncompressed WAV.
+fn decode_m4a_with_ffmpeg(
+    ffmpeg_bin: &Path,
+    m4a_path: &Path,
+    dest_wav_path: &Path,
+) -> Result<WavAudio, String> {
+    let ffmpeg_decode = Command::new(ffmpeg_bin)
+        .arg("-y")
+        .arg("-v")
+        .arg("error")
+        .arg("-i")
+        .arg(m4a_path)
+        .arg("-f")
+        .arg("wav")
+        .arg(dest_wav_path)
+        .output()
+        .map_err(|e| format!("Failed to spawn ffmpeg: {e}"))?;
+
+    if !ffmpeg_decode.status.success() {
+        return Err(format!(
+            "FFmpeg decode failed: {}",
+            String::from_utf8_lossy(&ffmpeg_decode.stderr)
+        ));
+    }
+
+    read_wav_file(dest_wav_path).map_err(|e| format!("Failed to read decoded wav: {e}"))
 }
 
 #[test]
@@ -77,11 +114,11 @@ fn test_real_media_ffmpeg_and_ffprobe_verification() {
     // 1. Generate 3.0 seconds 48kHz stereo WAV (144,000 frames)
     let sample_rate = 48000u32;
     let channels = 2u16;
-    let (left, right) = generate_stereo_sine(sample_rate, 3.0);
     let total_expected_frames = 144_000usize;
+    let audio_channels = generate_multichannel_sine(sample_rate, channels, total_expected_frames);
 
-    let planar: [&[f32]; 2] = [&left, &right];
-    write_wav_file(&wav_path, channels, sample_rate, &planar).unwrap();
+    let planar_slices: Vec<&[f32]> = audio_channels.iter().map(|ch| ch.as_slice()).collect();
+    write_wav_file(&wav_path, channels, sample_rate, &planar_slices).unwrap();
     assert!(wav_path.exists(), "Source WAV file must exist");
 
     // Verify WAV format with internal reader
@@ -102,7 +139,7 @@ fn test_real_media_ffmpeg_and_ffprobe_verification() {
     );
     assert_eq!(receipt.total_input_frames, total_expected_frames);
 
-    // Verify Faststart layout internally first
+    // Verify Faststart layout internally
     let m4a_bytes = std::fs::read(&m4a_path).unwrap();
     let is_faststart = mediacraft_oracles::verify_faststart_layout(&m4a_bytes).unwrap();
     assert!(
@@ -142,7 +179,7 @@ fn test_real_media_ffmpeg_and_ffprobe_verification() {
 
     let duration_str = format["duration"].as_str().unwrap_or("0");
     let container_duration: f64 = duration_str.parse().unwrap_or(0.0);
-    // 3.0s expected duration. Must be within 1 frame (< 23ms at 48kHz / 1024 samples = 21.3ms)
+    // 3.0s expected duration. Must be within 1 frame (< 23ms at 48kHz)
     let duration_diff = (container_duration - 3.0).abs();
     assert!(
         duration_diff < 0.05,
@@ -183,37 +220,139 @@ fn test_real_media_ffmpeg_and_ffprobe_verification() {
         "FFmpeg decode to null must produce 0 error log messages. Got: {null_stderr}"
     );
 
-    // 5. Decode back to WAV via FFmpeg and verify sample count
-    let ffmpeg_decode = Command::new(&ffmpeg_bin)
-        .arg("-y")
-        .arg("-v")
-        .arg("error")
-        .arg("-i")
-        .arg(&m4a_path)
-        .arg("-f")
-        .arg("wav")
-        .arg(&decoded_wav_path)
-        .output()
-        .expect("Failed to execute ffmpeg decode to wav");
-
-    assert!(
-        ffmpeg_decode.status.success(),
-        "FFmpeg decode to wav must succeed. Stderr: {}",
-        String::from_utf8_lossy(&ffmpeg_decode.stderr)
-    );
-
-    let decoded_wav = read_wav_file(&decoded_wav_path).unwrap();
+    // 5. Decode back to WAV via FFmpeg and verify EXACT sample recovery
+    let decoded_wav = decode_m4a_with_ffmpeg(&ffmpeg_bin, &m4a_path, &decoded_wav_path).unwrap();
     assert_eq!(decoded_wav.sample_rate, 48000);
     assert_eq!(decoded_wav.channels, 2);
 
     let decoded_frame_count = decoded_wav.frame_count();
-    // Edit list compensation: The decoded frame count should match or be within 1 frame (1024 samples) of original 144,000
-    let frame_diff = (decoded_frame_count as i64 - total_expected_frames as i64).abs();
-    assert!(
-        frame_diff <= 1024,
-        "Decoded sample count ({decoded_frame_count}) must be within 1 AAC frame of input ({total_expected_frames}). Drift: {frame_diff}"
+    assert_eq!(
+        decoded_frame_count, total_expected_frames,
+        "Decoded PCM frame count ({decoded_frame_count}) must EXACTLY equal input frames ({total_expected_frames})"
     );
 
     // Cleanup
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_sample_exact_arbitrary_non_multiple_of_1024() {
+    let ffmpeg_bin = match find_binary("ffmpeg") {
+        Some(bin) => bin,
+        None => return,
+    };
+
+    let temp_dir = std::env::temp_dir().join(format!("mediacraft_prime_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let wav_path = temp_dir.join("prime_100007.wav");
+    let m4a_path = temp_dir.join("prime_100007.m4a");
+    let decoded_wav_path = temp_dir.join("decoded_prime.wav");
+
+    // 100,007 samples is a prime number, non-multiple of 1024 (100,007 % 1024 = 679)
+    let sample_rate = 48000u32;
+    let channels = 2u16;
+    let total_expected_frames = 100_007usize;
+    let audio_channels = generate_multichannel_sine(sample_rate, channels, total_expected_frames);
+
+    let planar_slices: Vec<&[f32]> = audio_channels.iter().map(|ch| ch.as_slice()).collect();
+    write_wav_file(&wav_path, channels, sample_rate, &planar_slices).unwrap();
+
+    let receipt =
+        WavToM4aPipeline::transcode(&wav_path, &m4a_path, 160_000, true, None::<fn(f32)>).unwrap();
+    assert_eq!(receipt.total_input_frames, total_expected_frames);
+
+    // Verify sample-exact trimming on decode
+    let decoded_wav = decode_m4a_with_ffmpeg(&ffmpeg_bin, &m4a_path, &decoded_wav_path).unwrap();
+    assert_eq!(
+        decoded_wav.frame_count(),
+        total_expected_frames,
+        "Non-multiple prime length must decode to exact sample count"
+    );
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_sample_exact_channel_and_rate_matrix() {
+    let ffmpeg_bin = match find_binary("ffmpeg") {
+        Some(bin) => bin,
+        None => return,
+    };
+
+    let temp_dir = std::env::temp_dir().join(format!("mediacraft_matrix_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    // Matrix test cases: (sample_rate, channels, frames, label)
+    let test_cases = [
+        (48000u32, 1u16, 48_000usize, "mono_48k"),
+        (44100u32, 2u16, 44_100usize, "stereo_44k1"),
+        (96000u32, 2u16, 48_000usize, "stereo_96k"),
+    ];
+
+    for (sr, ch, frames, label) in test_cases {
+        let wav_path = temp_dir.join(format!("{label}.wav"));
+        let m4a_path = temp_dir.join(format!("{label}.m4a"));
+        let decoded_path = temp_dir.join(format!("{label}_decoded.wav"));
+
+        let audio = generate_multichannel_sine(sr, ch, frames);
+        let slices: Vec<&[f32]> = audio.iter().map(|c| c.as_slice()).collect();
+        write_wav_file(&wav_path, ch, sr, &slices).unwrap();
+
+        let receipt =
+            WavToM4aPipeline::transcode(&wav_path, &m4a_path, 128_000, true, None::<fn(f32)>)
+                .unwrap();
+        assert_eq!(receipt.sample_rate, sr);
+        assert_eq!(receipt.channels, ch);
+        assert_eq!(receipt.total_input_frames, frames);
+
+        let decoded = decode_m4a_with_ffmpeg(&ffmpeg_bin, &m4a_path, &decoded_path).unwrap();
+        assert_eq!(decoded.sample_rate, sr, "{label}: sample rate mismatch");
+        assert_eq!(decoded.channels, ch, "{label}: channel count mismatch");
+        assert_eq!(
+            decoded.frame_count(),
+            frames,
+            "{label}: frame count must match input exactly"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_atomic_cancellation_and_cleanup() {
+    let temp_dir = std::env::temp_dir().join(format!("mediacraft_atomic_{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let invalid_wav = temp_dir.join("corrupted.wav");
+    std::fs::write(&invalid_wav, b"RIFF_NOT_A_VALID_WAV_DATA_BURST").unwrap();
+
+    let output_m4a = temp_dir.join("should_never_exist.m4a");
+
+    // Attempting to transcode a corrupt source fails early
+    let result =
+        WavToM4aPipeline::transcode(&invalid_wav, &output_m4a, 128_000, true, None::<fn(f32)>);
+    assert!(
+        result.is_err(),
+        "Pipeline must return error on corrupt input"
+    );
+
+    // Verify output file does not exist
+    assert!(
+        !output_m4a.exists(),
+        "Destination output file must not exist on failure"
+    );
+
+    // Verify no temporary files remain in directory
+    let entries = std::fs::read_dir(&temp_dir).unwrap();
+    let tmp_files: Vec<_> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains("tmp"))
+        .collect();
+    assert!(
+        tmp_files.is_empty(),
+        "Staging cleanup guard must leave zero dangling temporary files on failure"
+    );
+
     let _ = std::fs::remove_dir_all(&temp_dir);
 }

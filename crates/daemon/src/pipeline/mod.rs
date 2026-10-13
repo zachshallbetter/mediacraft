@@ -75,18 +75,37 @@ impl WavToM4aPipeline {
         let priming_samples = encoder.priming_samples();
         let asc = encoder.audio_specific_config().to_vec();
 
-        // 3. Initialize M4A Multiplexer Adapter
+        // 3. Initialize M4A Multiplexer Adapter with staging file
         if let Some(parent) = output_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+
+        let staging_path = output_path.with_extension(format!(
+            "tmp.{}.{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+
+        let mut guard = StagingCleanupGuard::new(&staging_path);
+
         let out_file = File::options()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&output_path)?;
-        let mut muxer = M4aMuxerAdapter::new(out_file)?;
-        muxer.setup_audio_track(wav.sample_rate, wav.channels, &asc, priming_samples)?;
+            .open(&staging_path)?;
+
+        let mut muxer = M4aMuxerAdapter::new(out_file, Some(wav.sample_rate))?;
+        muxer.setup_audio_track(
+            wav.sample_rate,
+            wav.channels,
+            &asc,
+            priming_samples,
+            Some(total_frames as u64),
+        )?;
 
         if let Some(ref mut cb) = progress_cb {
             cb(0.35);
@@ -128,6 +147,10 @@ impl WavToM4aPipeline {
         // 6. Finalize Faststart layout (moov before mdat)
         muxer.finish(faststart)?;
 
+        // 7. Atomic commit to final output path
+        std::fs::rename(&staging_path, &output_path)?;
+        guard.disarm();
+
         if let Some(ref mut cb) = progress_cb {
             cb(1.0);
         }
@@ -157,6 +180,30 @@ impl WavToM4aPipeline {
             priming_samples,
             faststart,
         })
+    }
+}
+
+/// RAII Guard that removes an uncommitted temporary staging file on drop unless explicitly disarmed.
+struct StagingCleanupGuard<'a> {
+    path: &'a Path,
+    armed: bool,
+}
+
+impl<'a> StagingCleanupGuard<'a> {
+    fn new(path: &'a Path) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl<'a> Drop for StagingCleanupGuard<'a> {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(self.path);
+        }
     }
 }
 
