@@ -12,3 +12,6 @@ workspace = true
 
 # Intentionally dependency-free (layer L1): planar `&mut [f32]` slices in, planar slices out.
 [dependencies]
+
+[dev-dependencies]
+proptest = { workspace = true }

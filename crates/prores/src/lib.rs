@@ -1,11 +1,11 @@
-//! Clean-room Apple ProRes codec (implemented from SMPTE RDD 36).
+//! Clean-room ProRes video codec (implemented from SMPTE RDD 36).
 //!
 //! - **Decoder** ([`decode_frame`], [`decode_frame_with`]): ProRes 422 Proxy/LT/Standard/HQ and
 //!   4444/4444 XQ including the alpha channel; progressive and interlaced frames; slice-parallel
 //!   with the `threads` feature (rayon). Output is planar `u16` at 10 bits for 4:2:2 and 12 bits
 //!   for 4:4:4 by default (any depth 8..=16 on request).
 //! - **Encoder** ([`Encoder`]): ProRes 422 (all four flavours) and 4444/4444 XQ (optionally with
-//!   alpha), progressive, with per-slice quantiser rate control targeting Apple's nominal rates.
+//!   alpha), progressive, with per-slice quantiser rate control targeting nominal standard rates.
 //!
 //! See the crate README for bitstream details, accuracy and limitations.
 
@@ -29,11 +29,13 @@
 mod bits;
 mod dct;
 mod decode;
+pub mod diagnostics;
 mod encode;
 pub mod header;
 mod tables;
 
 pub use decode::{DecodeOptions, decode_frame, decode_frame_into, decode_frame_with, probe};
+pub use diagnostics::{ProResDiagnosticReport, diagnose_prores_frame};
 pub use encode::{Encoder, EncoderConfig};
 pub use header::{FrameHeader, PictureHeader};
 
@@ -163,7 +165,7 @@ impl Profile {
         }
     }
 
-    /// Apple's published nominal data rate at 1920×1080, 29.97 fps, in Mbit/s.
+    /// Nominal data rate at 1920×1080, 29.97 fps, in Mbit/s (SMPTE RDD 36).
     pub fn nominal_mbps_1080p30(self) -> f64 {
         match self {
             Profile::Proxy => 45.0,

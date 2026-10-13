@@ -58,7 +58,7 @@ Boxes with 64-bit sizes and with size 0 (runs to the end of the file) are suppor
 | `vp09` + `vpcC` | `Vp9(VpcConfig)` |
 | `apch apcn apcs apco ap4h ap4x` | `ProRes { fourcc }` |
 | `jpeg mjpa mjpb` | `Jpeg { fourcc }` |
-| `AVdn AVdh` | `Dnx { fourcc }` |
+| `AVdn AVdh` | `Dnx { fourcc }` (SMPTE VC-3) |
 | `mp4a` + `esds` (in `wave` too) | `Aac(AacConfig)`: ASC bytes + decoded object type/rate/channels; `Mp3` for OTI 0x69/0x6B |
 | `.mp3`/`.mp2` | `Mp3`: MPEG-1/2 audio of any layer (each frame header names it) |
 | PCM fourccs | `Pcm(PcmConfig)`: bits, float, endianness (`enda`, lpcm flags, `pcmC`), channels, rate |
@@ -70,8 +70,8 @@ Boxes with 64-bit sizes and with size 0 (runs to the end of the file) are suppor
 | anything else | `Unknown { fourcc, raw }` |
 
 Video entries also parse `colr` (`nclx`/`nclc`/ICC), `pasp`, `clap`, `fiel`, `gama` and `btrt` into
-`VideoParams`. The MP4 source in `filmcraft-codecs` crops every frame to `clap`'s clean aperture
-before the track's display rotation, and reports that size. Audio entries parse QuickTime sound description v0/v1/v2 into `AudioParams`.
+`VideoParams`. The MP4 source crops every frame to `clap`'s clean aperture
+before the track's display rotation, and reports that size. Audio entries parse QTFF sound description v0/v1/v2 into `AudioParams`.
 
 ### Robustness
 The parser does not panic on malformed input; every error comes back as an `Error`. Table counts are

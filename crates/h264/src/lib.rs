@@ -42,6 +42,7 @@ mod cavlc;
 mod cavlc_tables;
 mod deblock;
 mod decoder;
+pub mod diagnostics;
 pub mod dpb;
 mod error;
 mod inter;
@@ -58,6 +59,7 @@ mod tables;
 mod transform;
 
 pub use decoder::{DecodeStats, Decoder, default_threads};
+pub use diagnostics::{H264DiagnosticReport, diagnose_h264_stream};
 pub use error::{Error, Result};
 
 /// Colour description from the VUI (ITU-T H.273 code points).

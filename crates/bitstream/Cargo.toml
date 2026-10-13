@@ -10,6 +10,8 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+serde = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

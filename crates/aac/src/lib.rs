@@ -9,7 +9,7 @@
 //! HE-AAC (SBR/PS), Main/SSR/LTP profiles, coupling channels and 960-sample frames are not supported;
 //! for explicitly signalled HE-AAC only the AAC-LC core is decoded (at the core rate).
 //!
-//! Layer L0: depends only on `filmcraft-bitstream` (+ `thiserror`, optional `rayon`); no `unsafe`;
+//! Layer L0: depends only on `mediacraft-bitstream` (+ `thiserror`, optional `rayon`); no `unsafe`;
 //! builds for `wasm32-unknown-unknown`.
 //!
 //! ```
@@ -50,6 +50,7 @@
 
 mod config;
 mod decoder;
+pub mod diagnostics;
 mod encoder;
 mod huffman;
 mod huffman_tables;
@@ -62,6 +63,7 @@ pub use config::{
     AdtsHeader, AudioSpecificConfig, ElementType, ProgramConfig, config_layout, split_adts,
 };
 pub use decoder::Decoder;
+pub use diagnostics::{AacDiagnosticReport, AdtsStreamDiagnosticReport, diagnose_adts_stream};
 pub use encoder::{BitrateMode, Encoder, EncoderConfig, EncoderStats};
 pub use mdct::WindowShape;
 pub use tables::{SAMPLE_RATES, sample_rate_index};

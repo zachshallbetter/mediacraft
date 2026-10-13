@@ -56,7 +56,8 @@ pub enum VideoCodec {
     Hevc,
     ProRes422,
     ProRes4444,
-    DnxHr,
+    #[serde(rename = "vc3", alias = "dnx_hr")]
+    Vc3,
     PassThrough,
     None,
 }

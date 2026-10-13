@@ -17,7 +17,9 @@ threads = ["dep:rayon"]
 [dependencies]
 mediacraft-bitstream = { workspace = true }
 craft-media = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 rayon = { workspace = true, optional = true }
 
 [dev-dependencies]

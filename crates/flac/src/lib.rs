@@ -11,7 +11,7 @@
 //!
 //! Lossless at every compression level; the level (0–8) only trades encoding time for size.
 //!
-//! Layer L0: depends only on `filmcraft-bitstream` (+ `thiserror`); no `unsafe`; builds for
+//! Layer L0: depends only on `mediacraft-bitstream` (+ `thiserror`); no `unsafe`; builds for
 //! `wasm32-unknown-unknown`.
 //!
 //! ```
@@ -43,10 +43,12 @@
 )]
 
 mod crc;
+pub mod diagnostics;
 mod frame;
 mod md5;
 mod predict;
 
+pub use diagnostics::{FlacDiagnosticReport, FlacStreamInfo, diagnose_flac_stream};
 use frame::{FrameSpec, Stereo};
 use predict::{Effort, Subframe};
 
@@ -137,7 +139,7 @@ impl Encoder {
         let mut v = b"fLaC".to_vec();
         v.extend_from_slice(&[0, 0, 0, 34]);
         v.extend_from_slice(&self.streaminfo_with(0, 0, 0, [0; 16]));
-        let vendor = concat!("filmcraft-flac ", env!("CARGO_PKG_VERSION"));
+        let vendor = concat!("craft-flac ", env!("CARGO_PKG_VERSION"));
         let len = 4 + vendor.len() + 4;
         // last metadata block, type 4 (VORBIS_COMMENT), little-endian lengths inside
         v.push(0x84);

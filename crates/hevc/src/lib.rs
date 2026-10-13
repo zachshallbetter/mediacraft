@@ -37,6 +37,7 @@
 
 mod cabac;
 mod decoder;
+pub mod diagnostics;
 pub mod dpb;
 mod error;
 mod filter;
@@ -56,6 +57,7 @@ mod tables;
 mod transform;
 
 pub use decoder::{DecodeStats, Decoder};
+pub use diagnostics::{HEVCDiagnosticReport, diagnose_hevc_stream};
 pub use error::{Error, Result};
 
 /// Colour description from the VUI (ITU-T H.273 code points).

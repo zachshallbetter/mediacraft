@@ -38,6 +38,7 @@ mod cabac;
 mod cabac_mb;
 mod cavlc;
 mod deblock;
+pub mod diagnostics;
 mod dsp;
 mod intra;
 mod lookahead;
@@ -52,6 +53,7 @@ mod transform;
 
 use std::collections::VecDeque;
 
+pub use diagnostics::{H264EncoderDiagnosticReport, diagnose_encoder_output};
 pub use ratecontrol::{FrameStat, PassStats};
 
 use cabac::CostTable;

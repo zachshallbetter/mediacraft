@@ -435,7 +435,9 @@ dependencies = [
  "craft-media",
  "mediacraft-bitstream",
  "proptest",
+ "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -462,6 +464,9 @@ dependencies = [
 [[package]]
 name = "craft-audio-dsp"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+]
 
 [[package]]
 name = "craft-flac"
@@ -470,7 +475,9 @@ dependencies = [
  "craft-media",
  "mediacraft-bitstream",
  "proptest",
+ "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -480,7 +487,9 @@ dependencies = [
  "craft-media",
  "mediacraft-bitstream",
  "proptest",
+ "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -491,7 +500,9 @@ dependencies = [
  "mediacraft-bitstream",
  "proptest",
  "rayon",
+ "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -502,7 +513,9 @@ dependencies = [
  "mediacraft-bitstream",
  "proptest",
  "rayon",
+ "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -544,7 +557,9 @@ version = "0.1.0"
 dependencies = [
  "craft-media",
  "proptest",
+ "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -571,7 +586,9 @@ dependencies = [
  "craft-media",
  "mediacraft-bitstream",
  "proptest",
+ "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -1508,6 +1525,8 @@ name = "mediacraft-bitstream"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "serde",
+ "tracing",
 ]
 
 [[package]]

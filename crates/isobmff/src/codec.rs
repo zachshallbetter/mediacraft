@@ -191,15 +191,15 @@ pub enum CodecConfig {
     Jpeg {
         fourcc: FourCc,
     },
-    /// Avid DNxHD/DNxHR (`AVdn`, `AVdh`).
+    /// SMPTE VC-3 (`AVdn`, `AVdh`).
     Dnx {
         fourcc: FourCc,
     },
     /// Advanced Professional Video (`apv1` + `apvC`).
     Apv(ApvConfig),
     Aac(AacConfig),
-    /// MPEG-1/2 audio (esds object type 0x69/0x6B, or QuickTime `.mp3` / `.mp2`). Usually layer
-    /// III, but these name no layer: ffmpeg stores MP2 as `mp4a` + 0x6B. Each frame header has it.
+    /// MPEG-1/2 audio (esds object type 0x69/0x6B, or QTFF `.mp3` / `.mp2`). Usually layer
+    /// III, but these name no layer: stores MP2 as `mp4a` + 0x6B. Each frame header has it.
     Mp3,
     Pcm(PcmConfig),
     /// ALAC magic cookie (ALACSpecificConfig, 24 bytes, optionally followed by a channel layout).

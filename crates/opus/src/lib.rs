@@ -24,6 +24,7 @@
 
 pub(crate) mod celt;
 mod decoder;
+pub mod diagnostics;
 mod header;
 mod multistream;
 pub mod packet;
@@ -31,6 +32,10 @@ pub(crate) mod range;
 pub(crate) mod silk;
 
 pub use decoder::{SAMPLE_RATES, StreamDecoder};
+pub use diagnostics::{
+    OpusDiagnosticReport, OpusHeadDiagnostic, OpusPacketDiagnostic, diagnose_opus_head,
+    diagnose_opus_packet, diagnose_opus_stream,
+};
 pub use header::OpusHead;
 pub use multistream::Decoder;
 pub use packet::{Bandwidth, Mode, Packet, Toc};

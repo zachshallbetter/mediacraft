@@ -1,13 +1,13 @@
-# filmcraft-prores
+# craft-prores
 
-Clean-room Apple ProRes decoder and encoder in pure Rust, written from the public SMPTE RDD 36
-bitstream description. Layer L0: depends only on `filmcraft-bitstream`, `thiserror` and (optional,
+Clean-room ProRes video decoder and encoder in pure Rust, written from the public SMPTE RDD 36
+bitstream description. Layer L0: depends only on `mediacraft-bitstream`, `thiserror` and (optional,
 feature `threads`, default on) `rayon`. Builds for `wasm32-unknown-unknown`; no `unsafe`.
 
 ## API
 
 ```rust
-use filmcraft_prores::*;
+use craft_prores::*;
 
 // Decode one QuickTime sample (one ProRes frame).
 let frame: Frame = decode_frame(&sample)?;                 // 10-bit 4:2:2 / 12-bit 4:4:4
@@ -68,7 +68,7 @@ does), so the decoder doesn't need to know.
   profile. Edge macroblocks are padded by replicating the edge.
 - Flat quantisation matrices (all 4, not transmitted), 8 macroblocks per slice by default
   (`log2_slice_mbs`), encoder id `fmcr`.
-- Rate control targets Apple's published nominal rates (Mbit/s at 1920×1080, 29.97 fps: 45, 102,
+- Rate control targets SMPTE RDD 36 published nominal rates (Mbit/s at 1920×1080, 29.97 fps: 45, 102,
   147, 220, 330, 500). These are converted to bits per macroblock (184, 417, 601, 900, 1349,
   2045), so frame targets scale with frame area (`Encoder::target_frame_bytes`). Alpha comes on
   top of the target. Every slice is transformed once. Then a frame-level binary search finds the

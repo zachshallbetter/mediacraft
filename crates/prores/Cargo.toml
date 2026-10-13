@@ -1,6 +1,6 @@
 [package]
 name = "craft-prores"
-description = "Clean-room Apple ProRes (SMPTE RDD 36) decoder and encoder"
+description = "Clean-room ProRes (SMPTE RDD 36) decoder and encoder"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,7 +17,9 @@ threads = []
 [dependencies]
 mediacraft-bitstream = { workspace = true }
 craft-media = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

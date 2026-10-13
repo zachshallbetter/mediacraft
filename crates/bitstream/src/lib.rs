@@ -19,7 +19,12 @@
 )]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod diagnostics;
 pub mod isobmff;
+
+pub use diagnostics::{
+    BitstreamDiagnosticReport, IsobmffDiagnosticReport, diagnose_bitstream, diagnose_isobmff_stream,
+};
 
 use std::fmt;
 
