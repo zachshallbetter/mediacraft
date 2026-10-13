@@ -374,6 +374,7 @@ impl MediaCraftApp {
                 || a == "--error-modal"
                 || a == "--unsupported-modal"
                 || a == "--batch-edit-modal"
+                || a == "--completion-modal"
         }) {
             WorkspaceMode::Queue
         } else if std::env::args()
@@ -415,6 +416,8 @@ impl MediaCraftApp {
             for j in jobs.iter().take(3) {
                 queue_state.selected_jobs.insert(j.id);
             }
+        } else if std::env::args().any(|a| a == "--completion-modal") {
+            queue_state.show_completion_modal = true;
         }
 
         let mut automate_state = AutomateViewState::default();

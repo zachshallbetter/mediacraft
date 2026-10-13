@@ -35,6 +35,9 @@ pub struct QueueViewState {
     pub batch_priority: u32,
     pub batch_overwrite_policy: usize,
     pub batch_faststart: bool,
+
+    // MD-08: Queue Completion Summary Modal
+    pub show_completion_modal: bool,
 }
 
 impl Default for QueueViewState {
@@ -60,6 +63,8 @@ impl Default for QueueViewState {
             batch_priority: 5,
             batch_overwrite_policy: 1, // Auto-Rename (_v2)
             batch_faststart: true,
+
+            show_completion_modal: false,
         }
     }
 }
@@ -414,6 +419,26 @@ fn render_populated_queue(
             .clicked()
         {
             state.show_unsupported_modal = true;
+        }
+
+        ui.add_space(4.0);
+        if craft_ui::buttons::IconButton::new(
+            "Queue Summary",
+            Vec2::new(145.0, 24.0),
+            &normal_style,
+        )
+        .show(ui, |ui, rect, _tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Batch Summary (MD-08)",
+                egui::FontId::proportional(10.5),
+                Color32::from_rgb(90, 230, 130),
+            );
+        })
+        .clicked()
+        {
+            state.show_completion_modal = true;
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -924,6 +949,9 @@ fn render_populated_queue(
 
     // MD-10: Batch Edit Settings Modal
     render_batch_edit_modal(ui, state, engine, presets);
+
+    // MD-08: Queue Completion Summary Modal
+    render_queue_completion_modal(ui, state, engine);
 }
 
 fn render_transcode_monitor(
@@ -1950,5 +1978,288 @@ fn render_batch_edit_modal(
     }
     if close {
         state.show_batch_edit_modal = false;
+    }
+}
+
+fn render_queue_completion_modal(
+    ui: &mut egui::Ui,
+    state: &mut QueueViewState,
+    _engine: &mut QueueEngine,
+) {
+    if !state.show_completion_modal {
+        return;
+    }
+
+    let mut close = false;
+    let mut reveal_finder = false;
+
+    egui::Window::new("Queue Processing Complete (MD-08)")
+        .collapsible(false)
+        .resizable(false)
+        .default_width(560.0)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .show(ui.ctx(), |ui| {
+            ui.add_space(4.0);
+
+            // Header Banner
+            let (head_rect, _) =
+                ui.allocate_exact_size(Vec2::new(540.0, 56.0), egui::Sense::hover());
+            let p = ui.painter_at(head_rect);
+            p.rect_filled(head_rect, CornerRadius::same(6), Color32::from_rgb(18, 38, 26));
+            p.rect_stroke(
+                head_rect,
+                CornerRadius::same(6),
+                Stroke::new(1.0, Color32::from_rgb(45, 120, 75)),
+                egui::StrokeKind::Inside,
+            );
+            p.circle_filled(
+                Pos2::new(head_rect.min.x + 18.0, head_rect.min.y + 19.0),
+                4.5,
+                Color32::from_rgb(100, 240, 140),
+            );
+            p.text(
+                Pos2::new(head_rect.min.x + 30.0, head_rect.min.y + 12.0),
+                egui::Align2::LEFT_TOP,
+                "BATCH COMPLETE: All Transcode Jobs Succeeded",
+                FontId::proportional(12.5),
+                Color32::from_rgb(100, 240, 140),
+            );
+            p.text(
+                Pos2::new(head_rect.min.x + 18.0, head_rect.min.y + 34.0),
+                egui::Align2::LEFT_TOP,
+                "Batch transcode session completed. All bitstream containers, moov atoms, and checksums verified.",
+                FontId::proportional(10.0),
+                Color32::from_rgb(180, 220, 200),
+            );
+
+            ui.add_space(10.0);
+
+            // 4 Telemetry Metrics Cards
+            ui.horizontal(|ui| {
+                let metrics = [
+                    (
+                        "JOBS COMPLETED",
+                        "4 of 4",
+                        "100% Success",
+                        Color32::from_rgb(90, 230, 130),
+                    ),
+                    (
+                        "TOTAL TIME",
+                        "00:03:42",
+                        "Avg 55s / job",
+                        Color32::from_rgb(90, 200, 255),
+                    ),
+                    (
+                        "SPEED FACTOR",
+                        "3.8x",
+                        "Hardware Accel",
+                        Color32::from_rgb(255, 200, 90),
+                    ),
+                    (
+                        "STORAGE SAVED",
+                        "10.4 GB",
+                        "73% Reduction",
+                        Color32::from_rgb(180, 140, 255),
+                    ),
+                ];
+                for (lbl, val, sub, col) in metrics {
+                    let (card_rect, _) =
+                        ui.allocate_exact_size(Vec2::new(128.0, 60.0), egui::Sense::hover());
+                    let p = ui.painter_at(card_rect);
+                    p.rect_filled(card_rect, CornerRadius::same(4), Color32::from_rgb(22, 26, 32));
+                    p.rect_stroke(
+                        card_rect,
+                        CornerRadius::same(4),
+                        Stroke::new(1.0, Color32::from_rgb(40, 48, 58)),
+                        egui::StrokeKind::Inside,
+                    );
+                    p.text(
+                        Pos2::new(card_rect.min.x + 8.0, card_rect.min.y + 8.0),
+                        egui::Align2::LEFT_TOP,
+                        lbl,
+                        FontId::monospace(8.0),
+                        Color32::GRAY,
+                    );
+                    p.text(
+                        Pos2::new(card_rect.min.x + 8.0, card_rect.min.y + 22.0),
+                        egui::Align2::LEFT_TOP,
+                        val,
+                        FontId::proportional(14.0),
+                        col,
+                    );
+                    p.text(
+                        Pos2::new(card_rect.min.x + 8.0, card_rect.min.y + 42.0),
+                        egui::Align2::LEFT_TOP,
+                        sub,
+                        FontId::proportional(9.0),
+                        Color32::from_rgb(160, 175, 195),
+                    );
+                }
+            });
+
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new("COMPLETED DELIVERABLES & VERIFICATION STATUS")
+                    .size(10.0)
+                    .strong()
+                    .color(Color32::from_rgb(130, 145, 165)),
+            );
+            ui.add_space(4.0);
+
+            // Deliverables breakdown table
+            let (table_rect, _) =
+                ui.allocate_exact_size(Vec2::new(540.0, 150.0), egui::Sense::hover());
+            let p = ui.painter_at(table_rect);
+            p.rect_filled(table_rect, CornerRadius::same(4), Color32::from_rgb(16, 20, 26));
+            p.rect_stroke(
+                table_rect,
+                CornerRadius::same(4),
+                Stroke::new(1.0, Color32::from_rgb(35, 42, 52)),
+                egui::StrokeKind::Inside,
+            );
+
+            let deliverables = [
+                (
+                    "A001_C001_proxy.mp4",
+                    "MP4 • H.264 / AAC LC",
+                    "1920x1080 @ 24fps",
+                    "142 MB",
+                    "● Bitstream Verified",
+                ),
+                (
+                    "Drone_Aerial_009_master.mov",
+                    "QuickTime • ProRes 422 HQ",
+                    "3840x2160 @ 23.98fps",
+                    "1.82 GB",
+                    "● EBU R128 Compliant",
+                ),
+                (
+                    "Interview_B_Roll_web.mp4",
+                    "MP4 • Faststart Moov",
+                    "1920x1080 @ 29.97fps",
+                    "84 MB",
+                    "● Faststart Relocated",
+                ),
+                (
+                    "Podcast_Ep42_master.m4a",
+                    "M4A • AAC 320 kbps",
+                    "Stereo 48kHz (Gapless)",
+                    "28 MB",
+                    "● Priming Preserved",
+                ),
+            ];
+
+            let row_h = 36.0;
+            for (idx, (fname, fmt, spec, size, verif)) in deliverables.iter().enumerate() {
+                let y = table_rect.min.y + idx as f32 * row_h;
+                let r_rect =
+                    Rect::from_min_size(Pos2::new(table_rect.min.x, y), Vec2::new(540.0, row_h));
+                if idx % 2 == 1 {
+                    p.rect_filled(r_rect, CornerRadius::ZERO, Color32::from_rgb(20, 24, 32));
+                }
+                p.text(
+                    Pos2::new(r_rect.min.x + 10.0, r_rect.min.y + 6.0),
+                    egui::Align2::LEFT_TOP,
+                    *fname,
+                    FontId::proportional(11.0),
+                    Color32::from_rgb(240, 245, 255),
+                );
+                p.text(
+                    Pos2::new(r_rect.min.x + 10.0, r_rect.min.y + 20.0),
+                    egui::Align2::LEFT_TOP,
+                    format!("{fmt} • {spec}"),
+                    FontId::proportional(9.0),
+                    Color32::GRAY,
+                );
+                p.text(
+                    Pos2::new(r_rect.max.x - 170.0, r_rect.center().y),
+                    egui::Align2::RIGHT_CENTER,
+                    *size,
+                    FontId::proportional(10.5),
+                    Color32::from_rgb(180, 210, 240),
+                );
+                p.text(
+                    Pos2::new(r_rect.max.x - 12.0, r_rect.center().y),
+                    egui::Align2::RIGHT_CENTER,
+                    *verif,
+                    FontId::monospace(9.5),
+                    Color32::from_rgb(90, 230, 130),
+                );
+            }
+
+            ui.add_space(14.0);
+            ui.separator();
+            ui.add_space(8.0);
+
+            // Action Buttons
+            let accent_style = crate::craft_theme::craft_accent_button_style();
+            let normal_style = crate::craft_theme::craft_icon_button_style();
+
+            ui.horizontal(|ui| {
+                if craft_ui::buttons::IconButton::new(
+                    "Reveal in Finder",
+                    Vec2::new(140.0, 26.0),
+                    &accent_style,
+                )
+                .show(ui, |ui, rect, tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "📁 Reveal in Finder",
+                        FontId::proportional(11.0),
+                        tint,
+                    );
+                })
+                .clicked()
+                {
+                    reveal_finder = true;
+                }
+
+                ui.add_space(4.0);
+                if craft_ui::buttons::IconButton::new(
+                    "Delivery Report",
+                    Vec2::new(175.0, 26.0),
+                    &normal_style,
+                )
+                .show(ui, |ui, rect, _tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "📄 View Delivery Report (MD-14)",
+                        FontId::proportional(10.5),
+                        Color32::from_rgb(90, 200, 255),
+                    );
+                })
+                .clicked()
+                {
+                    close = true;
+                }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if craft_ui::buttons::IconButton::new(
+                        "Dismiss",
+                        Vec2::new(80.0, 26.0),
+                        &normal_style,
+                    )
+                    .show(ui, |ui, rect, tint| {
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "Dismiss",
+                            FontId::proportional(11.0),
+                            tint,
+                        );
+                    })
+                    .clicked()
+                    {
+                        close = true;
+                    }
+                });
+            });
+            ui.add_space(4.0);
+        });
+
+    if reveal_finder || close {
+        state.show_completion_modal = false;
     }
 }
