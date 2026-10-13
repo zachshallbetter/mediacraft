@@ -109,8 +109,9 @@ pub fn render_inspector_panel(
 
     ui.add_space(2.0);
 
-    // 2. Preview Monitor (16:9)
-    let monitor_w = ui.available_width().max(260.0);
+    // 2. Preview Monitor (16:9, responsive with max height constraint)
+    let max_w_by_h = (ui.available_height() * 0.42 * (16.0 / 9.0)).max(260.0);
+    let monitor_w = ui.available_width().min(max_w_by_h).clamp(260.0, 720.0);
     let monitor_h = monitor_w * (9.0 / 16.0);
 
     let (rect, resp) = if state.preview_mode == PreviewMode::ComparisonSplit {

@@ -34,14 +34,28 @@ impl Default for LibraryViewState {
     }
 }
 
+pub struct LibraryViewContext<'a> {
+    pub active_collection: SmartCollection,
+    pub kind_filter: &'a mut Option<MediaKind>,
+    pub kind_counts: &'a std::collections::HashMap<MediaKind, usize>,
+    pub total_assets: usize,
+    pub search_query: &'a mut String,
+    pub assets: &'a [&'a MediaAsset],
+    pub selected_asset_id: &'a mut Option<String>,
+}
+
 pub fn render_library_view(
     ui: &mut egui::Ui,
     state: &mut LibraryViewState,
-    active_collection: SmartCollection,
-    search_query: &mut String,
-    assets: &[&MediaAsset],
-    selected_asset_id: &mut Option<String>,
+    ctx: LibraryViewContext<'_>,
 ) {
+    let active_collection = ctx.active_collection;
+    let kind_filter = &mut *ctx.kind_filter;
+    let kind_counts = ctx.kind_counts;
+    let total_assets = ctx.total_assets;
+    let search_query = &mut *ctx.search_query;
+    let assets = ctx.assets;
+    let selected_asset_id = &mut *ctx.selected_asset_id;
     // 1. Breadcrumb & Navigation Bar
     ui.horizontal(|ui| {
         ui.label(
@@ -132,7 +146,7 @@ pub fn render_library_view(
 
     ui.separator();
 
-    // 2. Collection Header & Item Count
+    // 2. Collection Header & Filter Chips
     ui.horizontal(|ui| {
         ui.heading(
             RichText::new(active_collection.label())
@@ -156,6 +170,54 @@ pub fn render_library_view(
                 search_query.clear();
             }
         }
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let btn_style = crate::craft_theme::craft_icon_button_style();
+
+            for (kind, icon, label) in [
+                (MediaKind::ProjectFile, "📁", "Projects"),
+                (MediaKind::Audio, "🎵", "Audio"),
+                (MediaKind::Image, "📷", "Photos"),
+                (MediaKind::Video, "🎬", "Video"),
+            ] {
+                let is_sel = *kind_filter == Some(kind);
+                let count = kind_counts.get(&kind).copied().unwrap_or(0);
+                let chip_text = format!("{icon} {label} ({count})");
+                if craft_ui::buttons::IconButton::new(label, Vec2::new(96.0, 22.0), &btn_style)
+                    .selected(is_sel)
+                    .show(ui, |ui, rect, tint| {
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            &chip_text,
+                            egui::FontId::proportional(11.0),
+                            tint,
+                        );
+                    })
+                    .clicked()
+                {
+                    *kind_filter = if is_sel { None } else { Some(kind) };
+                }
+            }
+
+            let all_selected = kind_filter.is_none();
+            let all_label = format!("All ({})", total_assets);
+            if craft_ui::buttons::IconButton::new("Filter All", Vec2::new(65.0, 22.0), &btn_style)
+                .selected(all_selected)
+                .show(ui, |ui, rect, tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        &all_label,
+                        egui::FontId::proportional(11.0),
+                        tint,
+                    );
+                })
+                .clicked()
+            {
+                *kind_filter = None;
+            }
+        });
     });
 
     ui.add_space(4.0);

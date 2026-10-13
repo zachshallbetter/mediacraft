@@ -1,6 +1,6 @@
 //! Process Sidebar & Outcome Planner
 
-use egui::{Color32, CornerRadius, RichText, Stroke, Vec2};
+use egui::{Color32, RichText, Vec2};
 use mediacraft_catalog::{MediaAsset, OperationKind};
 use mediacraft_protocol::EncodingPreset;
 
@@ -64,29 +64,35 @@ pub fn render_process_panel(
     egui::Grid::new("operations_grid")
         .spacing(Vec2::new(6.0, 6.0))
         .show(ui, |ui| {
+            let normal_style = crate::craft_theme::craft_icon_button_style();
+            let accent_style = crate::craft_theme::craft_accent_button_style();
+
             for (i, (op, label, _desc)) in operations.iter().enumerate() {
                 let is_selected = state.active_operation == *op;
-                let btn = egui::Button::new(RichText::new(*label).size(11.0).strong().color(
-                    if is_selected {
-                        Color32::from_rgb(80, 200, 255)
-                    } else {
-                        Color32::from_rgb(200, 215, 235)
-                    },
-                ))
-                .min_size(Vec2::new(100.0, 32.0))
-                .fill(if is_selected {
-                    Color32::from_rgb(32, 50, 75)
+                let style = if is_selected {
+                    &accent_style
                 } else {
-                    Color32::from_rgb(24, 28, 36)
-                })
-                .stroke(if is_selected {
-                    Stroke::new(1.5, Color32::from_rgb(80, 180, 255))
-                } else {
-                    Stroke::new(1.0, Color32::from_rgb(45, 52, 65))
-                })
-                .corner_radius(CornerRadius::same(4));
+                    &normal_style
+                };
 
-                if ui.add(btn).clicked() {
+                if craft_ui::buttons::IconButton::new(label, Vec2::new(104.0, 32.0), style)
+                    .selected(is_selected)
+                    .show(ui, |ui, rect, tint| {
+                        let text_color = if is_selected {
+                            Color32::from_rgb(90, 200, 255)
+                        } else {
+                            tint
+                        };
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            *label,
+                            egui::FontId::proportional(11.5),
+                            text_color,
+                        );
+                    })
+                    .clicked()
+                {
                     state.active_operation = *op;
                 }
 
@@ -198,17 +204,21 @@ pub fn render_process_panel(
     ui.add_space(10.0);
 
     // 3. Action Button: Add to Queue
-    let add_btn = egui::Button::new(
-        RichText::new("▶ Add to Queue")
-            .size(13.0)
-            .strong()
-            .color(Color32::WHITE),
-    )
-    .min_size(Vec2::new(ui.available_width(), 36.0))
-    .fill(Color32::from_rgb(20, 110, 235))
-    .corner_radius(CornerRadius::same(5));
+    let accent_style = crate::craft_theme::craft_accent_button_style();
+    let btn_size = Vec2::new(ui.available_width(), 36.0);
 
-    if ui.add(add_btn).clicked() {
+    if craft_ui::buttons::IconButton::new("Add to Queue", btn_size, &accent_style)
+        .show(ui, |ui, rect, tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "▶ Add to Queue",
+                egui::FontId::proportional(12.5),
+                tint,
+            );
+        })
+        .clicked()
+    {
         let Some(asset) = asset else {
             return;
         };

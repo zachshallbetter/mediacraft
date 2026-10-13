@@ -27,7 +27,7 @@ use mediacraft_protocol::{AudioCodec, ContainerFormat, EncodingPreset, JobState,
 
 use automate_view::{AutomateViewState, render_automate_workspace};
 use inspector_view::{InspectorState, render_inspector_panel};
-use library_view::{LibraryViewState, render_library_view};
+use library_view::{LibraryViewContext, LibraryViewState, render_library_view};
 use process_view::{ProcessViewState, render_process_panel};
 use queue_drawer::{QueueDrawerState, render_queue_drawer};
 use queue_view::{QueueViewState, render_queue_workspace};
@@ -35,7 +35,8 @@ use sidebar_nav::{SidebarNavState, render_sidebar_nav};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceMode {
-    Library,
+    Browse,
+    Inspect,
     Collections,
     Process,
     Queue,
@@ -333,8 +334,12 @@ impl MediaCraftApp {
             WorkspaceMode::Automations
         } else if std::env::args().any(|a| a == "--process") {
             WorkspaceMode::Process
+        } else if std::env::args().any(|a| a == "--inspect") {
+            WorkspaceMode::Inspect
+        } else if std::env::args().any(|a| a == "--collections") {
+            WorkspaceMode::Collections
         } else {
-            WorkspaceMode::Library
+            WorkspaceMode::Browse
         };
 
         if std::env::args().any(|a| a == "--empty-queue") {
@@ -920,28 +925,68 @@ impl eframe::App for MediaCraftApp {
 
             ui.add_space(12.0);
 
-            // Workspace Mode Switcher (Library | Collections | Process | Queue | Automations)
-            ui.selectable_value(
-                &mut self.workspace_mode,
-                WorkspaceMode::Library,
-                "⊞ Library",
+            // Workspace Mode Switcher via craft-ui Tab strip
+            let tabs = [
+                ("⊞ Browse", WorkspaceMode::Browse),
+                ("🔍 Inspect", WorkspaceMode::Inspect),
+                ("📁 Collections", WorkspaceMode::Collections),
+                ("⚡ Process", WorkspaceMode::Process),
+                ("📋 Queue", WorkspaceMode::Queue),
+                ("⚙ Automations", WorkspaceMode::Automations),
+            ];
+            let active_idx = tabs
+                .iter()
+                .position(|(_, m)| *m == self.workspace_mode)
+                .unwrap_or(0);
+            let tab_fit = craft_ui::tabs::fit(
+                &[82.0, 84.0, 104.0, 84.0, 82.0, 112.0],
+                active_idx,
+                ui.available_width().min(580.0),
+                50.0,
+                20.0,
             );
-            ui.selectable_value(
-                &mut self.workspace_mode,
-                WorkspaceMode::Collections,
-                "📁 Collections",
-            );
-            ui.selectable_value(
-                &mut self.workspace_mode,
-                WorkspaceMode::Process,
-                "⚡ Process",
-            );
-            ui.selectable_value(&mut self.workspace_mode, WorkspaceMode::Queue, "📋 Queue");
-            ui.selectable_value(
-                &mut self.workspace_mode,
-                WorkspaceMode::Automations,
-                "⚙ Automations",
-            );
+            for (idx, width) in tab_fit.shown {
+                if let Some((label, mode)) = tabs.get(idx) {
+                    let is_selected = active_idx == idx;
+                    let (rect, _) =
+                        ui.allocate_exact_size(Vec2::new(width, 24.0), egui::Sense::hover());
+                    let tab_widget = craft_ui::tabs::Tab::new(
+                        ui.id().with(("workspace_nav_tab", idx)),
+                        label,
+                        is_selected,
+                    );
+                    let response = tab_widget.show_at(ui, rect, |ui, resp| {
+                        let text_color = if is_selected {
+                            Color32::from_rgb(90, 195, 255)
+                        } else if resp.hovered() {
+                            Color32::from_rgb(235, 245, 255)
+                        } else {
+                            Color32::from_rgb(155, 170, 190)
+                        };
+                        if is_selected {
+                            let underline = Rect::from_min_max(
+                                Pos2::new(rect.min.x, rect.max.y - 2.0),
+                                rect.max,
+                            );
+                            ui.painter().rect_filled(
+                                underline,
+                                CornerRadius::ZERO,
+                                Color32::from_rgb(80, 190, 255),
+                            );
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            *label,
+                            egui::FontId::proportional(11.5),
+                            text_color,
+                        );
+                    });
+                    if response.clicked() {
+                        self.workspace_mode = *mode;
+                    }
+                }
+            }
 
             ui.add_space(16.0);
 
@@ -1028,7 +1073,88 @@ impl eframe::App for MediaCraftApp {
             WorkspaceMode::Automations => {
                 render_automate_workspace(ui, &mut self.automate_state);
             }
-            WorkspaceMode::Library | WorkspaceMode::Collections | WorkspaceMode::Process => {
+            WorkspaceMode::Inspect => {
+                let selected_asset = self
+                    .selected_asset_id
+                    .as_deref()
+                    .and_then(|id| self.catalog.get_by_id(id));
+
+                render_inspector_panel(
+                    ui,
+                    &mut self.inspector_state,
+                    selected_asset,
+                    self.catalog.graph(),
+                );
+
+                ui.separator();
+                render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
+            }
+            WorkspaceMode::Collections => {
+                let counts = self.catalog.kind_counts();
+                let total = self.catalog.all_assets().len();
+                let filtered_assets = self.catalog.query(
+                    self.sidebar_state.selected_collection,
+                    &self.search_query,
+                    self.sidebar_state.selected_kind_filter,
+                );
+
+                ui.columns(2, |columns| {
+                    render_sidebar_nav(&mut columns[0], &mut self.sidebar_state, &counts, total);
+                    render_library_view(
+                        &mut columns[1],
+                        &mut self.library_state,
+                        LibraryViewContext {
+                            active_collection: self.sidebar_state.selected_collection,
+                            kind_filter: &mut self.sidebar_state.selected_kind_filter,
+                            kind_counts: &counts,
+                            total_assets: total,
+                            search_query: &mut self.search_query,
+                            assets: &filtered_assets,
+                            selected_asset_id: &mut self.selected_asset_id,
+                        },
+                    );
+                });
+
+                ui.separator();
+                render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
+            }
+            WorkspaceMode::Process => {
+                let selected_asset = self
+                    .selected_asset_id
+                    .as_deref()
+                    .and_then(|id| self.catalog.get_by_id(id));
+                let mut enqueue_job_action: Option<(EncodingPreset, String, String)> = None;
+
+                ui.columns(2, |columns| {
+                    render_inspector_panel(
+                        &mut columns[0],
+                        &mut self.inspector_state,
+                        selected_asset,
+                        self.catalog.graph(),
+                    );
+                    render_process_panel(
+                        &mut columns[1],
+                        &mut self.process_state,
+                        selected_asset,
+                        &self.presets,
+                        &mut enqueue_job_action,
+                    );
+                });
+
+                if let Some((preset, src, out)) = enqueue_job_action {
+                    let _ = self.engine_lock().add_job(
+                        PathBuf::from(src),
+                        PathBuf::from(out),
+                        preset,
+                        5,
+                    );
+                    self.drawer_state.is_expanded = true;
+                }
+
+                ui.separator();
+                render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
+            }
+            WorkspaceMode::Browse => {
                 // 2. Central Docking Workspace Area
                 let mut style = DockStyle::from_ui(ui);
                 style.tab_height = 26.0;
@@ -1054,6 +1180,8 @@ impl eframe::App for MediaCraftApp {
                     .as_deref()
                     .and_then(|id| self.catalog.get_by_id(id));
 
+                let total = self.catalog.all_assets().len();
+                let counts = self.catalog.kind_counts();
                 let mut enqueue_job_action: Option<(EncodingPreset, String, String)> = None;
 
                 let output = DockArea::new(egui::Id::new("mediacraft_workspace_dock")).show(
@@ -1064,18 +1192,21 @@ impl eframe::App for MediaCraftApp {
                     |_| Permissions::default(),
                     |ui, panel| match *panel {
                         Panel::Sidebar => {
-                            let total = self.catalog.all_assets().len();
-                            let counts = self.catalog.kind_counts();
                             render_sidebar_nav(ui, &mut self.sidebar_state, &counts, total);
                         }
                         Panel::LibraryGrid => {
                             render_library_view(
                                 ui,
                                 &mut self.library_state,
-                                self.sidebar_state.selected_collection,
-                                &mut self.search_query,
-                                &filtered_assets,
-                                &mut self.selected_asset_id,
+                                LibraryViewContext {
+                                    active_collection: self.sidebar_state.selected_collection,
+                                    kind_filter: &mut self.sidebar_state.selected_kind_filter,
+                                    kind_counts: &counts,
+                                    total_assets: total,
+                                    search_query: &mut self.search_query,
+                                    assets: &filtered_assets,
+                                    selected_asset_id: &mut self.selected_asset_id,
+                                },
                             );
                         }
                         Panel::Inspector => {
