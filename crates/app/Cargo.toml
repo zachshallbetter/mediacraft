@@ -21,7 +21,7 @@ mediacraft-oracles = { workspace = true }
 mediacraft-bitstream = { workspace = true }
 mediacraft-catalog = { workspace = true }
 craft-ui = { workspace = true }
-craft-quit = { workspace = true, features = ["egui"] }
+craft-quit = { workspace = true, features = ["egui", "menu"] }
 craft-settings = { workspace = true }
 craft-atomic = { workspace = true }
 egui = { workspace = true }

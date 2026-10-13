@@ -94,12 +94,18 @@ pub struct MediaCraftApp {
 
     // Persistence settings
     settings_store: craft_settings::SettingsStore<settings::MediaCraftPreferences>,
+    preferences_open: bool,
+
+    // Safe termination lifecycle via craft-quit
+    show_quit_confirm: bool,
+    quit_confirmed: bool,
 
     last_tick: Instant,
 }
 
 impl MediaCraftApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let _ = craft_quit::install_app_menu(&cc.egui_ctx, "MediaCraft");
         let app_icon = cc.egui_ctx.load_texture(
             "mediacraft_app_icon",
             app_icon::app_icon_image(),
@@ -318,6 +324,8 @@ impl MediaCraftApp {
             None
         };
 
+        let open_preferences_initially = std::env::args().any(|a| a == "--preferences");
+
         let initial_workspace = if std::env::args().any(|a| a == "--queue" || a == "--empty-queue")
         {
             WorkspaceMode::Queue
@@ -365,6 +373,9 @@ impl MediaCraftApp {
             editing_tab: 0,
             app_icon,
             settings_store,
+            preferences_open: open_preferences_initially,
+            show_quit_confirm: false,
+            quit_confirmed: false,
             last_tick: Instant::now(),
         }
     }
@@ -414,7 +425,7 @@ impl MediaCraftApp {
                 let new_pct = (progress_pct + dt * 0.05).min(1.0);
                 let new_frame = current_frame.saturating_add(2);
                 if new_pct >= 1.0 {
-                    let _ = eng.complete_job(job.id, 12.4, 48_000_000);
+                    let _ = eng.execute_job_to_completion(job.id);
                 } else {
                     let _ = eng.update_progress(job.id, new_pct, new_frame, 2400, 59.94);
                 }
@@ -515,11 +526,59 @@ impl MediaCraftApp {
                             );
                         });
 
+                        let tab_labels = ["Video", "Audio", "Multiplexer", "Effects"];
+                        let tab_fit = craft_ui::tabs::fit(
+                            &[65.0, 65.0, 95.0, 75.0],
+                            self.editing_tab,
+                            ui.available_width(),
+                            45.0,
+                            20.0,
+                        );
                         ui.horizontal(|ui| {
-                            ui.selectable_value(&mut self.editing_tab, 0, "Video");
-                            ui.selectable_value(&mut self.editing_tab, 1, "Audio");
-                            ui.selectable_value(&mut self.editing_tab, 2, "Multiplexer");
-                            ui.selectable_value(&mut self.editing_tab, 3, "Effects");
+                            for (idx, width) in tab_fit.shown {
+                                if let Some(label) = tab_labels.get(idx) {
+                                    let is_selected = self.editing_tab == idx;
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        Vec2::new(width, 22.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    let tab_widget = craft_ui::tabs::Tab::new(
+                                        ui.id().with(("export_settings_tab", idx)),
+                                        label,
+                                        is_selected,
+                                    );
+                                    let response = tab_widget.show_at(ui, rect, |ui, resp| {
+                                        let text_color = if is_selected {
+                                            Color32::from_rgb(90, 195, 255)
+                                        } else if resp.hovered() {
+                                            Color32::from_rgb(235, 245, 255)
+                                        } else {
+                                            Color32::from_rgb(155, 170, 190)
+                                        };
+                                        if is_selected {
+                                            let underline = Rect::from_min_max(
+                                                Pos2::new(rect.min.x, rect.max.y - 2.0),
+                                                rect.max,
+                                            );
+                                            ui.painter().rect_filled(
+                                                underline,
+                                                CornerRadius::ZERO,
+                                                Color32::from_rgb(80, 190, 255),
+                                            );
+                                        }
+                                        ui.painter().text(
+                                            rect.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            *label,
+                                            egui::FontId::proportional(11.0),
+                                            text_color,
+                                        );
+                                    });
+                                    if response.clicked() {
+                                        self.editing_tab = idx;
+                                    }
+                                }
+                            }
                         });
                         ui.separator();
 
@@ -567,7 +626,7 @@ impl MediaCraftApp {
                                         .strong()
                                         .size(11.0),
                                 );
-                                ui.label("• Lumetri Look / LUT: None");
+                                ui.label("• Creative Look / 3D LUT: None");
                                 ui.label("• Burn-in Timecode: Disabled");
                             }
                         }
@@ -577,14 +636,67 @@ impl MediaCraftApp {
                 ui.separator();
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Save & Close").clicked() {
-                            save_modal = true;
+                        let normal_style = craft_theme::craft_icon_button_style();
+                        let accent_style = craft_theme::craft_accent_button_style();
+                        let danger_style = craft_theme::craft_danger_button_style();
+
+                        if craft_ui::buttons::IconButton::new(
+                            "Cancel",
+                            Vec2::new(75.0, 24.0),
+                            &danger_style,
+                        )
+                        .show(ui, |ui, rect, tint| {
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "Cancel",
+                                egui::FontId::proportional(11.0),
+                                tint,
+                            );
+                        })
+                        .clicked()
+                        {
+                            close_modal = true;
                         }
-                        if ui.button(RichText::new("Queue").strong()).clicked() {
+
+                        ui.add_space(6.0);
+                        if craft_ui::buttons::IconButton::new(
+                            "Queue",
+                            Vec2::new(75.0, 24.0),
+                            &accent_style,
+                        )
+                        .show(ui, |ui, rect, tint| {
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "Queue",
+                                egui::FontId::proportional(11.0),
+                                tint,
+                            );
+                        })
+                        .clicked()
+                        {
                             enqueue_modal = true;
                         }
-                        if ui.button("Cancel").clicked() {
-                            close_modal = true;
+
+                        ui.add_space(6.0);
+                        if craft_ui::buttons::IconButton::new(
+                            "Save & Close",
+                            Vec2::new(100.0, 24.0),
+                            &normal_style,
+                        )
+                        .show(ui, |ui, rect, tint| {
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "Save & Close",
+                                egui::FontId::proportional(11.0),
+                                tint,
+                            );
+                        })
+                        .clicked()
+                        {
+                            save_modal = true;
                         }
                     });
                 });
@@ -607,12 +719,159 @@ impl MediaCraftApp {
             self.editing_preset = Some(preset);
         }
     }
+
+    fn show_preferences_modal(&mut self, ctx: &egui::Context) {
+        if !self.preferences_open {
+            return;
+        }
+
+        let mut close = false;
+        let mut current_prefs = self.settings_store.get().clone();
+        let mut changed = false;
+
+        egui::Window::new("MediaCraft Preferences")
+            .fixed_size(Vec2::new(560.0, 360.0))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("Application & Pipeline Settings (Managed via craft-settings)")
+                        .size(11.0)
+                        .color(Color32::GRAY),
+                );
+                ui.separator();
+                ui.add_space(8.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Default Output Directory:").strong().size(11.5));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut current_prefs.default_output_folder)
+                            .desired_width(280.0),
+                    );
+                });
+                ui.add_space(8.0);
+
+                ui.horizontal(|ui| {
+                    ui.label("Target Video Bitrate (kbps):");
+                    let mut br = current_prefs.target_bitrate_kbps;
+                    if ui
+                        .add(egui::Slider::new(&mut br, 2_000..=150_000).suffix(" kbps"))
+                        .changed()
+                    {
+                        current_prefs.target_bitrate_kbps = br;
+                        changed = true;
+                    }
+                });
+                ui.add_space(8.0);
+
+                if ui
+                    .checkbox(
+                        &mut current_prefs.faststart_enabled,
+                        "Enable FastStart ISO BMFF layout (moov before mdat)",
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+                ui.label(
+                    RichText::new(
+                        "Enables progressive streaming and immediate playback on web and broadcast servers.",
+                    )
+                    .size(10.0)
+                    .color(Color32::GRAY),
+                );
+                ui.add_space(6.0);
+
+                if ui
+                    .checkbox(
+                        &mut current_prefs.audio_priming_enabled,
+                        "Sample-accurate AAC priming delay compensation (1024 samples)",
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+                ui.label(
+                    RichText::new(
+                        "Trim initial encoder delay frames via edit list (elst) atom to ensure AV sync.",
+                    )
+                    .size(10.0)
+                    .color(Color32::GRAY),
+                );
+                ui.add_space(6.0);
+
+                if ui
+                    .checkbox(
+                        &mut current_prefs.auto_pause_on_playback,
+                        "Auto-pause queue when external NLE playback is active (craft-daemon hook)",
+                    )
+                    .changed()
+                {
+                    changed = true;
+                }
+                ui.label(
+                    RichText::new(
+                        "Automatically suspends background encodes to free GPU/CPU bandwidth during live editing.",
+                    )
+                    .size(10.0)
+                    .color(Color32::GRAY),
+                );
+                ui.add_space(16.0);
+                ui.separator();
+
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let btn_style = craft_theme::craft_icon_button_style();
+                        if craft_ui::buttons::IconButton::new(
+                            "Done",
+                            Vec2::new(80.0, 24.0),
+                            &btn_style,
+                        )
+                        .show(ui, |ui, rect, tint| {
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "Done",
+                                egui::FontId::proportional(11.0),
+                                tint,
+                            );
+                        })
+                        .clicked()
+                        {
+                            close = true;
+                        }
+                    });
+                });
+            });
+
+        if changed {
+            self.settings_store.update(|prefs| {
+                *prefs = current_prefs;
+            });
+        }
+
+        if close {
+            self.preferences_open = false;
+        }
+    }
 }
 
 impl eframe::App for MediaCraftApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.advance_simulation();
         self.settings_store.tick(Instant::now());
+
+        let has_active_encoding = self.engine_lock().active_count() > 0;
+        if ctx.input(|i| i.viewport().close_requested())
+            && has_active_encoding
+            && !self.quit_confirmed
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.show_quit_confirm = true;
+        }
+
         craft_quit::on_close_request(ctx);
         ctx.request_repaint();
     }
@@ -631,6 +890,13 @@ impl eframe::App for MediaCraftApp {
             } else {
                 self.editing_preset = None;
             }
+        }
+
+        // Global hotkey: Cmd+, opens Preferences
+        if ui
+            .input(|i| (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::Comma))
+        {
+            self.preferences_open = !self.preferences_open;
         }
 
         // 1. Top Application Bar
@@ -709,6 +975,27 @@ impl eframe::App for MediaCraftApp {
                     } else {
                         None
                     };
+                }
+
+                ui.add_space(4.0);
+                if craft_ui::buttons::IconButton::new(
+                    "Preferences",
+                    Vec2::new(105.0, 24.0),
+                    &btn_style,
+                )
+                .selected(self.preferences_open)
+                .show(ui, |ui, rect, tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "⚙ Settings (⌘,)",
+                        egui::FontId::proportional(11.0),
+                        tint,
+                    );
+                })
+                .clicked()
+                {
+                    self.preferences_open = !self.preferences_open;
                 }
 
                 ui.add_space(8.0);
@@ -835,6 +1122,78 @@ impl eframe::App for MediaCraftApp {
 
         // 4. Modal Export Settings Window (if triggered)
         self.show_export_settings_modal(ui.ctx());
+
+        // 5. Preferences Modal (via craft-settings)
+        self.show_preferences_modal(ui.ctx());
+
+        // 6. Safe Quit Confirmation Dialog (via craft-quit)
+        if self.show_quit_confirm {
+            egui::Window::new("Transcoding in Progress")
+                .fixed_size(Vec2::new(440.0, 160.0))
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .show(ui.ctx(), |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("⚠️ Active Encoding Jobs in Queue")
+                                .strong()
+                                .size(13.0)
+                                .color(Color32::from_rgb(255, 190, 70)),
+                        );
+                        ui.add_space(6.0);
+                        ui.label(
+                            "Exiting MediaCraft now will cancel actively running transcodes. Do you wish to cancel all active jobs and quit?",
+                        );
+                        ui.add_space(14.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space((ui.available_width() - 220.0) * 0.5);
+                            let btn_style = craft_theme::craft_icon_button_style();
+                            let danger_style = craft_theme::craft_danger_button_style();
+                            if craft_ui::buttons::IconButton::new(
+                                "Cancel",
+                                Vec2::new(90.0, 26.0),
+                                &btn_style,
+                            )
+                            .show(ui, |ui, rect, tint| {
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "Cancel",
+                                    egui::FontId::proportional(11.0),
+                                    tint,
+                                );
+                            })
+                            .clicked()
+                            {
+                                self.show_quit_confirm = false;
+                            }
+                            ui.add_space(8.0);
+                            if craft_ui::buttons::IconButton::new(
+                                "Quit Anyway",
+                                Vec2::new(110.0, 26.0),
+                                &danger_style,
+                            )
+                            .show(ui, |ui, rect, tint| {
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "Quit Anyway",
+                                    egui::FontId::proportional(11.0),
+                                    tint,
+                                );
+                            })
+                            .clicked()
+                            {
+                                self.quit_confirmed = true;
+                                self.show_quit_confirm = false;
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                        });
+                    });
+                });
+        }
     }
 }
 

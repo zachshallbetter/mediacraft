@@ -90,22 +90,42 @@ fn render_empty_queue(ui: &mut egui::Ui, engine: &mut QueueEngine, presets: &[En
 
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                ui.add_space((ui.available_width() - 320.0) * 0.5);
-                if ui
-                    .button(
-                        RichText::new("＋ Load Sample Transcode Queue")
-                            .size(12.0)
-                            .strong()
-                            .color(Color32::from_rgb(90, 200, 255)),
-                    )
-                    .clicked()
+                ui.add_space((ui.available_width() - 340.0) * 0.5);
+                let primary_style = crate::craft_theme::craft_icon_button_style();
+                if craft_ui::buttons::IconButton::new(
+                    "Load Sample Queue",
+                    Vec2::new(210.0, 28.0),
+                    &primary_style,
+                )
+                .show(ui, |ui, rect, _tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "＋ Load Sample Transcode Queue",
+                        egui::FontId::proportional(11.5),
+                        Color32::from_rgb(90, 200, 255),
+                    );
+                })
+                .clicked()
                 {
                     load_default_sample_jobs(engine, presets);
                 }
                 ui.add_space(8.0);
-                if ui
-                    .button(RichText::new("📁 Browse Files...").size(12.0))
-                    .clicked()
+                if craft_ui::buttons::IconButton::new(
+                    "Browse Files",
+                    Vec2::new(120.0, 28.0),
+                    &primary_style,
+                )
+                .show(ui, |ui, rect, tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "📁 Browse Files...",
+                        egui::FontId::proportional(11.5),
+                        tint,
+                    );
+                })
+                .clicked()
                 {
                     load_default_sample_jobs(engine, presets);
                 }
@@ -213,68 +233,129 @@ fn render_populated_queue(
         let is_running = status.is_running;
         let is_paused = status.pause_reason.is_some();
 
+        let accent_style = crate::craft_theme::craft_accent_button_style();
+        let normal_style = crate::craft_theme::craft_icon_button_style();
+        let danger_style = crate::craft_theme::craft_danger_button_style();
+
         if is_paused {
-            if ui
-                .button(
-                    RichText::new("▶ Resume Queue")
-                        .size(11.5)
-                        .strong()
-                        .color(Color32::from_rgb(90, 230, 130)),
-                )
-                .clicked()
+            if craft_ui::buttons::IconButton::new(
+                "Resume Queue",
+                Vec2::new(110.0, 24.0),
+                &accent_style,
+            )
+            .show(ui, |ui, rect, tint| {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "▶ Resume Queue",
+                    egui::FontId::proportional(11.0),
+                    tint,
+                );
+            })
+            .clicked()
             {
                 engine.resume_queue(PauseReason::UserRequested);
             }
         } else if is_running && status.active_jobs > 0 {
-            if ui
-                .button(
-                    RichText::new("⏸ Pause Queue")
-                        .size(11.5)
-                        .color(Color32::from_rgb(255, 190, 70)),
-                )
-                .clicked()
+            if craft_ui::buttons::IconButton::new(
+                "Pause Queue",
+                Vec2::new(100.0, 24.0),
+                &normal_style,
+            )
+            .show(ui, |ui, rect, _tint| {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "⏸ Pause Queue",
+                    egui::FontId::proportional(11.0),
+                    Color32::from_rgb(255, 190, 70),
+                );
+            })
+            .clicked()
             {
                 engine.pause_queue(PauseReason::UserRequested);
             }
-        } else if ui
-            .button(
-                RichText::new("▶ Start Queue")
-                    .size(11.5)
-                    .strong()
-                    .color(Color32::from_rgb(90, 230, 130)),
-            )
-            .clicked()
+        } else if craft_ui::buttons::IconButton::new(
+            "Start Queue",
+            Vec2::new(100.0, 24.0),
+            &accent_style,
+        )
+        .show(ui, |ui, rect, tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "▶ Start Queue",
+                egui::FontId::proportional(11.0),
+                tint,
+            );
+        })
+        .clicked()
         {
             let _ = engine.poll_dispatch();
         }
 
-        if ui
-            .button(RichText::new("⏹ Stop").size(11.5).color(Color32::GRAY))
+        if craft_ui::buttons::IconButton::new("Stop Queue", Vec2::new(65.0, 24.0), &danger_style)
+            .show(ui, |ui, rect, tint| {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "⏹ Stop",
+                    egui::FontId::proportional(11.0),
+                    tint,
+                );
+            })
             .clicked()
         {
             engine.pause_queue(PauseReason::UserRequested);
         }
 
-        ui.add_space(8.0);
-        if ui
-            .button(RichText::new("[-] Clear Done").size(11.5))
+        ui.add_space(6.0);
+        if craft_ui::buttons::IconButton::new("Clear Done", Vec2::new(85.0, 24.0), &normal_style)
+            .show(ui, |ui, rect, tint| {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "[-] Clear Done",
+                    egui::FontId::proportional(11.0),
+                    tint,
+                );
+            })
             .clicked()
         {
             engine.clear_completed();
         }
 
-        if ui.button(RichText::new("🗑 Clear All").size(11.5)).clicked() {
+        if craft_ui::buttons::IconButton::new("Clear All", Vec2::new(75.0, 24.0), &normal_style)
+            .show(ui, |ui, rect, tint| {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "🗑 Clear All",
+                    egui::FontId::proportional(11.0),
+                    tint,
+                );
+            })
+            .clicked()
+        {
             engine.clear_all();
         }
 
-        ui.add_space(8.0);
-        if ui
-            .button(
-                RichText::new("＋ Add Sample Job")
-                    .size(11.5)
-                    .color(Color32::from_rgb(90, 200, 255)),
-            )
-            .clicked()
+        ui.add_space(6.0);
+        if craft_ui::buttons::IconButton::new(
+            "Add Sample Job",
+            Vec2::new(125.0, 24.0),
+            &normal_style,
+        )
+        .show(ui, |ui, rect, _tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "＋ Add Sample Job",
+                egui::FontId::proportional(11.0),
+                Color32::from_rgb(90, 200, 255),
+            );
+        })
+        .clicked()
         {
             load_default_sample_jobs(engine, presets);
         }
@@ -509,31 +590,123 @@ fn render_populated_queue(
                             ui.label(RichText::new("—").size(10.5).color(Color32::DARK_GRAY));
                         }
 
-                        // Actions
+                        // Actions using craft_ui::buttons::IconButton
+                        let small_style = crate::craft_theme::craft_small_button_style();
+                        let danger_small = crate::craft_theme::craft_danger_button_style();
                         ui.horizontal(|ui| match job.state {
                             JobState::Running { .. } | JobState::Queued => {
-                                if ui.small_button("✕").clicked() {
+                                if craft_ui::buttons::IconButton::new(
+                                    "Cancel Job",
+                                    Vec2::new(20.0, 20.0),
+                                    &danger_small,
+                                )
+                                .show(ui, |ui, rect, tint| {
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "✕",
+                                        egui::FontId::proportional(10.0),
+                                        tint,
+                                    );
+                                })
+                                .clicked()
+                                {
                                     cancel_id = Some(job.id);
                                 }
                             }
                             JobState::Failed { .. } | JobState::Cancelled => {
-                                if ui.small_button("⟳").clicked() {
+                                if craft_ui::buttons::IconButton::new(
+                                    "Retry Job",
+                                    Vec2::new(20.0, 20.0),
+                                    &small_style,
+                                )
+                                .show(ui, |ui, rect, tint| {
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "⟳",
+                                        egui::FontId::proportional(10.0),
+                                        tint,
+                                    );
+                                })
+                                .clicked()
+                                {
                                     retry_id = Some(job.id);
                                 }
-                                if ui.small_button("🗑").clicked() {
+                                if craft_ui::buttons::IconButton::new(
+                                    "Remove Job",
+                                    Vec2::new(20.0, 20.0),
+                                    &danger_small,
+                                )
+                                .show(ui, |ui, rect, tint| {
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "🗑",
+                                        egui::FontId::proportional(10.0),
+                                        tint,
+                                    );
+                                })
+                                .clicked()
+                                {
                                     remove_id = Some(job.id);
                                 }
                             }
                             JobState::Completed { .. } => {
-                                if ui.small_button("🗑").clicked() {
+                                if craft_ui::buttons::IconButton::new(
+                                    "Remove Job",
+                                    Vec2::new(20.0, 20.0),
+                                    &small_style,
+                                )
+                                .show(ui, |ui, rect, tint| {
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "🗑",
+                                        egui::FontId::proportional(10.0),
+                                        tint,
+                                    );
+                                })
+                                .clicked()
+                                {
                                     remove_id = Some(job.id);
                                 }
                             }
                             JobState::Paused { .. } => {
-                                if ui.small_button("▶").clicked() {
+                                if craft_ui::buttons::IconButton::new(
+                                    "Resume Job",
+                                    Vec2::new(20.0, 20.0),
+                                    &small_style,
+                                )
+                                .show(ui, |ui, rect, tint| {
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "▶",
+                                        egui::FontId::proportional(10.0),
+                                        tint,
+                                    );
+                                })
+                                .clicked()
+                                {
                                     engine.resume_queue(PauseReason::UserRequested);
                                 }
-                                if ui.small_button("✕").clicked() {
+                                if craft_ui::buttons::IconButton::new(
+                                    "Cancel Job",
+                                    Vec2::new(20.0, 20.0),
+                                    &danger_small,
+                                )
+                                .show(ui, |ui, rect, tint| {
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        "✕",
+                                        egui::FontId::proportional(10.0),
+                                        tint,
+                                    );
+                                })
+                                .clicked()
+                                {
                                     cancel_id = Some(job.id);
                                 }
                             }

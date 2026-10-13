@@ -24,41 +24,79 @@ impl Default for AutomateViewState {
 pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewState) {
     // 1. Top Automation Toolbar
     ui.horizontal(|ui| {
+        let normal_style = crate::craft_theme::craft_icon_button_style();
+        let accent_style = crate::craft_theme::craft_accent_button_style();
+
         if state.is_monitoring_active {
-            if ui
-                .button(
-                    RichText::new("⏸ Pause All Watchers")
-                        .size(11.5)
-                        .color(Color32::from_rgb(255, 190, 70)),
-                )
-                .clicked()
+            if craft_ui::buttons::IconButton::new(
+                "Pause All Watchers",
+                Vec2::new(140.0, 24.0),
+                &normal_style,
+            )
+            .show(ui, |ui, rect, _tint| {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "⏸ Pause All Watchers",
+                    egui::FontId::proportional(11.0),
+                    Color32::from_rgb(255, 190, 70),
+                );
+            })
+            .clicked()
             {
                 state.is_monitoring_active = false;
             }
-        } else if ui
-            .button(
-                RichText::new("▶ Resume All Watchers")
-                    .size(11.5)
-                    .strong()
-                    .color(Color32::from_rgb(90, 230, 130)),
-            )
-            .clicked()
+        } else if craft_ui::buttons::IconButton::new(
+            "Resume All Watchers",
+            Vec2::new(145.0, 24.0),
+            &accent_style,
+        )
+        .show(ui, |ui, rect, tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "▶ Resume All Watchers",
+                egui::FontId::proportional(11.0),
+                tint,
+            );
+        })
+        .clicked()
         {
             state.is_monitoring_active = true;
         }
 
-        let _ = ui
-            .button(
-                RichText::new("＋ Add Watch Folder")
-                    .size(11.5)
-                    .strong()
-                    .color(Color32::from_rgb(90, 200, 255)),
-            )
-            .clicked();
+        ui.add_space(4.0);
+        let _ = craft_ui::buttons::IconButton::new(
+            "Add Watch Folder",
+            Vec2::new(135.0, 24.0),
+            &normal_style,
+        )
+        .show(ui, |ui, rect, _tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "＋ Add Watch Folder",
+                egui::FontId::proportional(11.0),
+                Color32::from_rgb(90, 200, 255),
+            );
+        })
+        .clicked();
 
-        let _ = ui
-            .button(RichText::new("⟳ Trigger Scan Now").size(11.5))
-            .clicked();
+        let _ = craft_ui::buttons::IconButton::new(
+            "Trigger Scan Now",
+            Vec2::new(125.0, 24.0),
+            &normal_style,
+        )
+        .show(ui, |ui, rect, tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "⟳ Trigger Scan Now",
+                egui::FontId::proportional(11.0),
+                tint,
+            );
+        })
+        .clicked();
 
         ui.add_space(8.0);
         ui.label(RichText::new("🔍").size(11.0).color(Color32::GRAY));
