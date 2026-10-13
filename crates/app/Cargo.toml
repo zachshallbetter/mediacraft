@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 mediacraft-protocol = { workspace = true }
 mediacraft-daemon = { workspace = true }
+mediacraft-client = { workspace = true }
 mediacraft-oracles = { workspace = true }
 mediacraft-bitstream = { workspace = true }
 mediacraft-catalog = { workspace = true }

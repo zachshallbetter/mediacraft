@@ -7,6 +7,7 @@ members = [
     "crates/oracles",
     "crates/cli",
     "crates/catalog",
+    "crates/client",
     "crates/app",
 ]
 
@@ -29,6 +30,7 @@ todo = "warn"
 mediacraft-bitstream = { path = "crates/bitstream" }
 mediacraft-protocol = { path = "crates/protocol" }
 mediacraft-daemon = { path = "crates/daemon" }
+mediacraft-client = { path = "crates/client" }
 mediacraft-oracles = { path = "crates/oracles" }
 mediacraft-catalog = { path = "crates/catalog" }
 

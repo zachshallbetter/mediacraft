@@ -1033,6 +1033,87 @@ fn render_validation_tab(ui: &mut egui::Ui, _asset: &MediaAsset) {
 
     ui.add_space(6.0);
     ui.label(
+        RichText::new("COMPATIBILITY & EXECUTION ROUTING ANALYSIS")
+            .size(10.5)
+            .color(Color32::from_rgb(130, 145, 165))
+            .strong(),
+    );
+    ui.group(|ui| {
+        let v_codec = _asset
+            .video
+            .as_ref()
+            .map(|v| v.codec.to_lowercase())
+            .unwrap_or_default();
+        let ext = _asset
+            .path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+
+        let can_remux = (v_codec.contains("h.264")
+            || v_codec.contains("avc")
+            || v_codec.contains("prores"))
+            && (ext == "mp4" || ext == "mov" || ext == "m4v");
+
+        ui.horizontal(|ui| {
+            if can_remux {
+                ui.label(
+                    RichText::new("✓ Stream-Copy Remux Eligible")
+                        .size(11.0)
+                        .color(Color32::from_rgb(80, 230, 120))
+                        .strong(),
+                );
+                ui.label(
+                    RichText::new("• Zero Decode Cycles")
+                        .size(10.0)
+                        .color(Color32::from_rgb(120, 200, 255)),
+                );
+            } else {
+                ui.label(
+                    RichText::new("⚠ Full Transcode Required")
+                        .size(11.0)
+                        .color(Color32::from_rgb(255, 190, 70))
+                        .strong(),
+                );
+            }
+        });
+
+        ui.add_space(3.0);
+        let explanation = if can_remux {
+            format!(
+                "Source video bitstream ({}) and container (.{ext}) are fully compatible for zero-decode remuxing. \
+                MediaCraft can repackage packets into an ISOBMFF FastStart container in milliseconds without generational loss, \
+                color resampling, or CPU/GPU decoding cycles.",
+                _asset
+                    .video
+                    .as_ref()
+                    .map(|v| v.codec.as_str())
+                    .unwrap_or("H.264")
+            )
+        } else if _asset.video.is_some() {
+            format!(
+                "Source format ({}) requires raster pixel decoding and recoding to match delivery profile constraints. \
+                Direct stream copy is bypassed to ensure full color subsampling alignment, CRF rate control, and GOP structure compliance.",
+                _asset
+                    .video
+                    .as_ref()
+                    .map(|v| v.codec.as_str())
+                    .unwrap_or("Video")
+            )
+        } else {
+            "Audio-only source master. Direct audio extraction or AAC/FLAC encoding can proceed without video raster overhead.".to_string()
+        };
+
+        ui.label(
+            RichText::new(explanation)
+                .size(10.0)
+                .color(Color32::from_rgb(200, 215, 235)),
+        );
+    });
+
+    ui.add_space(6.0);
+    ui.label(
         RichText::new("SPECIFICATION COMPLIANCE MATRIX")
             .size(10.5)
             .color(Color32::from_rgb(130, 145, 165))

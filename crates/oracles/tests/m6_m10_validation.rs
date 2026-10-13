@@ -14,12 +14,14 @@ use std::process::Command;
 
 use mediacraft_daemon::QueueEngine;
 use mediacraft_daemon::hardware::HardwareCapabilities;
+use mediacraft_daemon::pipeline::av_pipeline::{AvPipeline, AvPipelineConfig};
 use mediacraft_daemon::pipeline::flac_adapter::FlacEncoderAdapter;
 use mediacraft_daemon::pipeline::prores_adapter::ProResEncoderAdapter;
+use mediacraft_daemon::pipeline::remux_adapter::execute_stream_copy_remux;
 use mediacraft_daemon::plan::{PlanError, compile_execution_plan};
 use mediacraft_daemon::quality::{calculate_psnr, calculate_ssim, measure_audio_loudness};
 use mediacraft_daemon::validate_deliverable;
-use mediacraft_protocol::stream::{Rational, VideoFrame};
+use mediacraft_protocol::stream::{AudioFrame, Rational, VideoFrame};
 use mediacraft_protocol::{
     AudioCodec, ContainerFormat, DeliveryContract, EncodingPreset, ValidationSeverity, VideoCodec,
 };
@@ -420,6 +422,124 @@ fn test_m10_format_expansion_flac_and_prores() {
         !prores_pkt.is_empty(),
         "ProRes bitstream packet must contain compressed frame data"
     );
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_m10_stream_copy_remux_validation() {
+    let temp_dir = std::env::temp_dir().join(format!("mediacraft_remux_{}", std::process::id()));
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let initial_mp4 = temp_dir.join("initial_source.mp4");
+    let remuxed_mp4 = temp_dir.join("stream_copy_remux.mp4");
+
+    // 1. Create a valid AV source with 12 frames of 320x240 video and 0.5s audio
+    let width = 320;
+    let height = 240;
+    let fps_num = 24;
+    let fps_den = 1;
+    let total_v_frames = 12;
+
+    let timebase = Rational::new(fps_den, fps_num);
+    let mut video_frames = Vec::with_capacity(total_v_frames);
+    for i in 0..total_v_frames {
+        video_frames.push(VideoFrame::black(width, height, i as i64, timebase));
+    }
+
+    let sample_rate = 48000;
+    let channels = 2;
+    let total_audio_samples = 24000; // 0.5s
+    let mut channel_samples = Vec::new();
+    for _ in 0..channels {
+        channel_samples.push(vec![0.0f32; total_audio_samples]);
+    }
+    let audio_frame = AudioFrame {
+        samples: channel_samples,
+        sample_rate,
+        channels,
+        pts: 0,
+        timebase: Rational::new(1, sample_rate),
+    };
+
+    let av_pipeline = AvPipeline::new(AvPipelineConfig {
+        width,
+        height,
+        fps_num,
+        fps_den,
+        video_crf: Some(28.0),
+        video_bitrate_kbps: None,
+        audio_sample_rate: sample_rate,
+        audio_channels: channels,
+        audio_bitrate_bps: 128000,
+        faststart: false,
+    });
+
+    let transcode_res =
+        av_pipeline.transcode(&initial_mp4, &video_frames, &audio_frame, None::<fn(f32)>);
+    assert!(
+        transcode_res.is_ok(),
+        "Initial AV pipeline generation failed: {:?}",
+        transcode_res.err()
+    );
+
+    // 2. Perform zero-decode stream copy remux with Faststart enabled
+    let remux_res = execute_stream_copy_remux(&initial_mp4, &remuxed_mp4, true);
+    assert!(
+        remux_res.is_ok(),
+        "Stream-copy remux failed: {:?}",
+        remux_res.err()
+    );
+    let receipt = remux_res.unwrap();
+
+    assert_eq!(receipt.output_path, remuxed_mp4);
+    assert_eq!(receipt.video_packets, total_v_frames);
+    assert!(receipt.audio_packets > 0, "Must have remuxed audio packets");
+    assert!(
+        receipt.total_bytes > 0,
+        "Remuxed file size must be non-zero"
+    );
+    assert!(
+        receipt.duration_seconds > 0.0,
+        "Remuxed duration must be positive"
+    );
+
+    // 3. Verify Faststart atom arrangement (moov precedes mdat)
+    let remuxed_bytes = fs::read(&remuxed_mp4).expect("read remuxed deliverable");
+    let moov_pos = remuxed_bytes.windows(4).position(|w| w == b"moov");
+    let mdat_pos = remuxed_bytes.windows(4).position(|w| w == b"mdat");
+    assert!(moov_pos.is_some(), "moov box must exist in remuxed MP4");
+    assert!(mdat_pos.is_some(), "mdat box must exist in remuxed MP4");
+    assert!(
+        moov_pos.unwrap() < mdat_pos.unwrap(),
+        "Faststart invariant failed: moov ({:?}) must appear before mdat ({:?})",
+        moov_pos,
+        mdat_pos
+    );
+
+    // 4. External probe validation if ffprobe is present
+    if let Some(ffprobe) = find_binary("ffprobe") {
+        let probe = Command::new(ffprobe)
+            .arg("-v")
+            .arg("error")
+            .arg("-show_entries")
+            .arg("stream=codec_name")
+            .arg("-of")
+            .arg("default=noprint_wrappers=1")
+            .arg(&remuxed_mp4)
+            .output();
+        if let Ok(out) = probe {
+            let info = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                info.contains("codec_name=h264"),
+                "Remuxed file must retain H.264 video track"
+            );
+            assert!(
+                info.contains("codec_name=aac"),
+                "Remuxed file must retain AAC audio track"
+            );
+        }
+    }
 
     let _ = fs::remove_dir_all(&temp_dir);
 }

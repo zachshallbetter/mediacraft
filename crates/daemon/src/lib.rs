@@ -645,6 +645,18 @@ impl QueueEngine {
                     (bitstream.len() as u64, dur, bitstream)
                 }
             }
+            plan::ExecutionRoute::RemuxCopy => {
+                let receipt = pipeline::remux_adapter::execute_stream_copy_remux(
+                    &source_path,
+                    &output_path,
+                    plan.faststart,
+                )
+                .map_err(|e| format!("Stream-copy remux failed: {e}"))?;
+
+                let bytes = std::fs::read(&output_path)
+                    .map_err(|e| format!("Failed to read produced deliverable: {e}"))?;
+                (receipt.total_bytes, receipt.duration_seconds, bytes)
+            }
         };
 
         // 5. Generate SHA-256 cryptographic receipt and write atomically

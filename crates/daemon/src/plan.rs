@@ -53,6 +53,8 @@ pub enum ExecutionRoute {
     AudioOnly,
     /// Video-only transcode and packaging.
     VideoOnly,
+    /// Direct stream-copy container remux without decompressing or re-encoding media samples.
+    RemuxCopy,
 }
 
 /// A fully validated, executable transcode plan.
@@ -113,7 +115,12 @@ pub fn compile_execution_plan(
         }
         (false, true) => {
             // Source is video container (may contain both audio and video)
-            if preset.video_codec == VideoCodec::None {
+            if preset.video_codec == VideoCodec::PassThrough
+                || (preset.video_codec == VideoCodec::None
+                    && preset.audio_codec == AudioCodec::PassThrough)
+            {
+                ExecutionRoute::RemuxCopy
+            } else if preset.video_codec == VideoCodec::None {
                 ExecutionRoute::AudioOnly
             } else if preset.audio_codec == AudioCodec::None {
                 ExecutionRoute::VideoOnly
@@ -123,7 +130,9 @@ pub fn compile_execution_plan(
         }
         _ => {
             // Default to preset-specified structure
-            if preset.video_codec == VideoCodec::None {
+            if preset.video_codec == VideoCodec::PassThrough {
+                ExecutionRoute::RemuxCopy
+            } else if preset.video_codec == VideoCodec::None {
                 ExecutionRoute::AudioOnly
             } else if preset.audio_codec == AudioCodec::None {
                 ExecutionRoute::VideoOnly
@@ -144,7 +153,7 @@ pub fn compile_execution_plan(
     // 4. Video parameter validation
     let width = preset.width.unwrap_or(1920);
     let height = preset.height.unwrap_or(1080);
-    if route != ExecutionRoute::AudioOnly {
+    if route != ExecutionRoute::AudioOnly && route != ExecutionRoute::RemuxCopy {
         if width == 0 || height == 0 {
             return Err(PlanError::InvalidVideoDimensions {
                 width,
@@ -165,7 +174,10 @@ pub fn compile_execution_plan(
     // 5. Frame rate validation
     let fps_num = preset.frame_rate_num.unwrap_or(24);
     let fps_den = preset.frame_rate_den.unwrap_or(1);
-    if route != ExecutionRoute::AudioOnly && (fps_num == 0 || fps_den == 0) {
+    if route != ExecutionRoute::AudioOnly
+        && route != ExecutionRoute::RemuxCopy
+        && (fps_num == 0 || fps_den == 0)
+    {
         return Err(PlanError::InvalidFrameRate {
             num: fps_num,
             den: fps_den,
@@ -175,7 +187,7 @@ pub fn compile_execution_plan(
     // 6. Audio parameter validation
     let audio_sample_rate = preset.audio_sample_rate.unwrap_or(48_000);
     let audio_channels = preset.audio_channels.unwrap_or(2);
-    if route != ExecutionRoute::VideoOnly {
+    if route != ExecutionRoute::VideoOnly && route != ExecutionRoute::RemuxCopy {
         if !(8000..=192000).contains(&audio_sample_rate) {
             return Err(PlanError::InvalidAudioParameters {
                 sample_rate: audio_sample_rate,

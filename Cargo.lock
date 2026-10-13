@@ -1285,6 +1285,7 @@ dependencies = [
  "egui",
  "mediacraft-bitstream",
  "mediacraft-catalog",
+ "mediacraft-client",
  "mediacraft-daemon",
  "mediacraft-oracles",
  "mediacraft-protocol",
@@ -1322,6 +1323,17 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "mediacraft-client"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-daemon",
+ "mediacraft-protocol",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
