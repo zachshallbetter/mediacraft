@@ -1,6 +1,8 @@
-//! Asset Library Grid and Browser View (Digital Asset Management)
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 use egui::{Color32, CornerRadius, Pos2, Rect, RichText, Stroke, Vec2};
+use mediacraft_catalog::batch_rename::{BatchRenamePlanner, RollbackJournal};
 use mediacraft_catalog::{MediaAsset, MediaKind, SmartCollection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,10 +12,27 @@ pub enum ViewMode {
     Details,
 }
 
+#[derive(Debug, Clone)]
+pub enum LibraryAction {
+    ScanDirectory(PathBuf),
+    BatchRename { pattern: String, start_index: u32 },
+    BatchRollback,
+    BatchTag { tag: String },
+    BatchRate { rating: u8 },
+}
+
 pub struct LibraryViewState {
     pub view_mode: ViewMode,
     pub card_size: f32, // Thumbnail size slider
     pub sort_by: SortOption,
+    pub selected_ids: HashSet<String>,
+    pub batch_rename_open: bool,
+    pub rename_pattern: String,
+    pub rename_start_index: u32,
+    pub rollback_journal: RollbackJournal,
+    pub scan_dialog_open: bool,
+    pub scan_path_input: String,
+    pub status_notification: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +49,14 @@ impl Default for LibraryViewState {
             view_mode: ViewMode::Grid,
             card_size: 160.0,
             sort_by: SortOption::DateAdded,
+            selected_ids: HashSet::new(),
+            batch_rename_open: false,
+            rename_pattern: "Project_{date}_{seq:03}_{name}".to_string(),
+            rename_start_index: 1,
+            rollback_journal: RollbackJournal::new(),
+            scan_dialog_open: false,
+            scan_path_input: "/Users/zachshallbetter/Movies".to_string(),
+            status_notification: None,
         }
     }
 }
@@ -48,7 +75,8 @@ pub fn render_library_view(
     ui: &mut egui::Ui,
     state: &mut LibraryViewState,
     ctx: LibraryViewContext<'_>,
-) {
+) -> Option<LibraryAction> {
+    let mut action = None;
     let active_collection = ctx.active_collection;
     let kind_filter = &mut *ctx.kind_filter;
     let kind_counts = ctx.kind_counts;
@@ -56,6 +84,27 @@ pub fn render_library_view(
     let search_query = &mut *ctx.search_query;
     let assets = ctx.assets;
     let selected_asset_id = &mut *ctx.selected_asset_id;
+
+    // 0. Notification banner if present
+    let mut dismiss_notification = false;
+    if let Some(msg) = &state.status_notification {
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("✓ {msg}"))
+                    .size(11.0)
+                    .color(Color32::from_rgb(80, 230, 120))
+                    .strong(),
+            );
+            if ui.small_button("✕").clicked() {
+                dismiss_notification = true;
+            }
+        });
+        ui.add_space(2.0);
+    }
+    if dismiss_notification {
+        state.status_notification = None;
+    }
+
     // 1. Breadcrumb & Navigation Bar
     ui.horizontal(|ui| {
         ui.label(
@@ -70,9 +119,29 @@ pub fn render_library_view(
                 .color(Color32::from_rgb(220, 235, 255)),
         );
 
+        ui.add_space(6.0);
+        let btn_style = crate::craft_theme::craft_icon_button_style();
+        if craft_ui::buttons::IconButton::new(
+            "Ingest Directory",
+            Vec2::new(125.0, 22.0),
+            &btn_style,
+        )
+        .show(ui, |ui, rect, tint| {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "＋ Ingest Folder",
+                egui::FontId::proportional(11.0),
+                tint,
+            );
+        })
+        .clicked()
+        {
+            state.scan_dialog_open = true;
+        }
+
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // View Mode Toggles using craft_ui::buttons::IconButton
-            let btn_style = crate::craft_theme::craft_icon_button_style();
             let btn_size = Vec2::new(22.0, 22.0);
 
             if craft_ui::buttons::IconButton::new("Details View", btn_size, &btn_style)
@@ -145,6 +214,100 @@ pub fn render_library_view(
     });
 
     ui.separator();
+
+    // 1.5 Batch Operations Bar (shown when multiple items or any item is multi-selected)
+    if !state.selected_ids.is_empty() {
+        ui.horizontal(|ui| {
+            let sel_count = state.selected_ids.len();
+            ui.label(
+                RichText::new(format!("✓ {sel_count} Selected"))
+                    .size(11.5)
+                    .strong()
+                    .color(Color32::from_rgb(80, 190, 255)),
+            );
+            ui.add_space(8.0);
+
+            let btn_style = crate::craft_theme::craft_icon_button_style();
+            if craft_ui::buttons::IconButton::new(
+                "Batch Rename",
+                Vec2::new(115.0, 22.0),
+                &btn_style,
+            )
+            .show(ui, |ui, rect, tint| {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "⟳ Batch Rename",
+                    egui::FontId::proportional(11.0),
+                    tint,
+                );
+            })
+            .clicked()
+            {
+                state.batch_rename_open = true;
+            }
+
+            if craft_ui::buttons::IconButton::new("Tag Review", Vec2::new(95.0, 22.0), &btn_style)
+                .show(ui, |ui, rect, tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "🏷 Tag 'review'",
+                        egui::FontId::proportional(11.0),
+                        tint,
+                    );
+                })
+                .clicked()
+            {
+                action = Some(LibraryAction::BatchTag {
+                    tag: "review".to_string(),
+                });
+            }
+
+            if craft_ui::buttons::IconButton::new("Rate 5 Stars", Vec2::new(80.0, 22.0), &btn_style)
+                .show(ui, |ui, rect, _tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "⭐ Rate 5★",
+                        egui::FontId::proportional(11.0),
+                        Color32::from_rgb(255, 200, 70),
+                    );
+                })
+                .clicked()
+            {
+                action = Some(LibraryAction::BatchRate { rating: 5 });
+            }
+
+            if !state.rollback_journal.operations.is_empty() {
+                let op_count = state.rollback_journal.operations.len();
+                let roll_label = format!("↩ Rollback ({op_count})");
+                if craft_ui::buttons::IconButton::new(
+                    "Rollback Rename",
+                    Vec2::new(125.0, 22.0),
+                    &btn_style,
+                )
+                .show(ui, |ui, rect, _tint| {
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        &roll_label,
+                        egui::FontId::proportional(11.0),
+                        Color32::from_rgb(255, 180, 80),
+                    );
+                })
+                .clicked()
+                {
+                    action = Some(LibraryAction::BatchRollback);
+                }
+            }
+
+            if ui.small_button("✕ Clear Selection").clicked() {
+                state.selected_ids.clear();
+            }
+        });
+        ui.separator();
+    }
 
     // 2. Collection Header & Filter Chips
     ui.horizontal(|ui| {
@@ -241,22 +404,235 @@ pub fn render_library_view(
 
             match state.view_mode {
                 ViewMode::Grid => {
-                    render_grid_cards(ui, assets, state.card_size, selected_asset_id);
+                    render_grid_cards(
+                        ui,
+                        assets,
+                        state.card_size,
+                        &mut state.selected_ids,
+                        selected_asset_id,
+                    );
                 }
                 ViewMode::List => {
-                    render_list_view(ui, assets, selected_asset_id);
+                    render_list_view(ui, assets, &mut state.selected_ids, selected_asset_id);
                 }
                 ViewMode::Details => {
-                    render_details_view(ui, assets, selected_asset_id);
+                    render_details_view(ui, assets, &mut state.selected_ids, selected_asset_id);
                 }
             }
         });
+
+    // 4. Batch Rename Modal Window
+    if state.batch_rename_open {
+        let selected_assets: Vec<&MediaAsset> = assets
+            .iter()
+            .filter(|a| state.selected_ids.contains(&a.id))
+            .copied()
+            .collect();
+
+        let planner = BatchRenamePlanner::new(&state.rename_pattern, state.rename_start_index);
+        let plan_items = planner.plan(
+            &selected_assets
+                .iter()
+                .map(|&a| a.clone())
+                .collect::<Vec<_>>(),
+        );
+        let has_collisions = plan_items.iter().any(|i| i.has_collision);
+
+        egui::Window::new("Batch Rename Planner (M4)")
+            .fixed_size(Vec2::new(700.0, 440.0))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Filename Pattern:").strong().size(11.5));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut state.rename_pattern).desired_width(340.0),
+                    );
+                    ui.label("Start #:");
+                    ui.add(egui::DragValue::new(&mut state.rename_start_index).range(1..=9999));
+                });
+
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Tokens:").size(10.5).color(Color32::GRAY));
+                    if ui.small_button("+ {name}").clicked() {
+                        state.rename_pattern.push_str("{name}");
+                    }
+                    if ui.small_button("+ {res}").clicked() {
+                        state.rename_pattern.push_str("{res}");
+                    }
+                    if ui.small_button("+ {date}").clicked() {
+                        state.rename_pattern.push_str("{date}");
+                    }
+                    if ui.small_button("+ {seq:03}").clicked() {
+                        state.rename_pattern.push_str("{seq:03}");
+                    }
+                    if ui.small_button("+ {camera}").clicked() {
+                        state.rename_pattern.push_str("{camera}");
+                    }
+                });
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.label(
+                    RichText::new("PREFLIGHT COLLISION & RENAME PREVIEW:")
+                        .size(10.5)
+                        .color(Color32::from_rgb(130, 145, 165))
+                        .strong(),
+                );
+                ui.add_space(4.0);
+
+                egui::ScrollArea::vertical()
+                    .id_salt("rename_preview_scroll")
+                    .max_height(240.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("rename_plan_grid")
+                            .striped(true)
+                            .num_columns(3)
+                            .spacing(Vec2::new(12.0, 5.0))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new("Original Filename")
+                                        .strong()
+                                        .size(10.5)
+                                        .color(Color32::GRAY),
+                                );
+                                ui.label(
+                                    RichText::new("Proposed Destination")
+                                        .strong()
+                                        .size(10.5)
+                                        .color(Color32::GRAY),
+                                );
+                                ui.label(
+                                    RichText::new("Preflight Status")
+                                        .strong()
+                                        .size(10.5)
+                                        .color(Color32::GRAY),
+                                );
+                                ui.end_row();
+
+                                for item in &plan_items {
+                                    ui.label(RichText::new(&item.original_filename).size(10.5));
+                                    ui.label(
+                                        RichText::new(&item.new_filename)
+                                            .size(10.5)
+                                            .strong()
+                                            .color(Color32::from_rgb(120, 200, 255)),
+                                    );
+                                    if item.has_collision {
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "⚠ {}",
+                                                item.error_message
+                                                    .as_deref()
+                                                    .unwrap_or("Collision")
+                                            ))
+                                            .size(10.5)
+                                            .color(Color32::from_rgb(255, 90, 90))
+                                            .strong(),
+                                        );
+                                    } else {
+                                        ui.label(
+                                            RichText::new("✓ Ready")
+                                                .size(10.5)
+                                                .color(Color32::from_rgb(80, 230, 120))
+                                                .strong(),
+                                        );
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                    });
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        state.batch_rename_open = false;
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let can_apply = !has_collisions && !selected_assets.is_empty();
+                        let apply_label = format!("Apply Rename ({} files)", selected_assets.len());
+                        if ui
+                            .add_enabled(
+                                can_apply,
+                                egui::Button::new(RichText::new(apply_label).strong()),
+                            )
+                            .clicked()
+                        {
+                            action = Some(LibraryAction::BatchRename {
+                                pattern: state.rename_pattern.clone(),
+                                start_index: state.rename_start_index,
+                            });
+                            state.batch_rename_open = false;
+                        }
+                    });
+                });
+            });
+    }
+
+    // 5. Scan & Ingest Modal Window (Task D)
+    if state.scan_dialog_open {
+        egui::Window::new("Scan & Ingest Media Folder (M1)")
+            .fixed_size(Vec2::new(560.0, 220.0))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ui.ctx(), |ui| {
+                ui.label(
+                    RichText::new(
+                        "Recursively index media files from disk and probe format streams:",
+                    )
+                    .size(11.5),
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Directory Path:").strong().size(11.0));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut state.scan_path_input).desired_width(380.0),
+                    );
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Presets:").size(10.5).color(Color32::GRAY));
+                    if ui.small_button("🎬 ~/Movies").clicked() {
+                        state.scan_path_input = "/Users/zachshallbetter/Movies".to_string();
+                    }
+                    if ui.small_button("📥 ~/Downloads").clicked() {
+                        state.scan_path_input = "/Users/zachshallbetter/Downloads".to_string();
+                    }
+                    if ui.small_button("📁 Workspace").clicked() {
+                        state.scan_path_input =
+                            "/Users/zachshallbetter/Projects/ArtCraft".to_string();
+                    }
+                });
+                ui.add_space(14.0);
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        state.scan_dialog_open = false;
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(RichText::new("Scan & Ingest").strong()).clicked() {
+                            action = Some(LibraryAction::ScanDirectory(PathBuf::from(
+                                &state.scan_path_input,
+                            )));
+                            state.scan_dialog_open = false;
+                        }
+                    });
+                });
+            });
+    }
+
+    action
 }
 
 fn render_grid_cards(
     ui: &mut egui::Ui,
     assets: &[&MediaAsset],
     card_width: f32,
+    selected_ids: &mut HashSet<String>,
     selected_asset_id: &mut Option<String>,
 ) {
     let available_width = ui.available_width().max(300.0);
@@ -270,7 +646,9 @@ fn render_grid_cards(
         .spacing(Vec2::new(item_spacing, item_spacing))
         .show(ui, |ui| {
             for (idx, asset) in assets.iter().enumerate() {
-                let is_selected = selected_asset_id.as_deref() == Some(&asset.id);
+                let is_in_multi = selected_ids.contains(&asset.id);
+                let is_selected = is_in_multi
+                    || (selected_ids.is_empty() && selected_asset_id.as_deref() == Some(&asset.id));
 
                 ui.allocate_ui(Vec2::new(card_width, card_height), |ui| {
                     let (rect, resp) = ui.allocate_exact_size(
@@ -279,6 +657,19 @@ fn render_grid_cards(
                     );
 
                     if resp.clicked() {
+                        let multi = ui.input(|i| {
+                            i.modifiers.command || i.modifiers.ctrl || i.modifiers.shift
+                        });
+                        if multi {
+                            if selected_ids.contains(&asset.id) {
+                                selected_ids.remove(&asset.id);
+                            } else {
+                                selected_ids.insert(asset.id.clone());
+                            }
+                        } else {
+                            selected_ids.clear();
+                            selected_ids.insert(asset.id.clone());
+                        }
                         *selected_asset_id = Some(asset.id.clone());
                     }
 
@@ -315,6 +706,38 @@ fn render_grid_cards(
                     );
 
                     draw_rich_mock_thumbnail(&painter, thumb_rect, asset);
+
+                    // Multi-select Checkbox in top-left
+                    let check_rect = Rect::from_min_size(
+                        Pos2::new(thumb_rect.min.x + 4.0, thumb_rect.min.y + 4.0),
+                        Vec2::new(14.0, 14.0),
+                    );
+                    if is_in_multi {
+                        painter.rect_filled(
+                            check_rect,
+                            CornerRadius::same(2),
+                            Color32::from_rgb(80, 180, 255),
+                        );
+                        painter.text(
+                            check_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "✓",
+                            egui::FontId::proportional(10.0),
+                            Color32::BLACK,
+                        );
+                    } else if resp.hovered() {
+                        painter.rect_filled(
+                            check_rect,
+                            CornerRadius::same(2),
+                            Color32::from_black_alpha(150),
+                        );
+                        painter.rect_stroke(
+                            check_rect,
+                            CornerRadius::same(2),
+                            Stroke::new(1.0, Color32::from_rgb(140, 165, 195)),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
 
                     // Top Badges on Thumbnail
                     if asset.video.as_ref().is_some_and(|v| v.hdr) {
@@ -418,6 +841,7 @@ fn render_grid_cards(
 fn render_list_view(
     ui: &mut egui::Ui,
     assets: &[&MediaAsset],
+    selected_ids: &mut HashSet<String>,
     selected_asset_id: &mut Option<String>,
 ) {
     ui.horizontal(|ui| {
@@ -435,10 +859,23 @@ fn render_list_view(
     ui.separator();
 
     for asset in assets {
-        let is_selected = selected_asset_id.as_deref() == Some(&asset.id);
+        let is_in_multi = selected_ids.contains(&asset.id);
+        let is_selected = is_in_multi
+            || (selected_ids.is_empty() && selected_asset_id.as_deref() == Some(&asset.id));
 
         let resp = ui.selectable_label(is_selected, RichText::new(&asset.filename).size(12.0));
         if resp.clicked() {
+            let multi = ui.input(|i| i.modifiers.command || i.modifiers.ctrl || i.modifiers.shift);
+            if multi {
+                if selected_ids.contains(&asset.id) {
+                    selected_ids.remove(&asset.id);
+                } else {
+                    selected_ids.insert(asset.id.clone());
+                }
+            } else {
+                selected_ids.clear();
+                selected_ids.insert(asset.id.clone());
+            }
             *selected_asset_id = Some(asset.id.clone());
         }
     }
@@ -447,17 +884,31 @@ fn render_list_view(
 fn render_details_view(
     ui: &mut egui::Ui,
     assets: &[&MediaAsset],
+    selected_ids: &mut HashSet<String>,
     selected_asset_id: &mut Option<String>,
 ) {
     for asset in assets {
-        let is_selected = selected_asset_id.as_deref() == Some(&asset.id);
+        let is_in_multi = selected_ids.contains(&asset.id);
+        let is_selected = is_in_multi
+            || (selected_ids.is_empty() && selected_asset_id.as_deref() == Some(&asset.id));
 
         ui.group(|ui| {
             ui.horizontal(|ui| {
-                if ui
-                    .selectable_label(is_selected, RichText::new(&asset.filename).strong())
-                    .clicked()
-                {
+                let resp =
+                    ui.selectable_label(is_selected, RichText::new(&asset.filename).strong());
+                if resp.clicked() {
+                    let multi =
+                        ui.input(|i| i.modifiers.command || i.modifiers.ctrl || i.modifiers.shift);
+                    if multi {
+                        if selected_ids.contains(&asset.id) {
+                            selected_ids.remove(&asset.id);
+                        } else {
+                            selected_ids.insert(asset.id.clone());
+                        }
+                    } else {
+                        selected_ids.clear();
+                        selected_ids.insert(asset.id.clone());
+                    }
                     *selected_asset_id = Some(asset.id.clone());
                 }
                 ui.label(

@@ -1213,6 +1213,8 @@ dependencies = [
 name = "mediacraft-catalog"
 version = "0.1.0"
 dependencies = [
+ "craft-atomic",
+ "mediacraft-bitstream",
  "mediacraft-protocol",
  "serde",
  "serde_json",

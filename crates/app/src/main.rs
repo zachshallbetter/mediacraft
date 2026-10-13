@@ -23,7 +23,9 @@ use craft_ui::theme::WidgetPalette;
 use mediacraft_catalog::MediaCatalog;
 use mediacraft_daemon::QueueEngine;
 use mediacraft_daemon::ipc::IpcServer;
-use mediacraft_protocol::{AudioCodec, ContainerFormat, EncodingPreset, JobState, VideoCodec};
+use mediacraft_protocol::{
+    AudioCodec, ContainerFormat, DeliveryContract, EncodingPreset, JobState, VideoCodec,
+};
 
 use automate_view::{AutomateViewState, render_automate_workspace};
 use inspector_view::{InspectorState, render_inspector_panel};
@@ -66,6 +68,7 @@ impl Panel {
 pub struct MediaCraftApp {
     engine: Arc<Mutex<QueueEngine>>,
     ipc_server: Option<IpcServer>,
+    watch_folder_engine: mediacraft_daemon::watch_folder::WatchFolderEngine,
     catalog: MediaCatalog,
     selected_asset_id: Option<String>,
     search_query: String,
@@ -132,6 +135,7 @@ impl MediaCraftApp {
             audio_bitrate_kbps: Some(192),
             audio_priming_samples: 1024,
             faststart: true,
+            contract: Some(DeliveryContract::default()),
         };
 
         let p_web = EncodingPreset {
@@ -150,6 +154,7 @@ impl MediaCraftApp {
             audio_bitrate_kbps: Some(320),
             audio_priming_samples: 1024,
             faststart: true,
+            contract: Some(DeliveryContract::default()),
         };
 
         let j1 = engine.add_job(
@@ -229,6 +234,7 @@ impl MediaCraftApp {
                 audio_bitrate_kbps: Some(320),
                 audio_priming_samples: 1024,
                 faststart: true,
+                contract: Some(DeliveryContract::default()),
             },
             EncodingPreset {
                 id: "web-delivery-1080p".to_string(),
@@ -246,6 +252,7 @@ impl MediaCraftApp {
                 audio_bitrate_kbps: Some(320),
                 audio_priming_samples: 1024,
                 faststart: true,
+                contract: Some(DeliveryContract::default()),
             },
             EncodingPreset {
                 id: "social-media-vertical".to_string(),
@@ -263,6 +270,7 @@ impl MediaCraftApp {
                 audio_bitrate_kbps: Some(192),
                 audio_priming_samples: 1024,
                 faststart: true,
+                contract: Some(DeliveryContract::default()),
             },
             EncodingPreset {
                 id: "prores-422hq-master".to_string(),
@@ -280,6 +288,16 @@ impl MediaCraftApp {
                 audio_bitrate_kbps: Some(2304),
                 audio_priming_samples: 0,
                 faststart: false,
+                contract: Some(DeliveryContract {
+                    name: "Broadcast Master Contract".to_string(),
+                    require_faststart: false,
+                    max_bitrate_kbps: Some(250_000),
+                    max_true_peak_dbfs: Some(-1.0),
+                    target_lufs: Some(-24.0),
+                    lufs_tolerance: Some(1.0),
+                    require_audio_priming: false,
+                    max_file_size_bytes: None,
+                }),
             },
             EncodingPreset {
                 id: "audio-only-m4a".to_string(),
@@ -297,6 +315,16 @@ impl MediaCraftApp {
                 audio_bitrate_kbps: Some(320),
                 audio_priming_samples: 1024,
                 faststart: true,
+                contract: Some(DeliveryContract {
+                    name: "AAC Audio Streaming Contract".to_string(),
+                    require_faststart: true,
+                    max_bitrate_kbps: Some(350),
+                    max_true_peak_dbfs: Some(-1.0),
+                    target_lufs: Some(-16.0),
+                    lufs_tolerance: Some(1.0),
+                    require_audio_priming: true,
+                    max_file_size_bytes: None,
+                }),
             },
             EncodingPreset {
                 id: "editing-proxy".to_string(),
@@ -314,8 +342,12 @@ impl MediaCraftApp {
                 audio_bitrate_kbps: Some(192),
                 audio_priming_samples: 1024,
                 faststart: true,
+                contract: Some(DeliveryContract::default()),
             },
         ];
+
+        let mut watch_folder_engine = mediacraft_daemon::watch_folder::WatchFolderEngine::new();
+        watch_folder_engine.add_rule(mediacraft_daemon::watch_folder::WatchFolderRule::default());
 
         let open_modal_initially =
             std::env::args().any(|a| a == "--modal" || a == "--export-settings");
@@ -358,14 +390,25 @@ impl MediaCraftApp {
             inspector_state.split_pos = 0.52;
         }
 
+        let mut library_state = LibraryViewState::default();
+        if std::env::args().any(|a| a == "--batch-rename") {
+            library_state.selected_ids.insert("A001_C001".to_string());
+            library_state.selected_ids.insert("Drone_001".to_string());
+            library_state.batch_rename_open = true;
+        }
+        if std::env::args().any(|a| a == "--ingest-modal") {
+            library_state.scan_dialog_open = true;
+        }
+
         Self {
             engine: engine_arc,
             ipc_server: Some(ipc_server),
+            watch_folder_engine,
             catalog,
             selected_asset_id: Some("A001_C001".to_string()),
             search_query: String::new(),
             workspace_mode: initial_workspace,
-            library_state: LibraryViewState::default(),
+            library_state,
             inspector_state,
             process_state: ProcessViewState::default(),
             sidebar_state: SidebarNavState::default(),
@@ -407,13 +450,134 @@ impl MediaCraftApp {
         visuals.override_text_color = Some(Color32::from_rgb(235, 242, 250));
     }
 
+    fn handle_library_action(&mut self, action: Option<library_view::LibraryAction>) {
+        let action = match action {
+            Some(a) => a,
+            None => return,
+        };
+
+        match action {
+            library_view::LibraryAction::ScanDirectory(path) => {
+                let count = self
+                    .catalog
+                    .scan_and_merge(&path, &mediacraft_catalog::scanner::ScanOptions::default());
+                self.library_state.status_notification = Some(format!(
+                    "Ingest complete: scanned {} asset(s) from {}",
+                    count,
+                    path.display()
+                ));
+            }
+            library_view::LibraryAction::BatchRename {
+                pattern,
+                start_index,
+            } => {
+                let planner =
+                    mediacraft_catalog::batch_rename::BatchRenamePlanner::new(pattern, start_index);
+                let selected_assets: Vec<_> = self
+                    .catalog
+                    .all_assets()
+                    .iter()
+                    .filter(|a| self.library_state.selected_ids.contains(&a.id))
+                    .cloned()
+                    .collect();
+
+                let plan = planner.plan(&selected_assets);
+                match self.library_state.rollback_journal.execute(&plan) {
+                    Ok(count) => {
+                        for item in &plan {
+                            if let Some(asset) = self
+                                .catalog
+                                .assets_mut()
+                                .iter_mut()
+                                .find(|a| a.id == item.asset_id)
+                            {
+                                asset.path = item.new_path.clone();
+                                asset.filename = item.new_filename.clone();
+                            }
+                        }
+                        self.library_state.status_notification = Some(format!(
+                            "Batch rename succeeded: {} files renamed safely",
+                            count
+                        ));
+                    }
+                    Err(err) => {
+                        self.library_state.status_notification =
+                            Some(format!("Rename error: {err}"));
+                    }
+                }
+            }
+            library_view::LibraryAction::BatchRollback => {
+                match self.library_state.rollback_journal.rollback_all() {
+                    Ok(count) => {
+                        for asset in self.catalog.assets_mut() {
+                            if let Some(name) = asset.path.file_name().and_then(|n| n.to_str()) {
+                                asset.filename = name.to_string();
+                            }
+                        }
+                        self.library_state.status_notification = Some(format!(
+                            "Rollback successful: {} files reverted to previous names",
+                            count
+                        ));
+                    }
+                    Err(err) => {
+                        self.library_state.status_notification =
+                            Some(format!("Rollback error: {err}"));
+                    }
+                }
+            }
+            library_view::LibraryAction::BatchTag { tag } => {
+                let mutation = mediacraft_catalog::batch_rename::BatchMetadataMutation {
+                    add_tags: vec![tag.clone()],
+                    ..Default::default()
+                };
+                let selected = &self.library_state.selected_ids;
+                let mut mutated_count = 0;
+                for asset in self.catalog.assets_mut() {
+                    if selected.contains(&asset.id) {
+                        mutation.apply(std::slice::from_mut(asset));
+                        mutated_count += 1;
+                    }
+                }
+                self.library_state.status_notification =
+                    Some(format!("Tagged {} assets with #{tag}", mutated_count));
+            }
+            library_view::LibraryAction::BatchRate { rating } => {
+                let mutation = mediacraft_catalog::batch_rename::BatchMetadataMutation {
+                    set_rating: Some(rating),
+                    ..Default::default()
+                };
+                let selected = &self.library_state.selected_ids;
+                let mut mutated_count = 0;
+                for asset in self.catalog.assets_mut() {
+                    if selected.contains(&asset.id) {
+                        mutation.apply(std::slice::from_mut(asset));
+                        mutated_count += 1;
+                    }
+                }
+                self.library_state.status_notification = Some(format!(
+                    "Updated {} assets to {} stars",
+                    mutated_count, rating
+                ));
+            }
+        }
+    }
+
     fn advance_simulation(&mut self) {
         let now = Instant::now();
         let dt = (now - self.last_tick).as_secs_f32();
         self.last_tick = now;
 
         // Poll engine progress
-        let mut eng = self.engine_lock();
+        let engine_arc = Arc::clone(&self.engine);
+        let mut eng = engine_arc.lock().unwrap_or_else(PoisonError::into_inner);
+
+        // Scan watch folders if monitoring is active
+        if self.automate_state.is_monitoring_active {
+            let _ = self
+                .watch_folder_engine
+                .scan_and_enqueue(&mut eng, &self.presets);
+        }
+
         let running_jobs = eng
             .list_jobs()
             .into_iter()
@@ -1071,7 +1235,15 @@ impl eframe::App for MediaCraftApp {
                 );
             }
             WorkspaceMode::Automations => {
-                render_automate_workspace(ui, &mut self.automate_state);
+                let engine_arc = Arc::clone(&self.engine);
+                let mut queue_lock = engine_arc.lock().unwrap_or_else(PoisonError::into_inner);
+                render_automate_workspace(
+                    ui,
+                    &mut self.automate_state,
+                    &mut self.watch_folder_engine,
+                    &mut queue_lock,
+                    &self.presets,
+                );
             }
             WorkspaceMode::Inspect => {
                 let selected_asset = self
@@ -1098,9 +1270,10 @@ impl eframe::App for MediaCraftApp {
                     self.sidebar_state.selected_kind_filter,
                 );
 
+                let mut library_action = None;
                 ui.columns(2, |columns| {
                     render_sidebar_nav(&mut columns[0], &mut self.sidebar_state, &counts, total);
-                    render_library_view(
+                    library_action = render_library_view(
                         &mut columns[1],
                         &mut self.library_state,
                         LibraryViewContext {
@@ -1114,6 +1287,7 @@ impl eframe::App for MediaCraftApp {
                         },
                     );
                 });
+                self.handle_library_action(library_action);
 
                 ui.separator();
                 render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
@@ -1183,6 +1357,7 @@ impl eframe::App for MediaCraftApp {
                 let total = self.catalog.all_assets().len();
                 let counts = self.catalog.kind_counts();
                 let mut enqueue_job_action: Option<(EncodingPreset, String, String)> = None;
+                let mut library_action = None;
 
                 let output = DockArea::new(egui::Id::new("mediacraft_workspace_dock")).show(
                     ui,
@@ -1195,7 +1370,7 @@ impl eframe::App for MediaCraftApp {
                             render_sidebar_nav(ui, &mut self.sidebar_state, &counts, total);
                         }
                         Panel::LibraryGrid => {
-                            render_library_view(
+                            library_action = render_library_view(
                                 ui,
                                 &mut self.library_state,
                                 LibraryViewContext {
@@ -1233,6 +1408,7 @@ impl eframe::App for MediaCraftApp {
                     let _ = layout.apply(action);
                 }
                 self.layout = layout;
+                self.handle_library_action(library_action);
 
                 // Handle enqueue action from process panel
                 if let Some((preset, src, out)) = enqueue_job_action {

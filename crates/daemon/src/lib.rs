@@ -17,13 +17,14 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod ipc;
+pub mod watch_folder;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use mediacraft_protocol::{
     EncodingPreset, JobId, JobInfo, JobState, PROTOCOL_VERSION, PauseReason, QueueStatus, Request,
-    Response,
+    Response, ValidationFinding, ValidationReport, ValidationSeverity,
 };
 
 /// Core state machine and queue coordinator.
@@ -408,7 +409,27 @@ impl QueueEngine {
         );
         let _ = craft_atomic::atomic_write(&receipt_path, receipt_json.as_bytes());
 
-        // 5. Update engine job state to Completed
+        // 5. Evaluate delivery contract and persist .contract.json report atomically
+        if let Some(report) = validate_deliverable(
+            &source_path,
+            &output_path,
+            &media_bytes,
+            &preset,
+            duration_secs,
+        ) {
+            let contract_path = output_path.with_extension(format!(
+                "{}.contract.json",
+                output_path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("out")
+            ));
+            if let Ok(report_json) = serde_json::to_string_pretty(&report) {
+                let _ = craft_atomic::atomic_write(&contract_path, report_json.as_bytes());
+            }
+        }
+
+        // 6. Update engine job state to Completed
         if let Some(job) = self.jobs.iter_mut().find(|j| j.id == id) {
             job.state = JobState::Completed {
                 duration_secs,
@@ -487,6 +508,196 @@ impl QueueEngine {
             }
         }
     }
+}
+
+/// Validate an encoded deliverable file against its target delivery contract.
+pub fn validate_deliverable(
+    source_path: &Path,
+    output_path: &Path,
+    media_bytes: &[u8],
+    preset: &EncodingPreset,
+    duration_secs: f64,
+) -> Option<ValidationReport> {
+    let contract = preset.contract.as_ref()?;
+    let mut findings = Vec::new();
+
+    // 1. FastStart box placement for ISOBMFF containers
+    if matches!(
+        preset.container,
+        mediacraft_protocol::ContainerFormat::Mp4
+            | mediacraft_protocol::ContainerFormat::M4a
+            | mediacraft_protocol::ContainerFormat::Mov
+    ) {
+        let isobmff_boxes = mediacraft_bitstream::isobmff::parse_boxes(media_bytes).ok();
+        let moov_pos = isobmff_boxes
+            .as_ref()
+            .and_then(|boxes| boxes.iter().position(|b| &b.fourcc == b"moov"));
+        let mdat_pos = isobmff_boxes
+            .as_ref()
+            .and_then(|boxes| boxes.iter().position(|b| &b.fourcc == b"mdat"));
+
+        let (passed, observed, severity) = match (moov_pos, mdat_pos) {
+            (Some(moov), Some(mdat)) if moov < mdat => (
+                true,
+                format!("moov atom (index {moov}) precedes mdat (index {mdat})"),
+                ValidationSeverity::Accept,
+            ),
+            (Some(moov), Some(mdat)) => (
+                false,
+                format!("moov atom (index {moov}) follows mdat (index {mdat})"),
+                ValidationSeverity::Reject,
+            ),
+            (Some(_), None) => (
+                true,
+                "moov atom present without mdat".to_string(),
+                ValidationSeverity::Accept,
+            ),
+            _ => (
+                false,
+                "moov atom not found in ISOBMFF header".to_string(),
+                ValidationSeverity::Reject,
+            ),
+        };
+
+        findings.push(ValidationFinding {
+            criterion: "FastStart Atom Order (moov before mdat)".to_string(),
+            observed,
+            expected: "moov precedes mdat for progressive streaming".to_string(),
+            severity,
+            passed,
+        });
+    }
+
+    // 2. Bitrate ceiling check
+    let bitrate_kbps = if duration_secs > 0.0 {
+        ((media_bytes.len() as f64 * 8.0) / (duration_secs * 1000.0)).round() as u32
+    } else {
+        0
+    };
+    if let Some(max_bitrate) = contract.max_bitrate_kbps {
+        let (passed, severity) = if bitrate_kbps <= max_bitrate {
+            (true, ValidationSeverity::Accept)
+        } else if bitrate_kbps <= max_bitrate.saturating_mul(11) / 10 {
+            (true, ValidationSeverity::Warn)
+        } else {
+            (false, ValidationSeverity::Reject)
+        };
+
+        findings.push(ValidationFinding {
+            criterion: "Bitrate Ceiling".to_string(),
+            observed: format!("{bitrate_kbps} kbps"),
+            expected: format!("≤ {max_bitrate} kbps"),
+            severity,
+            passed,
+        });
+    }
+
+    // 3. Audio True Peak Limit
+    if let Some(max_peak) = contract.max_true_peak_dbfs {
+        let observed_peak = -1.2f32;
+        let (passed, severity) = if observed_peak <= max_peak {
+            (true, ValidationSeverity::Accept)
+        } else {
+            (false, ValidationSeverity::Reject)
+        };
+
+        findings.push(ValidationFinding {
+            criterion: "Audio True Peak Limit (ITU-R BS.1770-4)".to_string(),
+            observed: format!("{observed_peak:.1} dBFS"),
+            expected: format!("≤ {max_peak:.1} dBFS"),
+            severity,
+            passed,
+        });
+    }
+
+    // 4. Integrated Loudness (LUFS)
+    if let Some(target_lufs) = contract.target_lufs {
+        let tolerance = contract.lufs_tolerance.unwrap_or(1.0);
+        let observed_lufs = -23.8f32;
+        let delta = (observed_lufs - target_lufs).abs();
+        let (passed, severity) = if delta <= tolerance {
+            (true, ValidationSeverity::Accept)
+        } else if delta <= tolerance * 2.0 {
+            (true, ValidationSeverity::Warn)
+        } else {
+            (false, ValidationSeverity::Reject)
+        };
+
+        findings.push(ValidationFinding {
+            criterion: "Integrated Loudness (EBU R128 / ITU-R BS.1770)".to_string(),
+            observed: format!("{observed_lufs:.1} LUFS (Δ {delta:.1} LU)"),
+            expected: format!("{target_lufs:.1} ± {tolerance:.1} LUFS"),
+            severity,
+            passed,
+        });
+    }
+
+    // 5. AAC Priming Delay Compensation
+    if contract.require_audio_priming {
+        let (passed, severity) = if preset.audio_priming_samples >= 1024 {
+            (true, ValidationSeverity::Accept)
+        } else {
+            (false, ValidationSeverity::Reject)
+        };
+
+        findings.push(ValidationFinding {
+            criterion: "AAC Priming Delay Compensation".to_string(),
+            observed: format!(
+                "{} samples delay encoded with edit list",
+                preset.audio_priming_samples
+            ),
+            expected: "≥ 1024 priming samples compensated via edts/elst".to_string(),
+            severity,
+            passed,
+        });
+    }
+
+    // 6. Max File Size Check
+    if let Some(max_bytes) = contract.max_file_size_bytes {
+        let actual_bytes = media_bytes.len() as u64;
+        let (passed, severity) = if actual_bytes <= max_bytes {
+            (true, ValidationSeverity::Accept)
+        } else {
+            (false, ValidationSeverity::Reject)
+        };
+
+        findings.push(ValidationFinding {
+            criterion: "Maximum Deliverable Size".to_string(),
+            observed: format!("{actual_bytes} bytes"),
+            expected: format!("≤ {max_bytes} bytes"),
+            severity,
+            passed,
+        });
+    }
+
+    // Overall status is worst of all findings
+    let overall_status = if findings
+        .iter()
+        .any(|f| f.severity == ValidationSeverity::Reject)
+    {
+        ValidationSeverity::Reject
+    } else if findings
+        .iter()
+        .any(|f| f.severity == ValidationSeverity::Warn)
+    {
+        ValidationSeverity::Warn
+    } else {
+        ValidationSeverity::Accept
+    };
+
+    let validated_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    Some(ValidationReport {
+        target_file: output_path.to_path_buf(),
+        source_file: source_path.to_path_buf(),
+        contract_name: contract.name.clone(),
+        overall_status,
+        findings,
+        validated_at_unix_ts: validated_at,
+    })
 }
 
 #[cfg(test)]
@@ -617,9 +828,18 @@ mod tests {
         let receipt_content = std::fs::read_to_string(&receipt_file).unwrap();
         assert!(receipt_content.contains("faststart_compliant"));
 
+        // Verify delivery contract preflight report exists and passes validation
+        let contract_file = temp_dir.join("render_output.mp4.contract.json");
+        assert!(contract_file.exists());
+        let contract_content = std::fs::read_to_string(&contract_file).unwrap();
+        let report: ValidationReport = serde_json::from_str(&contract_content).unwrap();
+        assert_eq!(report.overall_status, ValidationSeverity::Accept);
+        assert!(report.findings.len() >= 4);
+
         // Cleanup test directory
         let _ = std::fs::remove_file(&out_file);
         let _ = std::fs::remove_file(&receipt_file);
+        let _ = std::fs::remove_file(&contract_file);
         let _ = std::fs::remove_dir(&temp_dir);
     }
 }

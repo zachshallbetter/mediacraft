@@ -3,6 +3,9 @@
 //! Provides filesystem-native asset indexing, technical stream metadata models,
 //! faceted searching, and immutable derivative relationship tracking (originals -> proxies/deliveries).
 
+pub mod batch_rename;
+pub mod scanner;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -705,6 +708,10 @@ impl MediaCatalog {
 
     pub fn all_assets(&self) -> &[MediaAsset] {
         &self.assets
+    }
+
+    pub fn assets_mut(&mut self) -> &mut Vec<MediaAsset> {
+        &mut self.assets
     }
 
     pub fn graph(&self) -> &DerivativeGraph {

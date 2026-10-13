@@ -83,6 +83,77 @@ pub struct EncodingPreset {
     pub audio_priming_samples: u32,
     /// Faststart moov placement before mdat.
     pub faststart: bool,
+    /// Optional delivery contract with acceptance constraints.
+    #[serde(default)]
+    pub contract: Option<DeliveryContract>,
+}
+
+/// Target delivery acceptance contract containing testable constraints.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeliveryContract {
+    pub name: String,
+    pub require_faststart: bool,
+    pub max_bitrate_kbps: Option<u32>,
+    pub max_true_peak_dbfs: Option<f32>,
+    pub target_lufs: Option<f32>,
+    pub lufs_tolerance: Option<f32>,
+    pub require_audio_priming: bool,
+    pub max_file_size_bytes: Option<u64>,
+}
+
+impl Default for DeliveryContract {
+    fn default() -> Self {
+        Self {
+            name: "Broadcast & Web Standards".to_string(),
+            require_faststart: true,
+            max_bitrate_kbps: Some(50_000),
+            max_true_peak_dbfs: Some(-1.0),
+            target_lufs: Some(-24.0),
+            lufs_tolerance: Some(1.0),
+            require_audio_priming: true,
+            max_file_size_bytes: None,
+        }
+    }
+}
+
+/// Severity classification for delivery contract validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ValidationSeverity {
+    Accept,
+    Warn,
+    Reject,
+}
+
+impl ValidationSeverity {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Accept => "Accept",
+            Self::Warn => "Warn",
+            Self::Reject => "Reject",
+        }
+    }
+}
+
+/// A specific finding evaluated during delivery contract verification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ValidationFinding {
+    pub criterion: String,
+    pub observed: String,
+    pub expected: String,
+    pub severity: ValidationSeverity,
+    pub passed: bool,
+}
+
+/// A machine-readable preflight / delivery validation report.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ValidationReport {
+    pub target_file: PathBuf,
+    pub source_file: PathBuf,
+    pub contract_name: String,
+    pub overall_status: ValidationSeverity,
+    pub findings: Vec<ValidationFinding>,
+    pub validated_at_unix_ts: u64,
 }
 
 impl Default for EncodingPreset {
@@ -103,6 +174,7 @@ impl Default for EncodingPreset {
             audio_bitrate_kbps: Some(256),
             audio_priming_samples: 1024,
             faststart: true,
+            contract: Some(DeliveryContract::default()),
         }
     }
 }
@@ -166,6 +238,7 @@ pub struct QueueStatus {
 }
 
 /// Requests sent from client applications (FilmCraft, EffectCraft, CLI) to daemon.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 pub enum Request {
@@ -197,6 +270,7 @@ pub enum Request {
 }
 
 /// Responses sent from daemon to client applications.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum Response {

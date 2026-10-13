@@ -274,7 +274,81 @@ pub fn render_inspector_panel(
         });
     });
 
-    ui.add(egui::Slider::new(&mut state.scrub_pos, 0.0..=1.0).show_value(false));
+    // 2.5 Filmstrip preview track with interactive playhead, frame notches, and sprocket holes
+    let strip_h = 24.0;
+    let strip_w = ui.available_width().max(240.0);
+    let (strip_rect, strip_resp) =
+        ui.allocate_exact_size(Vec2::new(strip_w, strip_h), egui::Sense::click_and_drag());
+
+    if (strip_resp.dragged() || strip_resp.clicked())
+        && let Some(pos) = strip_resp.interact_pointer_pos()
+    {
+        state.scrub_pos = ((pos.x - strip_rect.min.x) / strip_rect.width()).clamp(0.0, 1.0);
+    }
+
+    let strip_painter = ui.painter_at(strip_rect);
+    strip_painter.rect_filled(
+        strip_rect,
+        CornerRadius::same(3),
+        Color32::from_rgb(14, 17, 22),
+    );
+    strip_painter.rect_stroke(
+        strip_rect,
+        CornerRadius::same(3),
+        Stroke::new(1.0, Color32::from_rgb(38, 46, 58)),
+        egui::StrokeKind::Inside,
+    );
+
+    // Filmstrip frame notches
+    let frame_count = (strip_w / 38.0).floor().max(1.0) as usize;
+    let frame_w = strip_w / (frame_count as f32);
+    for i in 0..frame_count {
+        let fx = strip_rect.min.x + (i as f32) * frame_w;
+        let cell_rect = Rect::from_min_max(
+            Pos2::new(fx + 1.0, strip_rect.min.y + 2.0),
+            Pos2::new(fx + frame_w - 1.0, strip_rect.max.y - 2.0),
+        );
+        let shade = if i % 2 == 0 {
+            Color32::from_rgb(24, 30, 40)
+        } else {
+            Color32::from_rgb(20, 25, 34)
+        };
+        strip_painter.rect_filled(cell_rect, CornerRadius::same(2), shade);
+
+        // Sprocket hole tick marks at top & bottom edge
+        strip_painter.rect_filled(
+            Rect::from_min_size(
+                Pos2::new(fx + 2.0, strip_rect.min.y + 1.0),
+                Vec2::new(3.0, 2.0),
+            ),
+            CornerRadius::same(0),
+            Color32::from_rgb(8, 10, 14),
+        );
+        strip_painter.rect_filled(
+            Rect::from_min_size(
+                Pos2::new(fx + 2.0, strip_rect.max.y - 3.0),
+                Vec2::new(3.0, 2.0),
+            ),
+            CornerRadius::same(0),
+            Color32::from_rgb(8, 10, 14),
+        );
+    }
+
+    // Playhead indicator needle
+    let playhead_x = strip_rect.min.x + state.scrub_pos * strip_rect.width();
+    strip_painter.line_segment(
+        [
+            Pos2::new(playhead_x, strip_rect.min.y),
+            Pos2::new(playhead_x, strip_rect.max.y),
+        ],
+        Stroke::new(2.0, Color32::from_rgb(255, 175, 45)),
+    );
+    // Playhead diamond at top
+    strip_painter.circle_filled(
+        Pos2::new(playhead_x, strip_rect.min.y + 3.0),
+        3.5,
+        Color32::from_rgb(255, 205, 75),
+    );
 
     ui.add_space(4.0);
 

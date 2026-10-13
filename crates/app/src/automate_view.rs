@@ -21,7 +21,23 @@ impl Default for AutomateViewState {
     }
 }
 
-pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewState) {
+pub struct WatchFolderRuleModel {
+    pub path: String,
+    pub preset: String,
+    pub filter: String,
+    pub target: String,
+    pub post_action: String,
+    pub stats: String,
+    pub is_active: bool,
+}
+
+pub fn render_automate_workspace(
+    ui: &mut egui::Ui,
+    state: &mut AutomateViewState,
+    watch_engine: &mut mediacraft_daemon::watch_folder::WatchFolderEngine,
+    queue: &mut mediacraft_daemon::QueueEngine,
+    presets: &[mediacraft_protocol::EncodingPreset],
+) {
     // 1. Top Automation Toolbar
     ui.horizontal(|ui| {
         let normal_style = crate::craft_theme::craft_icon_button_style();
@@ -45,6 +61,9 @@ pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewStat
             .clicked()
             {
                 state.is_monitoring_active = false;
+                for r in watch_engine.list_rules_mut() {
+                    r.active = false;
+                }
             }
         } else if craft_ui::buttons::IconButton::new(
             "Resume All Watchers",
@@ -63,10 +82,13 @@ pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewStat
         .clicked()
         {
             state.is_monitoring_active = true;
+            for r in watch_engine.list_rules_mut() {
+                r.active = true;
+            }
         }
 
         ui.add_space(4.0);
-        let _ = craft_ui::buttons::IconButton::new(
+        if craft_ui::buttons::IconButton::new(
             "Add Watch Folder",
             Vec2::new(135.0, 24.0),
             &normal_style,
@@ -80,9 +102,26 @@ pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewStat
                 Color32::from_rgb(90, 200, 255),
             );
         })
-        .clicked();
+        .clicked()
+        {
+            let count = watch_engine.list_rules().len() + 1;
+            watch_engine.add_rule(mediacraft_daemon::watch_folder::WatchFolderRule {
+                id: format!("wf-{count}"),
+                name: format!("Camera Ingest Watcher #{count}"),
+                watch_dir: std::path::PathBuf::from(
+                    "/Users/zachshallbetter/Movies/WatchFolders/Ingest",
+                ),
+                output_dir: std::path::PathBuf::from(
+                    "/Users/zachshallbetter/Movies/WatchFolders/Deliveries",
+                ),
+                preset_id: "match-source-hq".to_string(),
+                active: true,
+                file_filter_exts: vec!["mov".to_string(), "mp4".to_string(), "mxf".to_string()],
+                min_stability_duration: std::time::Duration::from_secs(2),
+            });
+        }
 
-        let _ = craft_ui::buttons::IconButton::new(
+        if craft_ui::buttons::IconButton::new(
             "Trigger Scan Now",
             Vec2::new(125.0, 24.0),
             &normal_style,
@@ -96,7 +135,10 @@ pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewStat
                 tint,
             );
         })
-        .clicked();
+        .clicked()
+        {
+            let _ = watch_engine.scan_and_enqueue(queue, presets);
+        }
 
         ui.add_space(8.0);
         ui.label(RichText::new("🔍").size(11.0).color(Color32::GRAY));
@@ -107,13 +149,21 @@ pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewStat
         );
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let (status_text, status_col) = if state.is_monitoring_active {
+            let active_count = watch_engine
+                .list_rules()
+                .iter()
+                .filter(|r| r.active)
+                .count();
+            let (status_text, status_col) = if state.is_monitoring_active && active_count > 0 {
                 (
-                    "● WATCHERS RUNNING (2 Active)",
+                    format!("● WATCHERS RUNNING ({active_count} Active)"),
                     Color32::from_rgb(90, 230, 130),
                 )
             } else {
-                ("○ WATCHERS SUSPENDED", Color32::from_rgb(255, 180, 50))
+                (
+                    "○ WATCHERS SUSPENDED".to_string(),
+                    Color32::from_rgb(255, 180, 50),
+                )
             };
 
             ui.label(
@@ -143,50 +193,29 @@ pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewStat
             );
             ui.add_space(6.0);
 
-            // Card 1
-            let rule1 = WatchFolderRule {
-                path: "📁 /Volumes/Production/Camera_Ingest",
-                preset: "Editing Proxies (ProRes 422 Proxy / 1080p)",
-                filter: "*.mov, *.mp4, *.braw, *.mxf (> 100 MB)",
-                target: "/Volumes/Production/Proxies/",
-                post_action: "Tag Orange • Move to /Camera_Ingest/Processed/",
-                stats: "142 Ingested • 0 Errors • Active (Polling every 5s)",
-                is_active: true,
-            };
-            if render_watch_folder_card(ui, &rule1, state.selected_rule_idx == 0) {
-                state.selected_rule_idx = 0;
-            }
+            for (idx, rule) in watch_engine.list_rules().iter().enumerate() {
+                let card_model = WatchFolderRuleModel {
+                    path: rule.watch_dir.to_string_lossy().to_string(),
+                    preset: rule.preset_id.clone(),
+                    filter: if rule.file_filter_exts.is_empty() {
+                        "All Formats".to_string()
+                    } else {
+                        rule.file_filter_exts.join(", ")
+                    },
+                    target: rule.output_dir.to_string_lossy().to_string(),
+                    post_action: "Generate SHA-256 Receipt • Auto Enqueue".to_string(),
+                    stats: format!(
+                        "Active: {} • Stability: {:.1}s",
+                        rule.active,
+                        rule.min_stability_duration.as_secs_f32()
+                    ),
+                    is_active: rule.active,
+                };
 
-            ui.add_space(8.0);
-
-            // Card 2
-            let rule2 = WatchFolderRule {
-                path: "📁 /Users/zachshallbetter/Movies/Master_Deliverables",
-                preset: "Web Delivery (H.264 1080p) + EBU R128 Verification QC",
-                filter: "*.mov (ProRes 422 HQ / Master)",
-                target: "/Users/zachshallbetter/Deliverables/Web/",
-                post_action: "Generate SHA-256 Receipt • System Notification",
-                stats: "28 Ingested • 0 Errors • Active (Polling every 10s)",
-                is_active: true,
-            };
-            if render_watch_folder_card(ui, &rule2, state.selected_rule_idx == 1) {
-                state.selected_rule_idx = 1;
-            }
-
-            ui.add_space(8.0);
-
-            // Card 3 (Scheduled Batch)
-            let rule3 = WatchFolderRule {
-                path: "📁 /Volumes/Archive/Nightly_Transcodes",
-                preset: "Archive Mezzanine (ProRes 422 LT / 4K)",
-                filter: "All Uncompressed Video Formats",
-                target: "/Volumes/Archive/Mezzanine/",
-                post_action: "Verify Checksum • Move Original to Cold Storage",
-                stats: "Scheduled for 02:00 AM Daily • Next Run: in 4h 32m",
-                is_active: false,
-            };
-            if render_watch_folder_card(ui, &rule3, state.selected_rule_idx == 2) {
-                state.selected_rule_idx = 2;
+                if render_watch_folder_card(ui, &card_model, state.selected_rule_idx == idx) {
+                    state.selected_rule_idx = idx;
+                }
+                ui.add_space(8.0);
             }
         });
 
@@ -242,80 +271,81 @@ pub fn render_automate_workspace(ui: &mut egui::Ui, state: &mut AutomateViewStat
                     );
                     ui.end_row();
 
-                    let events = [
-                        (
-                            "Today 21:14:02",
-                            "A001_C001.mov (1.2 GB)",
-                            "Camera_Ingest -> Proxies",
-                            "A001_C001_proxy.mp4",
-                            "✓ Transcoding (Job #1)",
-                        ),
-                        (
-                            "Today 21:11:45",
-                            "Interview_B_Roll.mp4 (450 MB)",
-                            "Camera_Ingest -> Proxies",
-                            "Interview_B_Roll_web.mp4",
-                            "✓ Transcoding (Job #2)",
-                        ),
-                        (
-                            "Today 20:45:10",
-                            "Episode_01_Master.mov (18.4 GB)",
-                            "Master_Deliverables -> Web",
-                            "Episode_01_Web.mp4",
-                            "✓ Completed & QC Verified",
-                        ),
-                        (
-                            "Today 19:30:22",
-                            "Color_Bars_HD.mov (120 MB)",
-                            "Camera_Ingest -> Proxies",
-                            "Color_Bars_HD_proxy.mp4",
-                            "✓ Completed (12.4s)",
-                        ),
-                    ];
-
-                    for (time, src, rule, out, res) in events {
+                    let jobs = queue.list_jobs();
+                    if jobs.is_empty() {
                         ui.label(
-                            RichText::new(time)
+                            RichText::new("--:--:--")
                                 .size(10.0)
                                 .monospace()
-                                .color(Color32::from_rgb(160, 175, 195)),
-                        );
-                        ui.label(RichText::new(src).size(10.5).strong());
-                        ui.label(
-                            RichText::new(rule)
-                                .size(10.0)
-                                .color(Color32::from_rgb(180, 215, 255)),
+                                .color(Color32::GRAY),
                         );
                         ui.label(
-                            RichText::new(out)
-                                .size(10.0)
-                                .color(Color32::from_rgb(190, 200, 215)),
+                            RichText::new("No recent ingest events")
+                                .size(10.5)
+                                .italics(),
                         );
-                        let res_color = if res.contains("Completed") {
-                            Color32::from_rgb(80, 230, 120)
-                        } else {
-                            Color32::from_rgb(90, 190, 255)
-                        };
-                        ui.label(RichText::new(res).size(10.0).color(res_color).strong());
+                        ui.label(RichText::new("Waiting for watch folder triggers...").size(10.0));
+                        ui.label(RichText::new("-").size(10.0));
+                        ui.label(RichText::new("Idle").size(10.0).color(Color32::GRAY));
                         ui.end_row();
+                    } else {
+                        for j in jobs.iter().rev().take(8) {
+                            let src_name = j
+                                .source_path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("source");
+                            let out_name = j
+                                .output_path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("output");
+                            let (state_str, state_col) = match j.state {
+                                mediacraft_protocol::JobState::Completed { .. } => {
+                                    ("✓ Completed & QC Verified", Color32::from_rgb(80, 230, 120))
+                                }
+                                mediacraft_protocol::JobState::Running { .. } => {
+                                    ("⚡ Transcoding", Color32::from_rgb(80, 190, 255))
+                                }
+                                mediacraft_protocol::JobState::Failed { .. } => {
+                                    ("✕ Failed", Color32::from_rgb(255, 90, 90))
+                                }
+                                _ => ("Queued", Color32::from_rgb(220, 200, 100)),
+                            };
+
+                            ui.label(
+                                RichText::new("Today Auto")
+                                    .size(10.0)
+                                    .monospace()
+                                    .color(Color32::from_rgb(160, 175, 195)),
+                            );
+                            ui.label(RichText::new(src_name).size(10.5).strong());
+                            ui.label(
+                                RichText::new(&j.preset.name)
+                                    .size(10.0)
+                                    .color(Color32::from_rgb(180, 215, 255)),
+                            );
+                            ui.label(
+                                RichText::new(out_name)
+                                    .size(10.0)
+                                    .color(Color32::from_rgb(190, 200, 215)),
+                            );
+                            ui.label(
+                                RichText::new(state_str)
+                                    .size(10.0)
+                                    .color(state_col)
+                                    .strong(),
+                            );
+                            ui.end_row();
+                        }
                     }
                 });
         });
 }
 
-struct WatchFolderRule<'a> {
-    path: &'a str,
-    preset: &'a str,
-    filter: &'a str,
-    target: &'a str,
-    post_action: &'a str,
-    stats: &'a str,
-    is_active: bool,
-}
-
 fn render_watch_folder_card(
     ui: &mut egui::Ui,
-    rule: &WatchFolderRule<'_>,
+    rule: &WatchFolderRuleModel,
     is_selected: bool,
 ) -> bool {
     let card_w = (ui.available_width() - 8.0).max(280.0);
@@ -351,7 +381,7 @@ fn render_watch_folder_card(
     painter.text(
         Pos2::new(text_x, rect.min.y + 10.0),
         egui::Align2::LEFT_TOP,
-        rule.path,
+        &rule.path,
         FontId::proportional(12.0),
         Color32::from_rgb(240, 245, 255),
     );
@@ -375,7 +405,7 @@ fn render_watch_folder_card(
     painter.text(
         Pos2::new(text_x, rect.min.y + 68.0),
         egui::Align2::LEFT_TOP,
-        rule.stats,
+        &rule.stats,
         FontId::proportional(9.5),
         Color32::GRAY,
     );

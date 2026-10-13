@@ -7,9 +7,11 @@ authors = ["Zach Shallbetter <zachshallbetter@icloud.com>"]
 description = "Digital asset catalog, filesystem indexing, stream inspection, and derivative relationship tracking for MediaCraft"
 
 [dependencies]
-mediacraft-protocol = { path = "../protocol" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+mediacraft-protocol = { workspace = true }
+mediacraft-bitstream = { workspace = true }
+craft-atomic = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints.rust]
 unsafe_code = "forbid"
