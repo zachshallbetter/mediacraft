@@ -32,7 +32,9 @@ impl VlcTable {
             }
             let suffix = &code[lz + 1..];
             assert!(suffix.len() <= 5, "suffix too long in {code}");
-            let sbits = suffix.bytes().fold(0u32, |a, b| (a << 1) | u32::from(b == b'1'));
+            let sbits = suffix
+                .bytes()
+                .fold(0u32, |a, b| (a << 1) | u32::from(b == b'1'));
             let free = 5 - suffix.len();
             for ext in 0..(1u32 << free) {
                 let s = (sbits << free) | ext;
@@ -46,7 +48,11 @@ impl VlcTable {
     pub fn decode(&self, r: &mut BitReader) -> Result<u8> {
         let bits = r.peek(32);
         let lz = bits.leading_zeros().min(16);
-        let s = if lz >= 16 { 0 } else { ((bits << lz) << 1) >> 27 };
+        let s = if lz >= 16 {
+            0
+        } else {
+            ((bits << lz) << 1) >> 27
+        };
         let e = self.entries[(lz * 32 + s) as usize];
         ensure!(e != 0, "invalid VLC code");
         r.skip((e >> 8) as usize)?;
@@ -67,11 +73,15 @@ fn tables() -> &'static Tables {
     static T: OnceLock<Tables> = OnceLock::new();
     T.get_or_init(|| {
         let coeff_token = std::array::from_fn(|col| {
-            let codes: Vec<(&str, u8)> = COEFF_TOKEN.iter().map(|&(t1, tc, ref c)| (c[col], (t1 << 5) | tc)).collect();
+            let codes: Vec<(&str, u8)> = COEFF_TOKEN
+                .iter()
+                .map(|&(t1, tc, ref c)| (c[col], (t1 << 5) | tc))
+                .collect();
             VlcTable::build(&codes)
         });
         fn simple<const N: usize>(row: &[&'static str; N]) -> VlcTable {
-            let codes: Vec<(&str, u8)> = row.iter().enumerate().map(|(i, &c)| (c, i as u8)).collect();
+            let codes: Vec<(&str, u8)> =
+                row.iter().enumerate().map(|(i, &c)| (c, i as u8)).collect();
             VlcTable::build(&codes)
         }
         Tables {
@@ -92,7 +102,14 @@ pub(crate) fn init_tables() {
 /// Parse residual_block_cavlc(). Coefficients are written to `coeff[start_idx..=end_idx]` in scan order
 /// (entries outside the coded range are left untouched; the caller zeroes them).
 /// `nc` is the nC value (-1 for 4:2:0 chroma DC, -2 for 4:2:2 chroma DC). Returns TotalCoeff.
-pub(crate) fn residual_block(r: &mut BitReader, coeff: &mut [i32], start_idx: usize, end_idx: usize, max_num_coeff: usize, nc: i32) -> Result<u8> {
+pub(crate) fn residual_block(
+    r: &mut BitReader,
+    coeff: &mut [i32],
+    start_idx: usize,
+    end_idx: usize,
+    max_num_coeff: usize,
+    nc: i32,
+) -> Result<u8> {
     let t = tables();
     let col = match nc {
         -1 => 4,
@@ -108,9 +125,16 @@ pub(crate) fn residual_block(r: &mut BitReader, coeff: &mut [i32], start_idx: us
     if total_coeff == 0 {
         return Ok(0);
     }
-    ensure!(total_coeff <= max_num_coeff, "TotalCoeff exceeds maxNumCoeff");
+    ensure!(
+        total_coeff <= max_num_coeff,
+        "TotalCoeff exceeds maxNumCoeff"
+    );
     let mut level = [0i32; 16];
-    let mut suffix_length: u32 = if total_coeff > 10 && trailing_ones < 3 { 1 } else { 0 };
+    let mut suffix_length: u32 = if total_coeff > 10 && trailing_ones < 3 {
+        1
+    } else {
+        0
+    };
     for (i, lv) in level.iter_mut().enumerate().take(total_coeff) {
         if i < trailing_ones {
             *lv = if r.read_bit()? { -1 } else { 1 };
@@ -128,7 +152,11 @@ pub(crate) fn residual_block(r: &mut BitReader, coeff: &mut [i32], start_idx: us
         } else {
             suffix_length
         };
-        let level_suffix = if level_suffix_size > 0 { r.read_bits(level_suffix_size)? as i32 } else { 0 };
+        let level_suffix = if level_suffix_size > 0 {
+            r.read_bits(level_suffix_size)? as i32
+        } else {
+            0
+        };
         let mut level_code = ((level_prefix.min(15) as i32) << suffix_length) + level_suffix;
         if level_prefix >= 15 && suffix_length == 0 {
             level_code += 15;
@@ -139,7 +167,11 @@ pub(crate) fn residual_block(r: &mut BitReader, coeff: &mut [i32], start_idx: us
         if i == trailing_ones && trailing_ones < 3 {
             level_code += 2;
         }
-        *lv = if level_code % 2 == 0 { (level_code + 2) >> 1 } else { (-level_code - 1) >> 1 };
+        *lv = if level_code % 2 == 0 {
+            (level_code + 2) >> 1
+        } else {
+            (-level_code - 1) >> 1
+        };
         if suffix_length == 0 {
             suffix_length = 1;
         }
@@ -154,7 +186,10 @@ pub(crate) fn residual_block(r: &mut BitReader, coeff: &mut [i32], start_idx: us
             8 => t.total_zeros_2x4[tz_idx].decode(r)?,
             _ => t.total_zeros_4x4[tz_idx].decode(r)?,
         } as usize;
-        ensure!(tz + total_coeff <= end_idx - start_idx + 1, "total_zeros out of range");
+        ensure!(
+            tz + total_coeff <= end_idx - start_idx + 1,
+            "total_zeros out of range"
+        );
         tz
     } else {
         0
@@ -185,7 +220,11 @@ mod tests {
     use mediacraft_bitstream::BitWriter;
 
     fn kraft(codes: &[&str]) -> f64 {
-        codes.iter().filter(|c| !c.is_empty()).map(|c| 0.5f64.powi(c.len() as i32)).sum()
+        codes
+            .iter()
+            .filter(|c| !c.is_empty())
+            .map(|c| 0.5f64.powi(c.len() as i32))
+            .sum()
     }
 
     fn prefix_free(codes: &[&str]) -> bool {

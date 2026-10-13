@@ -1,11 +1,11 @@
 //! ISO BMFF / M4A Multiplexer Adapter
 //!
-//! Adapts the clean-room `filmcraft-isobmff` engine into MediaCraft's pipeline.
+//! Adapts the clean-room `craft-isobmff` engine into MediaCraft's pipeline.
 //! Writes progressive MPEG-4 audio (`.m4a`) containers with `ftyp`, `esds` AAC descriptions,
 //! sample-accurate priming compensation via edit list (`elst`) atoms, and FastStart
 //! in-place `moov` relocation.
 
-use filmcraft_isobmff::{
+use craft_isobmff::{
     AacConfig, Brand, CodecConfig, Edit, FourCc, Mp4Writer, SampleEntry, TrackConfig, WriteSample,
     WriterOptions,
 };
@@ -15,7 +15,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum M4aAdapterError {
     #[error("ISO BMFF muxer error: {0}")]
-    Iso(#[from] filmcraft_isobmff::Error),
+    Iso(#[from] craft_isobmff::Error),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("no active audio track configured")]

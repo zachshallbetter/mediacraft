@@ -55,7 +55,14 @@ impl OpusHead {
         let input_sample_rate = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
         let output_gain = i16::from_le_bytes([data[16], data[17]]);
         let family = data[18];
-        Self::build(channels, pre_skip, input_sample_rate, output_gain, family, &data[19..])
+        Self::build(
+            channels,
+            pre_skip,
+            input_sample_rate,
+            output_gain,
+            family,
+            &data[19..],
+        )
     }
 
     /// Parses the payload of an ISO-BMFF `dOps` box (Opus in MP4, big-endian fields).
@@ -70,7 +77,14 @@ impl OpusHead {
         let pre_skip = u16::from_be_bytes([data[2], data[3]]);
         let input_sample_rate = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
         let output_gain = i16::from_be_bytes([data[8], data[9]]);
-        Self::build(channels, pre_skip, input_sample_rate, output_gain, data[10], &data[11..])
+        Self::build(
+            channels,
+            pre_skip,
+            input_sample_rate,
+            output_gain,
+            data[10],
+            &data[11..],
+        )
     }
 
     /// Serialises as an `OpusHead` packet.
@@ -90,7 +104,14 @@ impl OpusHead {
         v
     }
 
-    fn build(channels: usize, pre_skip: u16, input_sample_rate: u32, output_gain: i16, family: u8, rest: &[u8]) -> Result<OpusHead> {
+    fn build(
+        channels: usize,
+        pre_skip: u16,
+        input_sample_rate: u32,
+        output_gain: i16,
+        family: u8,
+        rest: &[u8],
+    ) -> Result<OpusHead> {
         if channels == 0 {
             return Err(Error::InvalidHeader("zero channels"));
         }
@@ -115,12 +136,24 @@ impl OpusHead {
                 return Err(Error::InvalidHeader("family 1 allows 1 to 8 channels"));
             }
             let mapping = rest[2..2 + channels].to_vec();
-            if mapping.iter().any(|&m| m != 255 && m as usize >= streams + coupled) {
+            if mapping
+                .iter()
+                .any(|&m| m != 255 && m as usize >= streams + coupled)
+            {
                 return Err(Error::InvalidHeader("channel mapping out of range"));
             }
             (streams, coupled, mapping)
         };
-        Ok(OpusHead { channels, pre_skip, input_sample_rate, output_gain, mapping_family: family, streams, coupled_streams: coupled, mapping })
+        Ok(OpusHead {
+            channels,
+            pre_skip,
+            input_sample_rate,
+            output_gain,
+            mapping_family: family,
+            streams,
+            coupled_streams: coupled,
+            mapping,
+        })
     }
 
     /// Linear output gain factor.
@@ -150,9 +183,14 @@ mod tests {
     #[test]
     fn parse_family1_51() {
         let mut h = b"OpusHead".to_vec();
-        h.extend([1, 6, 0x38, 0x01, 0x80, 0xBB, 0, 0, 0, 0, 1, 4, 2, 0, 4, 1, 2, 3, 5]);
+        h.extend([
+            1, 6, 0x38, 0x01, 0x80, 0xBB, 0, 0, 0, 0, 1, 4, 2, 0, 4, 1, 2, 3, 5,
+        ]);
         let head = OpusHead::parse(&h).unwrap();
-        assert_eq!((head.channels, head.streams, head.coupled_streams), (6, 4, 2));
+        assert_eq!(
+            (head.channels, head.streams, head.coupled_streams),
+            (6, 4, 2)
+        );
         assert_eq!(head.mapping, vec![0, 4, 1, 2, 3, 5]);
         assert_eq!(OpusHead::parse(&head.to_bytes()).unwrap(), head);
     }

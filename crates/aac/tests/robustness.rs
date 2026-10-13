@@ -8,9 +8,22 @@ use craft_aac::{AudioSpecificConfig, Decoder, Encoder, EncoderConfig, split_adts
 
 fn corpus() -> Vec<(Vec<u8>, Vec<Vec<u8>>)> {
     let mut out = Vec::new();
-    for (ch, rate, br) in [(1usize, 44100u32, 96_000u32), (2, 48000, 128_000), (6, 48000, 256_000), (7, 48000, 256_000)] {
+    for (ch, rate, br) in [
+        (1usize, 44100u32, 96_000u32),
+        (2, 48000, 128_000),
+        (6, 48000, 256_000),
+        (7, 48000, 256_000),
+    ] {
         let n = rate as usize / 2;
-        let sig: Vec<Vec<f32>> = (0..ch).map(|c| if c % 2 == 0 { clicks(rate, n) } else { chords(rate, n, 0.01) }).collect();
+        let sig: Vec<Vec<f32>> = (0..ch)
+            .map(|c| {
+                if c % 2 == 0 {
+                    clicks(rate, n)
+                } else {
+                    chords(rate, n, 0.01)
+                }
+            })
+            .collect();
         let mut enc = Encoder::new(EncoderConfig::cbr(rate, ch, br)).unwrap();
         let refs: Vec<&[f32]> = sig.iter().map(|v| v.as_slice()).collect();
         let mut aus = enc.encode(&refs);

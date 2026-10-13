@@ -79,7 +79,10 @@ impl<'a> Cur<'a> {
     }
     pub fn bytes(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.pos.checked_add(n).ok_or(Error::Truncated(self.what))?;
-        let s = self.data.get(self.pos..end).ok_or(Error::Truncated(self.what))?;
+        let s = self
+            .data
+            .get(self.pos..end)
+            .ok_or(Error::Truncated(self.what))?;
         self.pos = end;
         Ok(s)
     }
@@ -177,9 +180,16 @@ pub(crate) fn parse_box_header(buf: &[u8]) -> Result<BoxHeader> {
     if let Some(s) = size
         && s < header_len
     {
-        return Err(Error::Invalid(format!("box '{kind}' size {s} smaller than its header")));
+        return Err(Error::Invalid(format!(
+            "box '{kind}' size {s} smaller than its header"
+        )));
     }
-    Ok(BoxHeader { kind, header_len, size, uuid })
+    Ok(BoxHeader {
+        kind,
+        header_len,
+        size,
+        uuid,
+    })
 }
 
 /// One child box inside an in-memory payload.
@@ -199,7 +209,11 @@ pub(crate) struct Boxes<'a> {
 }
 
 pub(crate) fn boxes(data: &[u8]) -> Boxes<'_> {
-    Boxes { data, pos: 0, done: false }
+    Boxes {
+        data,
+        pos: 0,
+        done: false,
+    }
 }
 
 impl<'a> Iterator for Boxes<'a> {
@@ -231,18 +245,30 @@ impl<'a> Iterator for Boxes<'a> {
         let size = h.size.unwrap_or(rest.len() as u64);
         if size > rest.len() as u64 {
             self.done = true;
-            return Some(Err(Error::Invalid(format!("box '{}' size {} exceeds its container ({} bytes left)", h.kind, size, rest.len()))));
+            return Some(Err(Error::Invalid(format!(
+                "box '{}' size {} exceeds its container ({} bytes left)",
+                h.kind,
+                size,
+                rest.len()
+            ))));
         }
         let size = size as usize;
         let payload = &rest[h.header_len as usize..size];
         self.pos += size;
-        Some(Ok(RawBox { kind: h.kind, payload, uuid: h.uuid }))
+        Some(Ok(RawBox {
+            kind: h.kind,
+            payload,
+            uuid: h.uuid,
+        }))
     }
 }
 
 /// Find the first child of the given type (malformed trailing children are ignored).
 pub(crate) fn find<'a>(data: &'a [u8], kind: &[u8; 4]) -> Option<&'a [u8]> {
-    boxes(data).map_while(|b| b.ok()).find(|b| b.kind == kind).map(|b| b.payload)
+    boxes(data)
+        .map_while(|b| b.ok())
+        .find(|b| b.kind == kind)
+        .map(|b| b.payload)
 }
 
 /// Growable buffer for building boxes.
@@ -319,7 +345,10 @@ mod tests {
     #[test]
     fn header_forms() {
         let h = parse_box_header(&[0, 0, 0, 16, b'f', b'r', b'e', b'e']).unwrap();
-        assert_eq!((h.kind, h.header_len, h.size), (FourCc(*b"free"), 8, Some(16)));
+        assert_eq!(
+            (h.kind, h.header_len, h.size),
+            (FourCc(*b"free"), 8, Some(16))
+        );
         let h = parse_box_header(&[0, 0, 0, 0, b'm', b'd', b'a', b't']).unwrap();
         assert_eq!(h.size, None);
         let mut v = vec![0, 0, 0, 1, b'm', b'd', b'a', b't'];

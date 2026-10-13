@@ -1,16 +1,16 @@
 //! AAC-LC Encoder Adapter
 //!
-//! Adapts the clean-room `filmcraft-aac` engine into MediaCraft's pipeline.
+//! Adapts the clean-room `craft-aac` engine into MediaCraft's pipeline.
 //! Handles planar float audio sample ingestion, psychoacoustic analysis,
 //! quantization, and raw access unit packetization with 1024-sample priming calculation.
 
-use filmcraft_aac::{Encoder, EncoderConfig};
+use craft_aac::{Encoder, EncoderConfig};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AacAdapterError {
     #[error("AAC configuration error: {0}")]
-    Config(#[from] filmcraft_aac::Error),
+    Config(#[from] craft_aac::Error),
     #[error("invalid channel count: {0} (supported: 1..=8)")]
     InvalidChannels(u16),
 }

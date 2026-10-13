@@ -16,6 +16,11 @@ members = [
     "crates/opus",
     "crates/prores",
     "crates/h264",
+    "crates/h264enc",
+    "crates/hevc",
+    "crates/audio-dsp",
+    "crates/matroska",
+    "crates/psd",
 ]
 
 [workspace.package]
@@ -32,6 +37,10 @@ unsafe_code = "forbid"
 all = { level = "warn", priority = -1 }
 dbg_macro = "warn"
 todo = "warn"
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+type_complexity = "allow"
+derivable_impls = "allow"
 
 [workspace.dependencies]
 mediacraft-bitstream = { path = "crates/bitstream" }
@@ -47,17 +56,11 @@ craft-flac = { path = "crates/flac" }
 craft-opus = { path = "crates/opus" }
 craft-prores = { path = "crates/prores" }
 craft-h264 = { path = "crates/h264" }
-
-filmcraft-bitstream = { path = "../craft-compat/filmcraft/crates/bitstream" }
-filmcraft-aac = { path = "../craft-compat/filmcraft/crates/aac" }
-filmcraft-isobmff = { path = "../craft-compat/filmcraft/crates/isobmff" }
-filmcraft-h264 = { path = "../craft-compat/filmcraft/crates/h264" }
-filmcraft-h264enc = { path = "../craft-compat/filmcraft/crates/h264enc" }
-filmcraft-audio-dsp = { path = "../craft-compat/filmcraft/crates/audio-dsp" }
-filmcraft-flac = { path = "../craft-compat/filmcraft/crates/flac" }
-filmcraft-prores = { path = "../craft-compat/filmcraft/crates/prores" }
-filmcraft-opus = { path = "../craft-compat/filmcraft/crates/opus" }
-filmcraft-hevc = { path = "../craft-compat/filmcraft/crates/hevc" }
+craft-h264enc = { path = "crates/h264enc" }
+craft-hevc = { path = "crates/hevc" }
+craft-audio-dsp = { path = "crates/audio-dsp" }
+craft-matroska = { path = "crates/matroska" }
+craft-psd = { path = "crates/psd" }
 
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }
 craft-quit = { git = "https://github.com/storytold/craft-libs", rev = "666c358065261a2816b376fa3bb10538dbf53040" }
@@ -68,9 +71,11 @@ egui = { version = "0.36", default-features = false }
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow"] }
 
 thiserror = "2"
+flate2 = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 proptest = "1"
+rayon = "1"

@@ -13,11 +13,17 @@ pub struct Cpx {
 impl Cpx {
     #[inline]
     fn mul(self, o: Cpx) -> Cpx {
-        Cpx { re: self.re * o.re - self.im * o.im, im: self.re * o.im + self.im * o.re }
+        Cpx {
+            re: self.re * o.re - self.im * o.im,
+            im: self.re * o.im + self.im * o.re,
+        }
     }
     #[inline]
     fn add(self, o: Cpx) -> Cpx {
-        Cpx { re: self.re + o.re, im: self.im + o.im }
+        Cpx {
+            re: self.re + o.re,
+            im: self.im + o.im,
+        }
     }
 }
 
@@ -42,10 +48,17 @@ impl Fft {
         let twiddle = (0..n)
             .map(|k| {
                 let ph = -2.0 * std::f64::consts::PI * k as f64 / n as f64;
-                Cpx { re: ph.cos() as f32, im: ph.sin() as f32 }
+                Cpx {
+                    re: ph.cos() as f32,
+                    im: ph.sin() as f32,
+                }
             })
             .collect();
-        Fft { n, factors, twiddle }
+        Fft {
+            n,
+            factors,
+            twiddle,
+        }
     }
 
     pub fn process(&self, data: &mut [Cpx], scratch: &mut Vec<Cpx>) {
@@ -54,7 +67,15 @@ impl Fft {
         self.rec(&mut data[..self.n], scratch, 1, self.n, 0, 1);
     }
 
-    fn rec(&self, out: &mut [Cpx], inp: &[Cpx], in_stride: usize, n: usize, fi: usize, tw_stride: usize) {
+    fn rec(
+        &self,
+        out: &mut [Cpx],
+        inp: &[Cpx],
+        in_stride: usize,
+        n: usize,
+        fi: usize,
+        tw_stride: usize,
+    ) {
         let p = self.factors[fi];
         let m = n / p;
         if m == 1 {
@@ -63,7 +84,14 @@ impl Fft {
             }
         } else {
             for q in 0..p {
-                self.rec(&mut out[q * m..(q + 1) * m], &inp[q * in_stride..], in_stride * p, m, fi + 1, tw_stride * p);
+                self.rec(
+                    &mut out[q * m..(q + 1) * m],
+                    &inp[q * in_stride..],
+                    in_stride * p,
+                    m,
+                    fi + 1,
+                    tw_stride * p,
+                );
             }
         }
         let big = self.n;
@@ -94,8 +122,14 @@ pub struct Imdct {
 
 impl Imdct {
     pub fn new(n: usize) -> Imdct {
-        let trig = (0..n / 2).map(|i| (2.0 * std::f64::consts::PI * (i as f64 + 0.125) / n as f64).cos() as f32).collect();
-        Imdct { n, trig, fft: Fft::new(n / 4) }
+        let trig = (0..n / 2)
+            .map(|i| (2.0 * std::f64::consts::PI * (i as f64 + 0.125) / n as f64).cos() as f32)
+            .collect();
+        Imdct {
+            n,
+            trig,
+            fft: Fft::new(n / 4),
+        }
     }
 
     /// Inverse transform of `n/2` coefficients read from `input` at `stride`.
@@ -103,7 +137,15 @@ impl Imdct {
     /// Writes the folded block to `out[overlap/2 .. overlap/2 + n/2]` and unfolds the first
     /// `overlap` samples against the previous block's folded tail already stored in
     /// `out[0 .. overlap/2]`.
-    pub fn backward(&self, input: &[f32], stride: usize, out: &mut [f32], window: &[f32], overlap: usize, work: &mut ImdctScratch) {
+    pub fn backward(
+        &self,
+        input: &[f32],
+        stride: usize,
+        out: &mut [f32],
+        window: &[f32],
+        overlap: usize,
+        work: &mut ImdctScratch,
+    ) {
         let n2 = self.n >> 1;
         let n4 = self.n >> 2;
         let t = &self.trig;
@@ -161,7 +203,12 @@ mod tests {
     fn fft_matches_dft() {
         for &n in &[60usize, 120, 240, 480] {
             let fft = Fft::new(n);
-            let x: Vec<Cpx> = (0..n).map(|i| Cpx { re: ((i * 7) % 13) as f32 - 6.0, im: ((i * 3) % 5) as f32 - 2.0 }).collect();
+            let x: Vec<Cpx> = (0..n)
+                .map(|i| Cpx {
+                    re: ((i * 7) % 13) as f32 - 6.0,
+                    im: ((i * 3) % 5) as f32 - 2.0,
+                })
+                .collect();
             let mut y = x.clone();
             fft.process(&mut y, &mut Vec::new());
             for k in [0, 1, 7, n / 2, n - 1] {
@@ -171,7 +218,10 @@ mod tests {
                     acc.0 += v.re as f64 * ph.cos() - v.im as f64 * ph.sin();
                     acc.1 += v.re as f64 * ph.sin() + v.im as f64 * ph.cos();
                 }
-                assert!((acc.0 - y[k].re as f64).abs() < 1e-2 && (acc.1 - y[k].im as f64).abs() < 1e-2, "n={n} k={k}");
+                assert!(
+                    (acc.0 - y[k].re as f64).abs() < 1e-2 && (acc.1 - y[k].im as f64).abs() < 1e-2,
+                    "n={n} k={k}"
+                );
             }
         }
     }
@@ -182,13 +232,25 @@ mod tests {
         let n = 240;
         let n2 = n / 2;
         let im = Imdct::new(n);
-        let x: Vec<f32> = (0..n2).map(|k| ((k * 37 % 11) as f32 - 5.0) / 5.0).collect();
+        let x: Vec<f32> = (0..n2)
+            .map(|k| ((k * 37 % 11) as f32 - 5.0) / 5.0)
+            .collect();
         let overlap = 0;
         let mut out = vec![0f32; n2];
         im.backward(&x, 1, &mut out, &[], overlap, &mut ImdctScratch::default());
         // Direct IMDCT y[t] = sum X[k] cos(2pi/N (t + 1/2 + N/4)(k + 1/2)), t in 0..N.
         let y: Vec<f64> = (0..n)
-            .map(|t| (0..n2).map(|k| x[k] as f64 * (2.0 * std::f64::consts::PI / n as f64 * (t as f64 + 0.5 + n as f64 / 4.0) * (k as f64 + 0.5)).cos()).sum())
+            .map(|t| {
+                (0..n2)
+                    .map(|k| {
+                        x[k] as f64
+                            * (2.0 * std::f64::consts::PI / n as f64
+                                * (t as f64 + 0.5 + n as f64 / 4.0)
+                                * (k as f64 + 0.5))
+                                .cos()
+                    })
+                    .sum()
+            })
             .collect();
         // The folded half: out[i] relates to y in the middle half; check proportionality.
         let mid: Vec<f64> = (0..n2).map(|i| y[n / 4 + i]).collect();

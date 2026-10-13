@@ -1,9 +1,9 @@
 //! Clean-room Apple ProRes video encoding adapter (Milestone 10).
 //!
 //! Encodes video frames into SMPTE RDD 36 compliant ProRes bitstreams
-//! using `filmcraft-prores`.
+//! using `craft-prores`.
 
-use filmcraft_prores::{ChromaFormat, Encoder, Frame as ProResFrame, Profile};
+use craft_prores::{ChromaFormat, Encoder, Frame as ProResFrame, Profile};
 use mediacraft_protocol::stream::VideoFrame;
 
 /// Errors produced during ProRes encoding.

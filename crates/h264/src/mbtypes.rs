@@ -99,7 +99,11 @@ pub fn intra_mb_type(t: u32) -> Option<MbTypeInfo> {
 
 /// P-slice mb_type 0..=4 (5.. are intra, handled by the caller).
 pub fn p_mb_type(t: u32) -> Option<MbTypeInfo> {
-    let mut m = MbTypeInfo { kind: MbKind::Inter, pred: [PRED_L0; 2], ..Default::default() };
+    let mut m = MbTypeInfo {
+        kind: MbKind::Inter,
+        pred: [PRED_L0; 2],
+        ..Default::default()
+    };
     m.part = match t {
         0 => Part::P16x16,
         1 => Part::P16x8,
@@ -116,7 +120,10 @@ pub fn p_mb_type(t: u32) -> Option<MbTypeInfo> {
 
 /// B-slice mb_type 0..=22 (23.. are intra).
 pub fn b_mb_type(t: u32) -> Option<MbTypeInfo> {
-    let mut m = MbTypeInfo { kind: MbKind::Inter, ..Default::default() };
+    let mut m = MbTypeInfo {
+        kind: MbKind::Inter,
+        ..Default::default()
+    };
     match t {
         0 => {
             m.kind = MbKind::BDirect16x16;
@@ -140,7 +147,11 @@ pub fn b_mb_type(t: u32) -> Option<MbTypeInfo> {
             ];
             let (a, b) = PAIRS[((t - 4) / 2) as usize];
             m.pred = [a, b];
-            m.part = if t.is_multiple_of(2) { Part::P16x8 } else { Part::P8x16 };
+            m.part = if t.is_multiple_of(2) {
+                Part::P16x8
+            } else {
+                Part::P8x16
+            };
         }
         22 => m.part = Part::P8x8,
         _ => return None,
@@ -164,7 +175,11 @@ pub fn p_sub_mb_type(t: u32) -> Option<SubMbInfo> {
         3 => SubPart::S4x4,
         _ => return None,
     };
-    Some(SubMbInfo { shape, pred: PRED_L0, direct: false })
+    Some(SubMbInfo {
+        shape,
+        pred: PRED_L0,
+        direct: false,
+    })
 }
 
 pub fn b_sub_mb_type(t: u32) -> Option<SubMbInfo> {
@@ -184,7 +199,11 @@ pub fn b_sub_mb_type(t: u32) -> Option<SubMbInfo> {
         12 => (SubPart::S4x4, PRED_BI, false),
         _ => return None,
     };
-    Some(SubMbInfo { shape, pred, direct })
+    Some(SubMbInfo {
+        shape,
+        pred,
+        direct,
+    })
 }
 
 /// Table 9-4 (a): codeNum -> coded_block_pattern for (Intra_4x4/Intra_8x8, Inter), ChromaArrayType 1 or 2.

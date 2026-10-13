@@ -34,7 +34,10 @@ pub struct NalHeader {
 impl NalHeader {
     pub fn parse(b: u8) -> Result<Self> {
         ensure!(b & 0x80 == 0, "forbidden_zero_bit set");
-        Ok(Self { nal_ref_idc: (b >> 5) & 3, nal_unit_type: b & 0x1f })
+        Ok(Self {
+            nal_ref_idc: (b >> 5) & 3,
+            nal_unit_type: b & 0x1f,
+        })
     }
 }
 
@@ -151,7 +154,11 @@ impl SliceHeader {
     }
 
     /// Parse the slice header. `pps_lookup` resolves pic_parameter_set_id to (PPS, SPS).
-    pub fn parse<'a>(rbsp: &[u8], nal: NalHeader, pps_lookup: impl FnOnce(u32) -> Result<(&'a Pps, &'a Sps)>) -> Result<(SliceHeader, &'a Pps, &'a Sps)> {
+    pub fn parse<'a>(
+        rbsp: &[u8],
+        nal: NalHeader,
+        pps_lookup: impl FnOnce(u32) -> Result<(&'a Pps, &'a Sps)>,
+    ) -> Result<(SliceHeader, &'a Pps, &'a Sps)> {
         let mut r = BitReader::new(rbsp);
         let idr = nal.nal_unit_type == nal_type::IDR;
         let first_mb_in_slice = r.read_ue()?;
@@ -190,9 +197,20 @@ impl SliceHeader {
                 delta_pic_order_cnt[1] = r.read_se()?;
             }
         }
-        let redundant_pic_cnt = if pps.redundant_pic_cnt_present { r.read_ue()? } else { 0 };
-        let direct_spatial_mv_pred = if slice_type.is_b() { r.read_flag()? } else { false };
-        let mut num_ref_idx_active = [pps.num_ref_idx_l0_default_active, pps.num_ref_idx_l1_default_active];
+        let redundant_pic_cnt = if pps.redundant_pic_cnt_present {
+            r.read_ue()?
+        } else {
+            0
+        };
+        let direct_spatial_mv_pred = if slice_type.is_b() {
+            r.read_flag()?
+        } else {
+            false
+        };
+        let mut num_ref_idx_active = [
+            pps.num_ref_idx_l0_default_active,
+            pps.num_ref_idx_l1_default_active,
+        ];
         if !slice_type.is_intra() {
             if r.read_flag()? {
                 num_ref_idx_active[0] = r.read_ue()? + 1;
@@ -201,7 +219,10 @@ impl SliceHeader {
                 }
             }
             let max = if field_pic { 32 } else { 16 };
-            ensure!(num_ref_idx_active[0] <= max && num_ref_idx_active[1] <= max, "num_ref_idx_active out of range");
+            ensure!(
+                num_ref_idx_active[0] <= max && num_ref_idx_active[1] <= max,
+                "num_ref_idx_active out of range"
+            );
         }
         if !slice_type.is_b() {
             num_ref_idx_active[1] = 0;
@@ -209,10 +230,17 @@ impl SliceHeader {
         if slice_type.is_intra() {
             num_ref_idx_active[0] = 0;
         }
-        ensure!(nal.nal_unit_type != 20 && nal.nal_unit_type != 21, "MVC slices are not supported");
+        ensure!(
+            nal.nal_unit_type != 20 && nal.nal_unit_type != 21,
+            "MVC slices are not supported"
+        );
         let mut ref_pic_list_mod = [Vec::new(), Vec::new()];
         for (list, mods) in ref_pic_list_mod.iter_mut().enumerate() {
-            let present = if list == 0 { !slice_type.is_intra() } else { slice_type.is_b() };
+            let present = if list == 0 {
+                !slice_type.is_intra()
+            } else {
+                slice_type.is_b()
+            };
             if present && r.read_flag()? {
                 loop {
                     let idc = r.read_ue()?;
@@ -222,43 +250,68 @@ impl SliceHeader {
                     }
                     let value = r.read_ue()?;
                     mods.push(RefPicListMod { idc, value });
-                    ensure!(mods.len() <= 66, "too many ref_pic_list_modification entries");
+                    ensure!(
+                        mods.len() <= 66,
+                        "too many ref_pic_list_modification entries"
+                    );
                 }
             }
         }
         let mut pred_weight_table = None;
-        if (pps.weighted_pred && slice_type.is_p()) || (pps.weighted_bipred_idc == 1 && slice_type.is_b()) {
+        if (pps.weighted_pred && slice_type.is_p())
+            || (pps.weighted_bipred_idc == 1 && slice_type.is_b())
+        {
             let luma_log2_denom = r.read_ue()?;
             ensure!(luma_log2_denom <= 7, "luma_log2_weight_denom out of range");
             let mut chroma_log2_denom = 0;
             if sps.chroma_array_type() != 0 {
                 chroma_log2_denom = r.read_ue()?;
-                ensure!(chroma_log2_denom <= 7, "chroma_log2_weight_denom out of range");
+                ensure!(
+                    chroma_log2_denom <= 7,
+                    "chroma_log2_weight_denom out of range"
+                );
             }
             let mut lists = [Vec::new(), Vec::new()];
             let nlists = if slice_type.is_b() { 2 } else { 1 };
             for (l, entries) in lists.iter_mut().enumerate().take(nlists) {
                 for _ in 0..num_ref_idx_active[l] {
-                    let mut e = WeightEntry { luma_weight: 1 << luma_log2_denom, chroma_weight: [1 << chroma_log2_denom; 2], ..Default::default() };
+                    let mut e = WeightEntry {
+                        luma_weight: 1 << luma_log2_denom,
+                        chroma_weight: [1 << chroma_log2_denom; 2],
+                        ..Default::default()
+                    };
                     if r.read_flag()? {
                         e.luma_flag = true;
                         e.luma_weight = r.read_se()?;
                         e.luma_offset = r.read_se()?;
-                        ensure!((-128..=127).contains(&e.luma_weight) && (-128..=127).contains(&e.luma_offset), "luma weight out of range");
+                        ensure!(
+                            (-128..=127).contains(&e.luma_weight)
+                                && (-128..=127).contains(&e.luma_offset),
+                            "luma weight out of range"
+                        );
                     }
                     if sps.chroma_array_type() != 0 && r.read_flag()? {
                         e.chroma_flag = true;
                         for j in 0..2 {
                             e.chroma_weight[j] = r.read_se()?;
                             e.chroma_offset[j] = r.read_se()?;
-                            ensure!((-128..=127).contains(&e.chroma_weight[j]) && (-128..=127).contains(&e.chroma_offset[j]), "chroma weight out of range");
+                            ensure!(
+                                (-128..=127).contains(&e.chroma_weight[j])
+                                    && (-128..=127).contains(&e.chroma_offset[j]),
+                                "chroma weight out of range"
+                            );
                         }
                     }
                     entries.push(e);
                 }
             }
             let [l0, l1] = lists;
-            pred_weight_table = Some(PredWeightTable { luma_log2_denom, chroma_log2_denom, l0, l1 });
+            pred_weight_table = Some(PredWeightTable {
+                luma_log2_denom,
+                chroma_log2_denom,
+                l0,
+                l1,
+            });
         }
         let mut no_output_of_prior_pics = false;
         let mut long_term_reference = false;
@@ -277,8 +330,13 @@ impl SliceHeader {
                         if op == 0 {
                             break;
                         }
-                        let mut m =
-                            Mmco { op, difference_of_pic_nums_minus1: 0, long_term_pic_num: 0, long_term_frame_idx: 0, max_long_term_frame_idx_plus1: 0 };
+                        let mut m = Mmco {
+                            op,
+                            difference_of_pic_nums_minus1: 0,
+                            long_term_pic_num: 0,
+                            long_term_frame_idx: 0,
+                            max_long_term_frame_idx_plus1: 0,
+                        };
                         if op == 1 || op == 3 {
                             m.difference_of_pic_nums_minus1 = r.read_ue()?;
                         }
@@ -318,11 +376,18 @@ impl SliceHeader {
         let mut slice_beta_offset_div2 = 0;
         if pps.deblocking_filter_control_present {
             disable_deblocking_filter_idc = r.read_ue()?;
-            ensure!(disable_deblocking_filter_idc <= 2, "disable_deblocking_filter_idc out of range");
+            ensure!(
+                disable_deblocking_filter_idc <= 2,
+                "disable_deblocking_filter_idc out of range"
+            );
             if disable_deblocking_filter_idc != 1 {
                 slice_alpha_c0_offset_div2 = r.read_se()?;
                 slice_beta_offset_div2 = r.read_se()?;
-                ensure!((-6..=6).contains(&slice_alpha_c0_offset_div2) && (-6..=6).contains(&slice_beta_offset_div2), "deblocking offsets out of range");
+                ensure!(
+                    (-6..=6).contains(&slice_alpha_c0_offset_div2)
+                        && (-6..=6).contains(&slice_beta_offset_div2),
+                    "deblocking offsets out of range"
+                );
             }
         }
         let mut slice_group_change_cycle = 0;
@@ -399,7 +464,10 @@ pub fn is_new_picture(prev: &SliceHeader, sh: &SliceHeader, sps: &Sps) -> bool {
     {
         return true;
     }
-    if sps.pic_order_cnt_type == 0 && (sh.pic_order_cnt_lsb != prev.pic_order_cnt_lsb || sh.delta_pic_order_cnt_bottom != prev.delta_pic_order_cnt_bottom) {
+    if sps.pic_order_cnt_type == 0
+        && (sh.pic_order_cnt_lsb != prev.pic_order_cnt_lsb
+            || sh.delta_pic_order_cnt_bottom != prev.delta_pic_order_cnt_bottom)
+    {
         return true;
     }
     if sps.pic_order_cnt_type == 1 && sh.delta_pic_order_cnt != prev.delta_pic_order_cnt {
@@ -428,7 +496,11 @@ impl PocState {
     pub fn compute(&self, sh: &SliceHeader, sps: &Sps) -> Poc {
         match sps.pic_order_cnt_type {
             0 => {
-                let (prev_msb, prev_lsb) = if sh.idr { (0, 0) } else { (self.prev_ref_msb, self.prev_ref_lsb) };
+                let (prev_msb, prev_lsb) = if sh.idr {
+                    (0, 0)
+                } else {
+                    (self.prev_ref_msb, self.prev_ref_lsb)
+                };
                 let max_lsb = 1i32 << sps.log2_max_poc_lsb;
                 let lsb = sh.pic_order_cnt_lsb as i32;
                 let msb = if lsb < prev_lsb && prev_lsb - lsb >= max_lsb / 2 {
@@ -440,12 +512,21 @@ impl PocState {
                 };
                 let top = msb + lsb;
                 let bottom = top + sh.delta_pic_order_cnt_bottom;
-                Poc { top, bottom, msb, frame_num_offset: 0 }
+                Poc {
+                    top,
+                    bottom,
+                    msb,
+                    frame_num_offset: 0,
+                }
             }
             1 => {
                 let frame_num_offset = self.frame_num_offset(sh.idr, sh.frame_num, sps);
                 let n = sps.offset_for_ref_frame.len() as i32;
-                let mut abs_frame_num = if n != 0 { frame_num_offset + sh.frame_num as i32 } else { 0 };
+                let mut abs_frame_num = if n != 0 {
+                    frame_num_offset + sh.frame_num as i32
+                } else {
+                    0
+                };
                 if sh.nal_ref_idc == 0 && abs_frame_num > 0 {
                     abs_frame_num -= 1;
                 }
@@ -464,7 +545,12 @@ impl PocState {
                 }
                 let top = expected + sh.delta_pic_order_cnt[0];
                 let bottom = top + sps.offset_for_top_to_bottom_field + sh.delta_pic_order_cnt[1];
-                Poc { top, bottom, msb: 0, frame_num_offset }
+                Poc {
+                    top,
+                    bottom,
+                    msb: 0,
+                    frame_num_offset,
+                }
             }
             _ => {
                 let frame_num_offset = self.frame_num_offset(sh.idr, sh.frame_num, sps);
@@ -475,7 +561,12 @@ impl PocState {
                 } else {
                     2 * (frame_num_offset + sh.frame_num as i32)
                 };
-                Poc { top: temp, bottom: temp, msb: 0, frame_num_offset }
+                Poc {
+                    top: temp,
+                    bottom: temp,
+                    msb: 0,
+                    frame_num_offset,
+                }
             }
         }
     }

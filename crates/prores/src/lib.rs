@@ -9,8 +9,22 @@
 //!
 //! See the crate README for bitstream details, accuracy and limitations.
 
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
-#![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::collapsible_if)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unimplemented,
+        clippy::todo,
+        clippy::unreachable
+    )
+)]
+#![allow(
+    clippy::needless_range_loop,
+    clippy::too_many_arguments,
+    clippy::collapsible_if
+)]
 
 mod bits;
 mod dct;
@@ -91,7 +105,11 @@ pub struct ColorInfo {
 impl Default for ColorInfo {
     /// BT.709 primaries, transfer and matrix.
     fn default() -> Self {
-        ColorInfo { primaries: 1, transfer: 1, matrix: 1 }
+        ColorInfo {
+            primaries: 1,
+            transfer: 1,
+            matrix: 1,
+        }
     }
 }
 
@@ -113,7 +131,14 @@ pub enum Profile {
 }
 
 impl Profile {
-    pub const ALL: [Profile; 6] = [Profile::Proxy, Profile::Lt, Profile::Standard, Profile::Hq, Profile::P4444, Profile::P4444Xq];
+    pub const ALL: [Profile; 6] = [
+        Profile::Proxy,
+        Profile::Lt,
+        Profile::Standard,
+        Profile::Hq,
+        Profile::P4444,
+        Profile::P4444Xq,
+    ];
 
     /// The QuickTime sample-entry four-character code.
     pub fn fourcc(self) -> [u8; 4] {
@@ -184,7 +209,13 @@ pub struct Frame {
 
 impl Frame {
     /// A black (video-range) frame with the given geometry.
-    pub fn new(width: u32, height: u32, chroma: ChromaFormat, bit_depth: u8, with_alpha: bool) -> Frame {
+    pub fn new(
+        width: u32,
+        height: u32,
+        chroma: ChromaFormat,
+        bit_depth: u8,
+        with_alpha: bool,
+    ) -> Frame {
         let n = width as usize * height as usize;
         let cn = chroma.chroma_width(width) as usize * height as usize;
         let s = bit_depth.saturating_sub(8) as u32;

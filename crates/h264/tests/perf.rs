@@ -22,13 +22,21 @@ fn bench(data: &[u8], threads: usize, iters: usize) -> (usize, f64) {
 #[ignore]
 fn perf_1080p() {
     let f = common::fixture("bench_1080p");
-    let Some((h264, _)) = common::ensure(f) else { return };
+    let Some((h264, _)) = common::ensure(f) else {
+        return;
+    };
     // correctness first
     common::check_fixture("bench_1080p").unwrap();
     let data = std::fs::read(h264).unwrap();
-    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
     for threads in [1, cores.min(16)] {
         let (frames, secs) = bench(&data, threads, 5);
-        println!("1080p High CRF20 ({} KB): {threads} thread(s): {frames} frames in {secs:.3}s = {:.1} fps", data.len() / 1024, frames as f64 / secs);
+        println!(
+            "1080p High CRF20 ({} KB): {threads} thread(s): {frames} frames in {secs:.3}s = {:.1} fps",
+            data.len() / 1024,
+            frames as f64 / secs
+        );
     }
 }

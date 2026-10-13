@@ -1,0 +1,24 @@
+[package]
+name = "craft-hevc"
+description = "Clean-room pure-Rust H.265/HEVC decoder (ITU-T H.265)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["threads"]
+threads = ["dep:rayon"]
+
+[dependencies]
+mediacraft-bitstream = { workspace = true }
+craft-media = { workspace = true }
+thiserror = { workspace = true }
+rayon = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

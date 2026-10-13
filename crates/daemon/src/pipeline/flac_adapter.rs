@@ -1,9 +1,9 @@
 //! Clean-room FLAC audio encoding adapter (Milestone 10).
 //!
 //! Encodes uncompressed audio into RFC 9639 compliant FLAC streams
-//! using `filmcraft-flac`.
+//! using `craft-flac`.
 
-use filmcraft_flac::{Encoder, EncoderConfig, STREAMINFO_OFFSET};
+use craft_flac::{Encoder, EncoderConfig, STREAMINFO_OFFSET};
 use std::path::Path;
 
 /// Errors produced during FLAC encoding.

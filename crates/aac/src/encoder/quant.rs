@@ -44,7 +44,13 @@ pub struct ChannelInput {
 impl ChannelInput {
     /// `spec` is window-major (short windows at stride 128); `thr[g][sfb]` and the grouping come from
     /// `info`.
-    pub fn new(info: IcsInfo, swb: &[u16], spec: &[f32], thr: &[Vec<f32>], tns: Option<TnsData>) -> ChannelInput {
+    pub fn new(
+        info: IcsInfo,
+        swb: &[u16],
+        spec: &[f32],
+        thr: &[Vec<f32>],
+        tns: Option<TnsData>,
+    ) -> ChannelInput {
         let mut x = Vec::with_capacity(1024);
         let mut bands = Vec::new();
         for g in 0..info.num_groups {
@@ -52,9 +58,17 @@ impl ChannelInput {
             for sfb in 0..info.max_sfb {
                 let start = x.len();
                 for w in w0..w0 + info.group_len[g] as usize {
-                    x.extend_from_slice(&spec[w * 128 + swb[sfb] as usize..w * 128 + swb[sfb + 1] as usize]);
+                    x.extend_from_slice(
+                        &spec[w * 128 + swb[sfb] as usize..w * 128 + swb[sfb + 1] as usize],
+                    );
                 }
-                bands.push(Band { start, end: x.len(), thr: thr[g][sfb], en: 0.0, max34: 0.0 });
+                bands.push(Band {
+                    start,
+                    end: x.len(),
+                    thr: thr[g][sfb],
+                    en: 0.0,
+                    max34: 0.0,
+                });
             }
         }
         let xabs: Vec<f32> = x.iter().map(|v| v.abs()).collect();
@@ -63,7 +77,14 @@ impl ChannelInput {
             b.en = x[b.start..b.end].iter().map(|v| v * v).sum();
             b.max34 = x34[b.start..b.end].iter().cloned().fold(0.0, f32::max);
         }
-        ChannelInput { info, x, xabs, x34, bands, tns }
+        ChannelInput {
+            info,
+            x,
+            xabs,
+            x34,
+            bands,
+            tns,
+        }
     }
 }
 
@@ -194,7 +215,13 @@ pub fn quantise_channel(ch: &ChannelInput, lambda: f32) -> QuantChannel {
                 maxq[i] = 0;
                 continue;
             }
-            quantise(&ch.x[r.clone()], &ch.xabs[r.clone()], &ch.x34[r.clone()], sf[i], Some(&mut q[r.clone()]));
+            quantise(
+                &ch.x[r.clone()],
+                &ch.xabs[r.clone()],
+                &ch.x34[r.clone()],
+                sf[i],
+                Some(&mut q[r.clone()]),
+            );
             maxq[i] = q[r].iter().map(|v| v.abs()).max().unwrap_or(0);
             if maxq[i] == 0 {
                 sf[i] = -1;
@@ -208,7 +235,11 @@ pub fn quantise_channel(ch: &ChannelInput, lambda: f32) -> QuantChannel {
 
     // Section selection: dynamic programming per group over codebooks.
     let info = &ch.info;
-    let (sect_bits, esc) = if info.is_short() { (3u32, 7usize) } else { (5u32, 31usize) };
+    let (sect_bits, esc) = if info.is_short() {
+        (3u32, 7usize)
+    } else {
+        (5u32, 31usize)
+    };
     let mut cb = vec![ZERO_HCB; nb];
     let mut sections = Vec::with_capacity(info.num_groups);
     let mut spectral_bits = 0u32;
@@ -311,7 +342,14 @@ pub fn quantise_channel(ch: &ChannelInput, lambda: f32) -> QuantChannel {
     }
     let tns_bits = 1 + ch.tns.as_ref().map(|t| t.bit_count(info)).unwrap_or(0);
     let bits = 8 + section_bits + sf_bits + 1 + tns_bits + 1 + spectral_bits;
-    QuantChannel { q, sf, cb, sections, global_gain: first, bits }
+    QuantChannel {
+        q,
+        sf,
+        cb,
+        sections,
+        global_gain: first,
+        bits,
+    }
 }
 
 /// Write an `individual_channel_stream`; `write_info` is false inside a common-window CPE.
@@ -321,7 +359,11 @@ pub fn write_ics(bw: &mut BitWriter, ch: &ChannelInput, qc: &QuantChannel, write
     if write_info {
         info.write(bw);
     }
-    let (sect_bits, esc) = if info.is_short() { (3u32, 7usize) } else { (5u32, 31usize) };
+    let (sect_bits, esc) = if info.is_short() {
+        (3u32, 7usize)
+    } else {
+        (5u32, 31usize)
+    };
     for secs in &qc.sections {
         for &(c, len) in secs {
             bw.write_bits(c as u32, 4);
@@ -368,8 +410,15 @@ mod tests {
     #[test]
     fn bit_count_matches_written_bits() {
         let swb = swb_offsets_long(4);
-        let info = IcsInfo { window_sequence: WindowSequence::OnlyLong, window_shape: WindowShape::Sine, max_sfb: 40, ..Default::default() };
-        let spec: Vec<f32> = (0..1024).map(|i| ((i * 7919 % 1000) as f32 - 500.0) * (1000.0 / (i as f32 + 10.0))).collect();
+        let info = IcsInfo {
+            window_sequence: WindowSequence::OnlyLong,
+            window_shape: WindowShape::Sine,
+            max_sfb: 40,
+            ..Default::default()
+        };
+        let spec: Vec<f32> = (0..1024)
+            .map(|i| ((i * 7919 % 1000) as f32 - 500.0) * (1000.0 / (i as f32 + 10.0)))
+            .collect();
         let thr = vec![vec![1000.0f32; 64]];
         let ch = ChannelInput::new(info, swb, &spec, &thr, None);
         for lambda in [0.01f32, 1.0, 100.0, 1e5] {

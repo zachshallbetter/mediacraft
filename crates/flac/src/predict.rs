@@ -27,13 +27,25 @@ impl Residual {
 pub enum Subframe {
     Constant(i32),
     Verbatim,
-    Fixed { order: u8, residual: Residual },
-    Lpc { coefs: Vec<i32>, precision: u8, shift: u8, residual: Residual },
+    Fixed {
+        order: u8,
+        residual: Residual,
+    },
+    Lpc {
+        coefs: Vec<i32>,
+        precision: u8,
+        shift: u8,
+        residual: Residual,
+    },
 }
 
 /// Folded residual: 0, -1, 1, -2, 2 … → 0, 1, 2, 3, 4 ….
 fn fold(r: i64) -> u64 {
-    if r >= 0 { (r as u64) << 1 } else { ((-r - 1) as u64) << 1 | 1 }
+    if r >= 0 {
+        (r as u64) << 1
+    } else {
+        ((-r - 1) as u64) << 1 | 1
+    }
 }
 
 /// Bits of `n` folded values summing to `sum` with Rice parameter `k`: unary quotient, stop bit,
@@ -55,7 +67,11 @@ fn best_param(u: &[u64]) -> (u8, u64) {
         return (0, 0);
     }
     let mean = sum / n;
-    let guess = if mean == 0 { 0 } else { 63 - mean.leading_zeros() };
+    let guess = if mean == 0 {
+        0
+    } else {
+        63 - mean.leading_zeros()
+    };
     let mut best = (0u32, u64::MAX);
     for k in guess.saturating_sub(1)..=(guess + 1).min(30) {
         let b = rice_estimate(sum, n, k);
@@ -84,7 +100,9 @@ fn code_residual(u: &[u64], block: usize, order: usize, max_partition_order: u8)
         let mut start = 0usize;
         for p in 0..parts {
             let n = if p == 0 { len - order } else { len };
-            let Some(chunk) = u.get(start..start + n) else { break };
+            let Some(chunk) = u.get(start..start + n) else {
+                break;
+            };
             let (k, b) = best_param(chunk);
             params.push(k);
             bits += b;
@@ -93,10 +111,18 @@ fn code_residual(u: &[u64], block: usize, order: usize, max_partition_order: u8)
         let wide = params.iter().any(|&k| k > 14);
         bits += 2 + 4 + parts as u64 * if wide { 5 } else { 4 };
         if best.as_ref().is_none_or(|b| bits < b.bits) {
-            best = Some(Residual { params, partition_order: po, bits });
+            best = Some(Residual {
+                params,
+                partition_order: po,
+                bits,
+            });
         }
     }
-    best.unwrap_or(Residual { params: vec![0], partition_order: 0, bits: u64::MAX })
+    best.unwrap_or(Residual {
+        params: vec![0],
+        partition_order: 0,
+        bits: u64::MAX,
+    })
 }
 
 /// The residual of fixed predictor `order` (0–4), or None when it does not fit.
@@ -127,7 +153,11 @@ pub fn lpc_residual(x: &[i32], coefs: &[i32], shift: u8) -> Option<Vec<i64>> {
     for i in order..x.len() {
         let hist = x.get(i - order..i)?;
         // coefs[0] weighs the previous sample
-        let pred: i64 = coefs.iter().zip(hist.iter().rev()).map(|(&c, &s)| i64::from(c) * i64::from(s)).sum();
+        let pred: i64 = coefs
+            .iter()
+            .zip(hist.iter().rev())
+            .map(|(&c, &s)| i64::from(c) * i64::from(s))
+            .sum();
         let r = i64::from(*x.get(i)?) - (pred >> shift);
         if r.abs() > MAX_RESIDUAL {
             return None;
@@ -143,7 +173,11 @@ fn window(n: usize) -> Vec<f64> {
     (0..n)
         .map(|i| {
             let edge = i.min(n - 1 - i);
-            if edge >= taper { 1.0 } else { 0.5 * (1.0 - (std::f64::consts::PI * edge as f64 / taper as f64).cos()) }
+            if edge >= taper {
+                1.0
+            } else {
+                0.5 * (1.0 - (std::f64::consts::PI * edge as f64 / taper as f64).cos())
+            }
         })
         .collect()
 }
@@ -157,8 +191,12 @@ fn lpc_orders(x: &[i32], max: usize) -> Vec<Vec<f64>> {
     }
     let w = window(n);
     let s: Vec<f64> = x.iter().zip(&w).map(|(&v, &w)| f64::from(v) * w).collect();
-    let r: Vec<f64> = (0..=max).map(|lag| s.iter().zip(s.iter().skip(lag)).map(|(a, b)| a * b).sum()).collect();
-    let Some(&r0) = r.first() else { return Vec::new() };
+    let r: Vec<f64> = (0..=max)
+        .map(|lag| s.iter().zip(s.iter().skip(lag)).map(|(a, b)| a * b).sum())
+        .collect();
+    let Some(&r0) = r.first() else {
+        return Vec::new();
+    };
     if r0 <= 0.0 {
         return Vec::new();
     }
@@ -167,7 +205,11 @@ fn lpc_orders(x: &[i32], max: usize) -> Vec<Vec<f64>> {
     let mut all = Vec::with_capacity(max);
     for i in 0..max {
         let ri = r.get(i + 1).copied().unwrap_or(0.0);
-        let acc: f64 = a.iter().enumerate().map(|(j, &aj)| aj * r.get(i - j).copied().unwrap_or(0.0)).sum();
+        let acc: f64 = a
+            .iter()
+            .enumerate()
+            .map(|(j, &aj)| aj * r.get(i - j).copied().unwrap_or(0.0))
+            .sum();
         let k = (ri - acc) / err;
         if !k.is_finite() {
             break;
@@ -230,7 +272,11 @@ impl Effort {
             6 => (8, 6, true),
             _ => (12, 6, true),
         };
-        Effort { max_lpc_order, max_partition_order, stereo }
+        Effort {
+            max_lpc_order,
+            max_partition_order,
+            stereo,
+        }
     }
 }
 
@@ -251,20 +297,40 @@ pub fn choose(x: &[i32], bps: u8, effort: Effort) -> (Subframe, u64) {
     };
     let folded = |r: &[i64]| r.iter().map(|&v| fold(v)).collect::<Vec<u64>>();
     for order in 0..=4usize.min(n.saturating_sub(1)) {
-        let Some(r) = fixed_residual(x, order) else { continue };
+        let Some(r) = fixed_residual(x, order) else {
+            continue;
+        };
         let residual = code_residual(&folded(&r), n, order, effort.max_partition_order);
         let bits = head + order as u64 * b + residual.bits;
-        consider(Subframe::Fixed { order: order as u8, residual }, bits);
+        consider(
+            Subframe::Fixed {
+                order: order as u8,
+                residual,
+            },
+            bits,
+        );
     }
     // 15-bit coefficients, fewer for short blocks (their side information weighs more)
     let precision: u8 = if n <= 1152 { 12 } else { 15 };
     for coefs in lpc_orders(x, effort.max_lpc_order) {
-        let Some((q, shift)) = quantise(&coefs, precision) else { continue };
+        let Some((q, shift)) = quantise(&coefs, precision) else {
+            continue;
+        };
         let order = q.len();
-        let Some(r) = lpc_residual(x, &q, shift) else { continue };
+        let Some(r) = lpc_residual(x, &q, shift) else {
+            continue;
+        };
         let residual = code_residual(&folded(&r), n, order, effort.max_partition_order);
         let bits = head + order as u64 * (b + u64::from(precision)) + 4 + 5 + residual.bits;
-        consider(Subframe::Lpc { coefs: q, precision, shift, residual }, bits);
+        consider(
+            Subframe::Lpc {
+                coefs: q,
+                precision,
+                shift,
+                residual,
+            },
+            bits,
+        );
     }
     best
 }
@@ -283,25 +349,39 @@ mod tests {
         // a ramp is exactly predicted by the order-2 fixed predictor
         let ramp: Vec<i32> = (0..4096).map(|i| i * 3 - 6000).collect();
         let (sub, bits) = choose(&ramp, 16, Effort::level(5));
-        assert!(matches!(sub, Subframe::Fixed { order: 2, .. } | Subframe::Lpc { .. }), "{sub:?}");
+        assert!(
+            matches!(sub, Subframe::Fixed { order: 2, .. } | Subframe::Lpc { .. }),
+            "{sub:?}"
+        );
         assert!(bits < 4096 * 2, "{bits}");
         // a sine is well predicted by LPC
-        let sine: Vec<i32> = (0..4096).map(|i| ((i as f64 * 0.05).sin() * 20000.0) as i32).collect();
+        let sine: Vec<i32> = (0..4096)
+            .map(|i| ((i as f64 * 0.05).sin() * 20000.0) as i32)
+            .collect();
         let (_, bits) = choose(&sine, 16, Effort::level(5));
         assert!(bits < 4096 * 6, "{bits}");
-        assert_eq!(choose(&[7; 100], 16, Effort::level(5)), (Subframe::Constant(7), 24));
+        assert_eq!(
+            choose(&[7; 100], 16, Effort::level(5)),
+            (Subframe::Constant(7), 24)
+        );
     }
 
     #[test]
     fn lpc_residual_inverts() {
-        let x: Vec<i32> = (0..500).map(|i| ((i as f64 * 0.1).sin() * 1000.0) as i32).collect();
+        let x: Vec<i32> = (0..500)
+            .map(|i| ((i as f64 * 0.1).sin() * 1000.0) as i32)
+            .collect();
         let coefs = lpc_orders(&x, 4).pop().unwrap();
         let (q, shift) = quantise(&coefs, 15).unwrap();
         let r = lpc_residual(&x, &q, shift).unwrap();
         // rebuild the signal from the warm-up and the residual, as a decoder would
         let mut y: Vec<i32> = x[..q.len()].to_vec();
         for (i, &res) in r.iter().enumerate() {
-            let p: i64 = q.iter().zip(y[i..i + q.len()].iter().rev()).map(|(&c, &s)| i64::from(c) * i64::from(s)).sum();
+            let p: i64 = q
+                .iter()
+                .zip(y[i..i + q.len()].iter().rev())
+                .map(|(&c, &s)| i64::from(c) * i64::from(s))
+                .sum();
             y.push((res + (p >> shift)) as i32);
         }
         assert_eq!(y, x);
@@ -318,7 +398,15 @@ mod tests {
             .collect();
         let (_, bits) = choose(&noise, 24, Effort::level(8));
         assert!(bits <= 8 + 4096 * 24);
-        let square: Vec<i32> = (0..4096).map(|i| if i % 2 == 0 { (1 << 23) - 1 } else { -(1 << 23) }).collect();
+        let square: Vec<i32> = (0..4096)
+            .map(|i| {
+                if i % 2 == 0 {
+                    (1 << 23) - 1
+                } else {
+                    -(1 << 23)
+                }
+            })
+            .collect();
         choose(&square, 24, Effort::level(8));
         choose(&[], 16, Effort::level(5));
         choose(&[1], 16, Effort::level(5));

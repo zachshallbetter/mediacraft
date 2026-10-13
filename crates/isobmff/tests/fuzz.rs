@@ -23,25 +23,91 @@ fn synthetic_files() -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     for brand in [Brand::Mp4, Brand::Mov] {
         let mut w = Mp4Writer::new(Cursor::new(Vec::new()), WriterOptions::new(brand)).unwrap();
-        let v = w.add_track(TrackConfig::new(SampleEntry::avc(AvcConfig::new(vec![vec![0x67, 0x64, 0, 0x1F]], vec![vec![0x68]], 4), 64, 64), 25)).unwrap();
+        let v = w
+            .add_track(TrackConfig::new(
+                SampleEntry::avc(
+                    AvcConfig::new(vec![vec![0x67, 0x64, 0, 0x1F]], vec![vec![0x68]], 4),
+                    64,
+                    64,
+                ),
+                25,
+            ))
+            .unwrap();
         let mut cfg = TrackConfig::new(SampleEntry::aac(vec![0x11, 0x90], 2, 48000), 48000);
         cfg.media_start = Some(1024);
         let a = w.add_track(cfg).unwrap();
-        let p = PcmConfig { bits: 16, float: false, big_endian: false, signed: true, channels: 1, sample_rate: 8000.0 };
-        let pc = w.add_track(TrackConfig::new(SampleEntry::pcm(p), 8000)).unwrap();
-        w.add_timecode_track(v, TimecodeConfig { flags: 1, timescale: 30000, frame_duration: 1001, frames_per_second: 30, ..Default::default() }, 1000)
+        let p = PcmConfig {
+            bits: 16,
+            float: false,
+            big_endian: false,
+            signed: true,
+            channels: 1,
+            sample_rate: 8000.0,
+        };
+        let pc = w
+            .add_track(TrackConfig::new(SampleEntry::pcm(p), 8000))
             .unwrap();
+        w.add_timecode_track(
+            v,
+            TimecodeConfig {
+                flags: 1,
+                timescale: 30000,
+                frame_duration: 1001,
+                frames_per_second: 30,
+                ..Default::default()
+            },
+            1000,
+        )
+        .unwrap();
         for i in 0..20u8 {
-            w.write_sample(v, WriteSample { data: &[i; 20], duration: 1, composition_offset: (i % 3) as i32, is_sync: i % 10 == 0 }).unwrap();
-            w.write_sample(a, WriteSample { data: &[i; 7], duration: 1024, composition_offset: 0, is_sync: true }).unwrap();
-            w.write_sample(pc, WriteSample { data: &[i; 16], duration: 0, composition_offset: 0, is_sync: true }).unwrap();
+            w.write_sample(
+                v,
+                WriteSample {
+                    data: &[i; 20],
+                    duration: 1,
+                    composition_offset: (i % 3) as i32,
+                    is_sync: i % 10 == 0,
+                },
+            )
+            .unwrap();
+            w.write_sample(
+                a,
+                WriteSample {
+                    data: &[i; 7],
+                    duration: 1024,
+                    composition_offset: 0,
+                    is_sync: true,
+                },
+            )
+            .unwrap();
+            w.write_sample(
+                pc,
+                WriteSample {
+                    data: &[i; 16],
+                    duration: 0,
+                    composition_offset: 0,
+                    is_sync: true,
+                },
+            )
+            .unwrap();
         }
         out.push(w.finish().unwrap().into_inner());
     }
     let mut w = FragmentedWriter::new(Vec::new(), WriterOptions::new(Brand::Mp4));
-    let v = w.add_track(TrackConfig::new(SampleEntry::jpeg(16, 16), 1000)).unwrap();
+    let v = w
+        .add_track(TrackConfig::new(SampleEntry::jpeg(16, 16), 1000))
+        .unwrap();
     for i in 0..12u8 {
-        w.write_sample(v, WriteSample { data: &[i; 9], duration: 40, composition_offset: -1, is_sync: i % 4 == 0 }).unwrap();
+        w.write_sample(
+            v,
+            WriteSample {
+                data: &[i; 9],
+                duration: 40,
+                composition_offset: -1,
+                is_sync: i % 4 == 0,
+            },
+        )
+        .unwrap();
         if i % 4 == 3 {
             w.flush_fragment().unwrap();
         }
@@ -98,7 +164,11 @@ fn mutate_all(base: &[u8], seed: u64, iterations: usize) {
         let (lo, hi) = hot[rng.below(hot.len())];
         let edits = 1 + rng.below(4);
         for _ in 0..edits {
-            let pos = if rng.below(10) < 8 { lo + rng.below(hi - lo) } else { rng.below(d.len()) };
+            let pos = if rng.below(10) < 8 {
+                lo + rng.below(hi - lo)
+            } else {
+                rng.below(d.len())
+            };
             let pos = pos.min(d.len() - 1);
             match rng.below(6) {
                 0 => d[pos] ^= 1 << rng.below(8),
@@ -140,7 +210,17 @@ fn mutated_synthetic_files_never_panic() {
 
 #[test]
 fn mutated_ffmpeg_fixtures_never_panic() {
-    for (i, name) in ["h264_bframes.mp4", "frag.mp4", "tmcd_2997df.mov", "prores.mov", "hevc.mp4", "aac.mp4"].iter().enumerate() {
+    for (i, name) in [
+        "h264_bframes.mp4",
+        "frag.mp4",
+        "tmcd_2997df.mov",
+        "prores.mov",
+        "hevc.mp4",
+        "aac.mp4",
+    ]
+    .iter()
+    .enumerate()
+    {
         let Some(p) = common::fixture(name) else {
             eprintln!("skipping {name}: fixture unavailable");
             continue;

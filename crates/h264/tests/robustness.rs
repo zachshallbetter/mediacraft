@@ -2,8 +2,8 @@
 
 mod common;
 
-use mediacraft_bitstream::annexb_nals;
 use craft_h264::Decoder;
+use mediacraft_bitstream::annexb_nals;
 
 /// Build an avcC record and length-prefixed samples from an Annex-B stream.
 fn to_avcc(data: &[u8]) -> (Vec<u8>, Vec<Vec<u8>>) {
@@ -46,7 +46,9 @@ fn to_avcc(data: &[u8]) -> (Vec<u8>, Vec<Vec<u8>>) {
 fn avcc_input_matches_reference() {
     for name in ["main_cabac_b", "baseline_qcif"] {
         let f = common::fixture(name);
-        let Some((h264, yuv)) = common::ensure(f) else { return };
+        let Some((h264, yuv)) = common::ensure(f) else {
+            return;
+        };
         let (avcc, samples) = to_avcc(&std::fs::read(h264).unwrap());
         let mut dec = Decoder::from_avcc(&avcc).unwrap();
         assert_eq!(dec.nal_length_size(), Some(4));
@@ -60,10 +62,18 @@ fn avcc_input_matches_reference() {
         // pts are passed through reordering
         let mut pts: Vec<i64> = pics.iter().map(|p| p.pts).collect();
         pts.sort();
-        assert_eq!(pts, (0..samples.len() as i64).map(|i| i * 1000).collect::<Vec<_>>());
+        assert_eq!(
+            pts,
+            (0..samples.len() as i64)
+                .map(|i| i * 1000)
+                .collect::<Vec<_>>()
+        );
         let p0 = &pics[0];
         assert!(p0.key);
-        assert_eq!((p0.y_stride, p0.uv_stride), (f.width as usize, f.width as usize / 2));
+        assert_eq!(
+            (p0.y_stride, p0.uv_stride),
+            (f.width as usize, f.width as usize / 2)
+        );
     }
 }
 
@@ -79,7 +89,9 @@ fn xorshift(seed: &mut u64) -> u64 {
 fn corrupted_streams_do_not_panic() {
     for name in ["main_cabac_b", "baseline_cif_noise", "cavlc_b", "bpyramid"] {
         let f = common::fixture(name);
-        let Some((h264, _)) = common::ensure(f) else { return };
+        let Some((h264, _)) = common::ensure(f) else {
+            return;
+        };
         let data = std::fs::read(h264).unwrap();
         let mut seed = 0x1234_5678_9abc_def0u64 ^ name.len() as u64;
         for round in 0..12 {

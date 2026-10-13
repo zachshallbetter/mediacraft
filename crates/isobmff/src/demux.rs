@@ -130,7 +130,9 @@ impl Track {
     }
     /// Presentation (edit-adjusted) pts of sample `i`.
     pub fn presentation_pts(&self, i: usize) -> Option<i64> {
-        self.samples.get(i).map(|s| s.pts.saturating_add(self.edit_offset))
+        self.samples
+            .get(i)
+            .map(|s| s.pts.saturating_add(self.edit_offset))
     }
     /// Index of the sample being presented at raw media time `pts` (the last sample, in
     /// presentation order, whose pts is ≤ `pts`; the first sample if `pts` precedes all).
@@ -138,7 +140,9 @@ impl Track {
         if self.pts_order.is_empty() {
             return None;
         }
-        let k = self.pts_order.partition_point(|&i| self.samples[i as usize].pts <= pts);
+        let k = self
+            .pts_order
+            .partition_point(|&i| self.samples[i as usize].pts <= pts);
         Some(self.pts_order[k.saturating_sub(1)] as usize)
     }
     /// Like [`sample_at_pts`](Self::sample_at_pts) but for edit-adjusted presentation time.
@@ -148,7 +152,11 @@ impl Track {
     /// The closest sync sample at or before `index` (decode order); 0 if there is none.
     pub fn sync_sample_before(&self, index: usize) -> usize {
         let k = self.sync_index.partition_point(|&i| i as usize <= index);
-        if k == 0 { 0 } else { self.sync_index[k - 1] as usize }
+        if k == 0 {
+            0
+        } else {
+            self.sync_index[k - 1] as usize
+        }
     }
     /// Indices of all sync samples.
     pub fn sync_samples(&self) -> &[u32] {
@@ -156,7 +164,13 @@ impl Track {
     }
 
     fn finish_indexes(&mut self) {
-        self.sync_index = self.samples.iter().enumerate().filter(|(_, s)| s.is_sync).map(|(i, _)| i as u32).collect();
+        self.sync_index = self
+            .samples
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.is_sync)
+            .map(|(i, _)| i as u32)
+            .collect();
         let mut order: Vec<u32> = (0..self.samples.len() as u32).collect();
         order.sort_by_key(|&i| (self.samples[i as usize].pts, i));
         self.pts_order = order;
@@ -171,11 +185,16 @@ pub struct Metadata {
 
 impl Metadata {
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.entries.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.entries
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
     /// Title from `©nam` or the `com.apple.quicktime.title` key.
     pub fn title(&self) -> Option<&str> {
-        self.get("©nam").or_else(|| self.get("com.apple.quicktime.title")).or_else(|| self.get("title"))
+        self.get("©nam")
+            .or_else(|| self.get("com.apple.quicktime.title"))
+            .or_else(|| self.get("title"))
     }
 }
 
@@ -203,7 +222,12 @@ pub struct Mp4File {
 
 impl Mp4File {
     /// Read the bytes of sample `index` of track `track` (index into [`tracks`](Self::tracks)).
-    pub fn read_sample<S: ByteSource + ?Sized>(&self, src: &S, track: usize, index: usize) -> Result<Vec<u8>> {
+    pub fn read_sample<S: ByteSource + ?Sized>(
+        &self,
+        src: &S,
+        track: usize,
+        index: usize,
+    ) -> Result<Vec<u8>> {
         let t = self.tracks.get(track).ok_or(Error::NoSuchTrack(track))?;
         let s = t.samples.get(index).ok_or(Error::NoSuchSample(index))?;
         read_range(src, s.offset, s.size as u64)
@@ -312,7 +336,15 @@ pub fn open<S: ByteSource>(src: S) -> Result<Mp4File> {
                         let mut c = Cur::new(m.payload, "trex");
                         c.full_header()?;
                         let id = c.u32()?;
-                        trex.insert(id, Trex { description_index: c.u32()?, duration: c.u32()?, size: c.u32()?, flags: c.u32()? });
+                        trex.insert(
+                            id,
+                            Trex {
+                                description_index: c.u32()?,
+                                duration: c.u32()?,
+                                size: c.u32()?,
+                                flags: c.u32()?,
+                            },
+                        );
                     }
                 }
             }
@@ -326,7 +358,16 @@ pub fn open<S: ByteSource>(src: S) -> Result<Mp4File> {
         file.tracks.push(t);
     }
     // Movie fragments.
-    let mut next_dts: Vec<i64> = file.tracks.iter().map(|t| t.samples.last().map(|s| s.dts + s.duration as i64).unwrap_or(0)).collect();
+    let mut next_dts: Vec<i64> = file
+        .tracks
+        .iter()
+        .map(|t| {
+            t.samples
+                .last()
+                .map(|s| s.dts + s.duration as i64)
+                .unwrap_or(0)
+        })
+        .collect();
     for (moof_off, moof) in &moofs {
         parse_moof(*moof_off, moof, &mut file.tracks, &trex, &mut next_dts, len)?;
     }
@@ -365,11 +406,19 @@ struct Trex {
 fn parse_language(code: u16) -> String {
     if code < 0x400 {
         // QuickTime Macintosh language code.
-        return if code == 0 { "eng".into() } else { "und".into() };
+        return if code == 0 {
+            "eng".into()
+        } else {
+            "und".into()
+        };
     }
     let c = |s: u16| (((code >> s) & 0x1F) as u8 + 0x60) as char;
     let s: String = [c(10), c(5), c(0)].into_iter().collect();
-    if s.chars().all(|ch| ch.is_ascii_lowercase()) { s } else { "und".into() }
+    if s.chars().all(|ch| ch.is_ascii_lowercase()) {
+        s
+    } else {
+        "und".into()
+    }
 }
 
 fn rescale(v: i128, from: u32, to: u32) -> i64 {
@@ -442,14 +491,28 @@ fn parse_trak(p: &[u8], file: &Mp4File, file_len: u64) -> Result<Track> {
                     let (v, _) = c.full_header()?;
                     let n = c.count(if v == 1 { 20 } else { 12 })?;
                     for _ in 0..n {
-                        let (segment_duration, media_time) = if v == 1 { (c.u64()?, c.i64()?) } else { (c.u32()? as u64, c.i32()? as i64) };
-                        t.edits.push(Edit { segment_duration, media_time, media_rate: c.i32()? });
+                        let (segment_duration, media_time) = if v == 1 {
+                            (c.u64()?, c.i64()?)
+                        } else {
+                            (c.u32()? as u64, c.i32()? as i64)
+                        };
+                        t.edits.push(Edit {
+                            segment_duration,
+                            media_time,
+                            media_rate: c.i32()?,
+                        });
                     }
                 }
             }
             b"tref" => {
                 for r in boxes(b.payload).map_while(|b| b.ok()) {
-                    let ids = r.payload.as_chunks::<4>().0.iter().map(|c| u32::from_be_bytes([c[0], c[1], c[2], c[3]])).collect();
+                    let ids = r
+                        .payload
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|c| u32::from_be_bytes([c[0], c[1], c[2], c[3]]))
+                        .collect();
                     t.references.push((r.kind, ids));
                 }
             }
@@ -484,7 +547,8 @@ fn parse_trak(p: &[u8], file: &Mp4File, file_len: u64) -> Result<Track> {
                 c.skip(12)?;
                 let name = c.rest();
                 // ISO: null-terminated UTF-8; QuickTime: Pascal string.
-                let s = if !name.is_empty() && name[0] as usize == name.len() - 1 && name.len() > 1 {
+                let s = if !name.is_empty() && name[0] as usize == name.len() - 1 && name.len() > 1
+                {
                     &name[1..]
                 } else {
                     name.split(|&b| b == 0).next().unwrap_or(&[])
@@ -508,7 +572,8 @@ fn parse_trak(p: &[u8], file: &Mp4File, file_len: u64) -> Result<Track> {
         if e.media_time == -1 {
             empty += e.segment_duration as i128;
         } else {
-            t.edit_offset = rescale(empty, file.timescale, t.timescale).saturating_sub(e.media_time);
+            t.edit_offset =
+                rescale(empty, file.timescale, t.timescale).saturating_sub(e.media_time);
             break;
         }
     }
@@ -546,7 +611,9 @@ impl SttsCursor<'_> {
         while self.run < self.runs.len() && self.runs[self.run].0 == 0 {
             self.run += 1;
         }
-        let Some(&(_, d)) = self.runs.get(self.run) else { return 0 };
+        let Some(&(_, d)) = self.runs.get(self.run) else {
+            return 0;
+        };
         self.take(1);
         d
     }
@@ -572,18 +639,23 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
                 let n = c.count(8)?;
                 for e in boxes(c.rest()).take(n) {
                     let e = e?;
-                    t.entries.push(parse_sample_entry(e.kind, e.payload, t.handler, is_qt)?);
+                    t.entries
+                        .push(parse_sample_entry(e.kind, e.payload, t.handler, is_qt)?);
                 }
             }
             b"stts" => {
                 c.full_header()?;
                 let n = c.count(8)?;
-                stts = (0..n).map(|_| Ok((c.u32()?, c.u32()?))).collect::<Result<_>>()?;
+                stts = (0..n)
+                    .map(|_| Ok((c.u32()?, c.u32()?)))
+                    .collect::<Result<_>>()?;
             }
             b"ctts" => {
                 c.full_header()?;
                 let n = c.count(8)?;
-                ctts = (0..n).map(|_| Ok((c.u32()?, c.u32()?))).collect::<Result<_>>()?;
+                ctts = (0..n)
+                    .map(|_| Ok((c.u32()?, c.u32()?)))
+                    .collect::<Result<_>>()?;
             }
             b"stss" => {
                 c.full_header()?;
@@ -595,7 +667,9 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
             b"stsc" => {
                 c.full_header()?;
                 let n = c.count(12)?;
-                stsc = (0..n).map(|_| Ok((c.u32()?, c.u32()?, c.u32()?))).collect::<Result<_>>()?;
+                stsc = (0..n)
+                    .map(|_| Ok((c.u32()?, c.u32()?, c.u32()?)))
+                    .collect::<Result<_>>()?;
             }
             b"stsz" => {
                 c.full_header()?;
@@ -618,7 +692,9 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
                     4 | 8 | 16 => field as usize,
                     _ => return invalid(format!("stz2 field size {field}")),
                 };
-                if n.checked_mul(bits).is_none_or(|b| b.div_ceil(8) > c.remaining()) {
+                if n.checked_mul(bits)
+                    .is_none_or(|b| b.div_ceil(8) > c.remaining())
+                {
                     return Err(Error::Truncated("stz2"));
                 }
                 let d = c.rest();
@@ -634,7 +710,9 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
             b"stco" => {
                 c.full_header()?;
                 let n = c.count(4)?;
-                chunks = (0..n).map(|_| c.u32().map(|v| v as u64)).collect::<Result<_>>()?;
+                chunks = (0..n)
+                    .map(|_| c.u32().map(|v| v as u64))
+                    .collect::<Result<_>>()?;
             }
             b"co64" => {
                 c.full_header()?;
@@ -652,7 +730,9 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
                     c.u32()?;
                 }
                 let n = c.count(8)?;
-                let runs = (0..n).map(|_| Ok((c.u32()?, c.u32()?))).collect::<Result<_>>()?;
+                let runs = (0..n)
+                    .map(|_| Ok((c.u32()?, c.u32()?)))
+                    .collect::<Result<_>>()?;
                 sbgp.push((gt, runs));
             }
             b"sgpd" => {
@@ -665,7 +745,11 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
                 let n = c.count(0)?;
                 let mut descs = Vec::new();
                 for _ in 0..n {
-                    let l = if v >= 1 && default_len == 0 { c.u32()? } else { default_len };
+                    let l = if v >= 1 && default_len == 0 {
+                        c.u32()?
+                    } else {
+                        default_len
+                    };
                     if l == 0 {
                         // Version 0 without known length: keep the remainder as a single entry.
                         descs.push(c.rest().to_vec());
@@ -678,7 +762,14 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
             _ => {}
         }
     }
-    t.sample_groups = sbgp.into_iter().map(|(gt, runs)| SampleGroup { grouping_type: gt, runs, descriptions: sgpd.remove(&gt).unwrap_or_default() }).collect();
+    t.sample_groups = sbgp
+        .into_iter()
+        .map(|(gt, runs)| SampleGroup {
+            grouping_type: gt,
+            runs,
+            descriptions: sgpd.remove(&gt).unwrap_or_default(),
+        })
+        .collect();
     if sample_count == 0 || chunks.is_empty() || stsc.is_empty() {
         return Ok(());
     }
@@ -689,8 +780,16 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
         Some(CodecConfig::Pcm(p)) if const_size != 0 => Some(*p),
         _ => None,
     };
-    let mut stts_c = SttsCursor { runs: &stts, run: 0, used: 0 };
-    let mut ctts_c = SttsCursor { runs: &ctts, run: 0, used: 0 };
+    let mut stts_c = SttsCursor {
+        runs: &stts,
+        run: 0,
+        used: 0,
+    };
+    let mut ctts_c = SttsCursor {
+        runs: &ctts,
+        run: 0,
+        used: 0,
+    };
     let mut samples = Vec::new();
     let mut sidx = 0usize;
     let mut dts = 0i64;
@@ -752,7 +851,11 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
                 if sidx >= sample_count {
                     break 'chunks;
                 }
-                let size = if const_size != 0 { const_size } else { sizes[sidx] };
+                let size = if const_size != 0 {
+                    const_size
+                } else {
+                    sizes[sidx]
+                };
                 let duration = stts_c.next_value();
                 let cts = ctts_c.next_value() as i32 as i64;
                 let is_sync = match &stss {
@@ -764,7 +867,15 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
                         stss_i < v.len() && v[stss_i] as usize == sidx + 1
                     }
                 };
-                samples.push(Sample { offset: pos, size, dts, pts: dts.saturating_add(cts), duration, is_sync, description_index: sdi });
+                samples.push(Sample {
+                    offset: pos,
+                    size,
+                    dts,
+                    pts: dts.saturating_add(cts),
+                    duration,
+                    is_sync,
+                    description_index: sdi,
+                });
                 pos = pos.saturating_add(size as u64);
                 dts = dts.saturating_add(duration as i64);
                 sidx += 1;
@@ -775,7 +886,14 @@ fn parse_stbl(stbl: &[u8], t: &mut Track, is_qt: bool, file_len: u64) -> Result<
     Ok(())
 }
 
-fn parse_moof(moof_off: u64, moof: &[u8], tracks: &mut [Track], trex: &HashMap<u32, Trex>, next_dts: &mut [i64], file_len: u64) -> Result<()> {
+fn parse_moof(
+    moof_off: u64,
+    moof: &[u8],
+    tracks: &mut [Track],
+    trex: &HashMap<u32, Trex>,
+    next_dts: &mut [i64],
+    file_len: u64,
+) -> Result<()> {
     // End of data of the previous traf, for the base-offset default of subsequent trafs.
     let mut prev_end: Option<u64> = None;
     for b in boxes(moof) {
@@ -799,7 +917,9 @@ fn parse_moof(moof_off: u64, moof: &[u8], tracks: &mut [Track], trex: &HashMap<u
         let mut c = Cur::new(tfhd, "tfhd");
         let (_, fl) = c.full_header()?;
         let id = c.u32()?;
-        let Some(ti) = tracks.iter().position(|t| t.id == id) else { continue };
+        let Some(ti) = tracks.iter().position(|t| t.id == id) else {
+            continue;
+        };
         let d = trex.get(&id).copied().unwrap_or_default();
         let base = if fl & 1 != 0 {
             c.u64()?
@@ -808,7 +928,11 @@ fn parse_moof(moof_off: u64, moof: &[u8], tracks: &mut [Track], trex: &HashMap<u
         } else {
             prev_end.unwrap_or(moof_off)
         };
-        let sdi = if fl & 2 != 0 { c.u32()? } else { d.description_index };
+        let sdi = if fl & 2 != 0 {
+            c.u32()?
+        } else {
+            d.description_index
+        };
         let def_dur = if fl & 8 != 0 { c.u32()? } else { d.duration };
         let def_size = if fl & 0x10 != 0 { c.u32()? } else { d.size };
         let def_flags = if fl & 0x20 != 0 { c.u32()? } else { d.flags };
@@ -822,7 +946,11 @@ fn parse_moof(moof_off: u64, moof: &[u8], tracks: &mut [Track], trex: &HashMap<u
         for tr in truns {
             let mut c = Cur::new(tr, "trun");
             let (v, tf) = c.full_header()?;
-            let per = [0x100u32, 0x200, 0x400, 0x800].iter().filter(|&&f| tf & f != 0).count() * 4;
+            let per = [0x100u32, 0x200, 0x400, 0x800]
+                .iter()
+                .filter(|&&f| tf & f != 0)
+                .count()
+                * 4;
             let n = c.u32()? as usize;
             if per > 0 {
                 c.check_count(n, per)?;
@@ -843,10 +971,18 @@ fn parse_moof(moof_off: u64, moof: &[u8], tracks: &mut [Track], trex: &HashMap<u
                 let size = if tf & 0x200 != 0 { c.u32()? } else { def_size };
                 let flags = if tf & 0x400 != 0 { c.u32()? } else { def_flags };
                 // first_sample_flags overrides the flags of the first sample only.
-                let flags = if i == 0 { first_flags.unwrap_or(flags) } else { flags };
+                let flags = if i == 0 {
+                    first_flags.unwrap_or(flags)
+                } else {
+                    flags
+                };
                 let cto = if tf & 0x800 != 0 {
                     let raw = c.u32()?;
-                    if v == 0 { raw as i64 } else { raw as i32 as i64 }
+                    if v == 0 {
+                        raw as i64
+                    } else {
+                        raw as i32 as i64
+                    }
                 } else {
                     0
                 };
@@ -876,7 +1012,10 @@ fn parse_udta(p: &[u8], md: &mut Metadata) {
         } else if b.kind.0[0] == 0xA9 && b.payload.len() >= 4 {
             let n = u16::from_be_bytes([b.payload[0], b.payload[1]]) as usize;
             if let Some(s) = b.payload.get(4..4 + n) {
-                md.entries.push((b.kind.to_string_lossy(), String::from_utf8_lossy(s).into_owned()));
+                md.entries.push((
+                    b.kind.to_string_lossy(),
+                    String::from_utf8_lossy(s).into_owned(),
+                ));
             }
         }
     }
@@ -884,7 +1023,11 @@ fn parse_udta(p: &[u8], md: &mut Metadata) {
 
 fn parse_meta(p: &[u8], md: &mut Metadata) {
     // QuickTime `meta` is a plain box; ISO `meta` is a full box.
-    let body = if p.len() >= 8 && &p[4..8] == b"hdlr" { p } else { p.get(4..).unwrap_or(&[]) };
+    let body = if p.len() >= 8 && &p[4..8] == b"hdlr" {
+        p
+    } else {
+        p.get(4..).unwrap_or(&[])
+    };
     let mut keys: Vec<String> = Vec::new();
     if let Some(k) = find(body, b"keys") {
         let mut c = Cur::new(k, "keys");
@@ -894,21 +1037,30 @@ fn parse_meta(p: &[u8], md: &mut Metadata) {
             for _ in 0..n {
                 let Ok(sz) = c.u32() else { break };
                 let Ok(_ns) = c.u32() else { break };
-                let Ok(name) = c.bytes((sz as usize).saturating_sub(8)) else { break };
+                let Ok(name) = c.bytes((sz as usize).saturating_sub(8)) else {
+                    break;
+                };
                 keys.push(String::from_utf8_lossy(name).into_owned());
             }
         }
     }
-    let Some(ilst) = find(body, b"ilst") else { return };
+    let Some(ilst) = find(body, b"ilst") else {
+        return;
+    };
     for item in boxes(ilst).map_while(|b| b.ok()) {
         let idx = item.kind.as_u32() as usize;
-        let key = if !keys.is_empty() && idx >= 1 && idx <= keys.len() { keys[idx - 1].clone() } else { item.kind.to_string_lossy() };
+        let key = if !keys.is_empty() && idx >= 1 && idx <= keys.len() {
+            keys[idx - 1].clone()
+        } else {
+            item.kind.to_string_lossy()
+        };
         if let Some(d) = find(item.payload, b"data")
             && d.len() >= 8
         {
             let ty = u32::from_be_bytes([d[0], d[1], d[2], d[3]]) & 0xFF_FFFF;
             if ty == 1 || ty == 0 {
-                md.entries.push((key, String::from_utf8_lossy(&d[8..]).into_owned()));
+                md.entries
+                    .push((key, String::from_utf8_lossy(&d[8..]).into_owned()));
             }
         }
     }
@@ -929,7 +1081,11 @@ mod tests {
     #[test]
     fn stts_cursor() {
         let runs = [(2, 10), (0, 99), (3, 5)];
-        let mut c = SttsCursor { runs: &runs, run: 0, used: 0 };
+        let mut c = SttsCursor {
+            runs: &runs,
+            run: 0,
+            used: 0,
+        };
         assert_eq!(c.next_value(), 10);
         assert_eq!(c.take(3), 10 + 5 + 5);
         assert_eq!(c.next_value(), 5);
@@ -1051,7 +1207,9 @@ mod tests {
         let stbl = b.start(b"stbl");
         full(&mut b, b"stsd", 0, |b| {
             b.u32(1);
-            crate::codec::SampleEntry::jpeg(320, 240).write(b, false).unwrap();
+            crate::codec::SampleEntry::jpeg(320, 240)
+                .write(b, false)
+                .unwrap();
         });
         full(&mut b, b"stts", 0, |b| {
             b.u32(1);
@@ -1127,18 +1285,28 @@ mod tests {
         let f = open(d.as_slice()).unwrap();
         assert_eq!(f.major_brand, *b"isom");
         let t = &f.tracks[0];
-        assert_eq!((t.id, t.kind, t.timescale, t.language.as_str()), (7, TrackKind::Video, 100, "eng"));
+        assert_eq!(
+            (t.id, t.kind, t.timescale, t.language.as_str()),
+            (7, TrackKind::Video, 100, "eng")
+        );
         assert_eq!((t.width, t.height), (320, 240));
         assert_eq!(t.handler_name, "Video");
         let sizes: Vec<u32> = t.samples.iter().map(|s| s.size).collect();
         assert_eq!(sizes, [3, 1, 2, 4]);
-        let offs: Vec<u64> = t.samples.iter().map(|s| s.offset - t.samples[0].offset).collect();
+        let offs: Vec<u64> = t
+            .samples
+            .iter()
+            .map(|s| s.offset - t.samples[0].offset)
+            .collect();
         assert_eq!(offs, [0, 3, 4, 6]);
         let pts: Vec<i64> = t.samples.iter().map(|s| s.pts).collect();
         assert_eq!(pts, [-5, 5, 25, 35]);
         let sync: Vec<bool> = t.samples.iter().map(|s| s.is_sync).collect();
         assert_eq!(sync, [true, false, true, false]);
-        for (i, want) in [vec![1u8, 1, 1], vec![2], vec![3, 3], vec![4; 4]].iter().enumerate() {
+        for (i, want) in [vec![1u8, 1, 1], vec![2], vec![3, 3], vec![4; 4]]
+            .iter()
+            .enumerate()
+        {
             assert_eq!(&f.read_sample(d.as_slice(), 0, i).unwrap(), want);
         }
         // Empty edit of 100 movie ticks = 10 media ticks, then media starts at 20.

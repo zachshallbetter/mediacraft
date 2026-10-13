@@ -14,7 +14,10 @@ pub struct LevelScale {
 
 impl LevelScale {
     pub fn new(m: &ScalingMatrices) -> Box<Self> {
-        let mut s = Box::new(LevelScale { ls4: [[[0; 16]; 6]; 6], ls8: [[[0; 64]; 6]; 6] });
+        let mut s = Box::new(LevelScale {
+            ls4: [[[0; 16]; 6]; 6],
+            ls8: [[[0; 64]; 6]; 6],
+        });
         for l in 0..6 {
             for q in 0..6 {
                 for p in 0..16 {
@@ -32,13 +35,21 @@ impl LevelScale {
 /// Scale one 4x4 AC coefficient (8.5.12.1, not the DC of Intra16x16 / chroma blocks).
 #[inline(always)]
 pub fn scale4(c: i32, ls: i32, qp: i32) -> i32 {
-    if qp >= 24 { c.wrapping_mul(ls) << (qp / 6 - 4) } else { c.wrapping_mul(ls).wrapping_add(1 << (3 - qp / 6)) >> (4 - qp / 6) }
+    if qp >= 24 {
+        c.wrapping_mul(ls) << (qp / 6 - 4)
+    } else {
+        c.wrapping_mul(ls).wrapping_add(1 << (3 - qp / 6)) >> (4 - qp / 6)
+    }
 }
 
 /// Scale one 8x8 coefficient (8.5.13.1).
 #[inline(always)]
 pub fn scale8(c: i32, ls: i32, qp: i32) -> i32 {
-    if qp >= 36 { c.wrapping_mul(ls) << (qp / 6 - 6) } else { c.wrapping_mul(ls).wrapping_add(1 << (5 - qp / 6)) >> (6 - qp / 6) }
+    if qp >= 36 {
+        c.wrapping_mul(ls) << (qp / 6 - 6)
+    } else {
+        c.wrapping_mul(ls).wrapping_add(1 << (5 - qp / 6)) >> (6 - qp / 6)
+    }
 }
 
 /// Intra16x16 luma DC: inverse Hadamard + scaling (8.5.10). `c` is raster order (row*4+col);
@@ -65,8 +76,11 @@ pub fn luma_dc_dequant(c: &mut [i32; 16], qp: i32, ls00: i32) {
         let d23 = t[8 + j] - t[12 + j];
         let f = [s01 + s23, s01 - s23, d01 - d23, d01 + d23];
         for i in 0..4 {
-            c[i * 4 + j] =
-                if qp >= 36 { f[i].wrapping_mul(ls00) << (qp / 6 - 6) } else { f[i].wrapping_mul(ls00).wrapping_add(1 << (5 - qp / 6)) >> (6 - qp / 6) };
+            c[i * 4 + j] = if qp >= 36 {
+                f[i].wrapping_mul(ls00) << (qp / 6 - 6)
+            } else {
+                f[i].wrapping_mul(ls00).wrapping_add(1 << (5 - qp / 6)) >> (6 - qp / 6)
+            };
         }
     }
 }
@@ -77,7 +91,12 @@ pub fn chroma_dc_dequant_420(c: &mut [i32; 4], qp: i32, ls00: i32) {
     let d0 = c[0].wrapping_sub(c[1]);
     let s1 = c[2].wrapping_add(c[3]);
     let d1 = c[2].wrapping_sub(c[3]);
-    let f = [s0.wrapping_add(s1), d0.wrapping_add(d1), s0.wrapping_sub(s1), d0.wrapping_sub(d1)];
+    let f = [
+        s0.wrapping_add(s1),
+        d0.wrapping_add(d1),
+        s0.wrapping_sub(s1),
+        d0.wrapping_sub(d1),
+    ];
     for k in 0..4 {
         c[k] = (f[k].wrapping_mul(ls00) << (qp / 6)) >> 5;
     }
@@ -114,7 +133,10 @@ pub fn idct4_add(d: &[i32; 16], dst: &mut [u8], stride: usize) {
         o[3][j] = e - h;
     }
     for (i, row) in o.iter().enumerate() {
-        let Some(line) = dst.get_mut(i * stride..).and_then(|d| d.first_chunk_mut::<4>()) else {
+        let Some(line) = dst
+            .get_mut(i * stride..)
+            .and_then(|d| d.first_chunk_mut::<4>())
+        else {
             return;
         };
         for (p, &v) in line.iter_mut().zip(row) {
@@ -152,7 +174,16 @@ fn idct8_1d(d: [i32; 8]) -> [i32; 8] {
     let b7 = a7 - (a1 >> 2);
     let b3 = a3 + (a5 >> 2);
     let b5 = (a3 >> 2) - a5;
-    [b0 + b7, b2 + b5, b4 + b3, b6 + b1, b6 - b1, b4 - b3, b2 - b5, b0 - b7]
+    [
+        b0 + b7,
+        b2 + b5,
+        b4 + b3,
+        b6 + b1,
+        b6 - b1,
+        b4 - b3,
+        b2 - b5,
+        b0 - b7,
+    ]
 }
 
 /// Inverse 8x8 transform of raster-order `d` and add to `dst` (8.5.13.2): rows, then columns,
@@ -170,7 +201,10 @@ pub fn idct8_add(d: &[i32; 64], dst: &mut [u8], stride: usize) {
         }
     }
     for (i, row) in o.iter().enumerate() {
-        let Some(line) = dst.get_mut(i * stride..).and_then(|d| d.first_chunk_mut::<8>()) else {
+        let Some(line) = dst
+            .get_mut(i * stride..)
+            .and_then(|d| d.first_chunk_mut::<8>())
+        else {
             return;
         };
         for (p, &v) in line.iter_mut().zip(row) {
@@ -188,7 +222,12 @@ mod tests {
     fn reference_add(d: &[i32], n: usize, dst: &mut [u8], stride: usize) {
         let one = |v: &[i32]| -> Vec<i32> {
             if n == 4 {
-                let (e, f, g, h) = (v[0] + v[2], v[0] - v[2], (v[1] >> 1) - v[3], v[1] + (v[3] >> 1));
+                let (e, f, g, h) = (
+                    v[0] + v[2],
+                    v[0] - v[2],
+                    (v[1] >> 1) - v[3],
+                    v[1] + (v[3] >> 1),
+                );
                 vec![e + h, f + g, f - g, e - h]
             } else {
                 idct8_1d(v.try_into().unwrap()).to_vec()
@@ -215,8 +254,10 @@ mod tests {
         };
         for iter in 0..5000 {
             let range = [64u64, 1024, 8192, 1 << 15][iter % 4];
-            let d4: [i32; 16] = std::array::from_fn(|_| (next() % (2 * range + 1)) as i32 - range as i32);
-            let d8: [i32; 64] = std::array::from_fn(|_| (next() % (2 * range + 1)) as i32 - range as i32);
+            let d4: [i32; 16] =
+                std::array::from_fn(|_| (next() % (2 * range + 1)) as i32 - range as i32);
+            let d8: [i32; 64] =
+                std::array::from_fn(|_| (next() % (2 * range + 1)) as i32 - range as i32);
             let base: Vec<u8> = (0..24 * 8).map(|_| next() as u8).collect();
             let (mut a, mut b) = (base.clone(), base.clone());
             idct4_add(&d4, &mut a[3..], 24);

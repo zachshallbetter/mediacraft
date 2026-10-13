@@ -27,8 +27,12 @@ const fn zigzag8() -> [u8; 64] {
 }
 
 /// Table 7-3.
-pub const DEFAULT_4X4_INTRA: [u8; 16] = [6, 13, 13, 20, 20, 20, 28, 28, 28, 28, 32, 32, 32, 37, 37, 42];
-pub const DEFAULT_4X4_INTER: [u8; 16] = [10, 14, 14, 20, 20, 20, 24, 24, 24, 24, 27, 27, 27, 30, 30, 34];
+pub const DEFAULT_4X4_INTRA: [u8; 16] = [
+    6, 13, 13, 20, 20, 20, 28, 28, 28, 28, 32, 32, 32, 37, 37, 42,
+];
+pub const DEFAULT_4X4_INTER: [u8; 16] = [
+    10, 14, 14, 20, 20, 20, 24, 24, 24, 24, 27, 27, 27, 30, 30, 34,
+];
 /// Table 7-4.
 #[rustfmt::skip]
 pub const DEFAULT_8X8_INTRA: [u8; 64] = [
@@ -48,7 +52,9 @@ pub const DEFAULT_8X8_INTER: [u8; 64] = [
 /// Table 8-15: QPc as a function of qPI (0..=51).
 pub const QPC_TABLE: [u8; 52] = {
     let mut t = [0u8; 52];
-    let tail = [29u8, 30, 31, 32, 32, 33, 34, 34, 35, 35, 36, 36, 37, 37, 37, 38, 38, 38, 39, 39, 39, 39];
+    let tail = [
+        29u8, 30, 31, 32, 32, 33, 34, 34, 35, 35, 36, 36, 37, 37, 37, 38, 38, 38, 39, 39, 39, 39,
+    ];
     let mut i = 0;
     while i < 52 {
         t[i] = if i < 30 { i as u8 } else { tail[i - 30] };
@@ -58,7 +64,14 @@ pub const QPC_TABLE: [u8; 52] = {
 };
 
 /// (8-315) v matrix for normAdjust4x4.
-pub const NORM_ADJUST4: [[u16; 3]; 6] = [[10, 16, 13], [11, 18, 14], [13, 20, 16], [14, 23, 18], [16, 25, 20], [18, 29, 23]];
+pub const NORM_ADJUST4: [[u16; 3]; 6] = [
+    [10, 16, 13],
+    [11, 18, 14],
+    [13, 20, 16],
+    [14, 23, 18],
+    [16, 25, 20],
+    [18, 29, 23],
+];
 /// (8-318) v matrix for normAdjust8x8.
 pub const NORM_ADJUST8: [[u16; 6]; 6] = [
     [20, 18, 32, 19, 25, 24],
@@ -137,8 +150,24 @@ pub const TC0: [[u8; 3]; 52] = {
 };
 
 /// Luma 4x4 block index (decoding order, 6.4.3) -> (x, y) in 4-sample units.
-pub const BLK4_XY: [(u8, u8); 16] =
-    [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0), (3, 0), (2, 1), (3, 1), (0, 2), (1, 2), (0, 3), (1, 3), (2, 2), (3, 2), (2, 3), (3, 3)];
+pub const BLK4_XY: [(u8, u8); 16] = [
+    (0, 0),
+    (1, 0),
+    (0, 1),
+    (1, 1),
+    (2, 0),
+    (3, 0),
+    (2, 1),
+    (3, 1),
+    (0, 2),
+    (1, 2),
+    (0, 3),
+    (1, 3),
+    (2, 2),
+    (3, 2),
+    (2, 3),
+    (3, 3),
+];
 
 /// Raster 4x4 position (y * 4 + x) -> luma4x4BlkIdx.
 pub const RASTER_TO_BLK4: [u8; 16] = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15];
@@ -149,8 +178,16 @@ mod tests {
 
     #[test]
     fn zigzag8_known_prefix() {
-        assert_eq!(&ZIGZAG8[..16], &[0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5]);
-        assert_eq!(&ZIGZAG8[48..], &[58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63]);
+        assert_eq!(
+            &ZIGZAG8[..16],
+            &[0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5]
+        );
+        assert_eq!(
+            &ZIGZAG8[48..],
+            &[
+                58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63
+            ]
+        );
         let mut seen = [false; 64];
         for &z in &ZIGZAG8 {
             seen[z as usize] = true;

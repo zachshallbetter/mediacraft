@@ -75,7 +75,11 @@ impl FrameHeader {
         let _ = rd(&mut r, 2)?;
         let aspect_ratio = rd(&mut r, 4)? as u8;
         let frame_rate_code = rd(&mut r, 4)? as u8;
-        let color = ColorInfo { primaries: rd(&mut r, 8)? as u8, transfer: rd(&mut r, 8)? as u8, matrix: rd(&mut r, 8)? as u8 };
+        let color = ColorInfo {
+            primaries: rd(&mut r, 8)? as u8,
+            transfer: rd(&mut r, 8)? as u8,
+            matrix: rd(&mut r, 8)? as u8,
+        };
         let _ = rd(&mut r, 4)?;
         let alpha = match rd(&mut r, 4)? {
             0 => AlphaType::None,
@@ -131,7 +135,8 @@ impl FrameHeader {
     /// Serialise the frame header (without the 8-byte size/identifier prefix).
     pub fn write(&self) -> Vec<u8> {
         let mut v = Vec::with_capacity(148);
-        let size = 20 + 64 * (self.luma_matrix_present as usize + self.chroma_matrix_present as usize);
+        let size =
+            20 + 64 * (self.luma_matrix_present as usize + self.chroma_matrix_present as usize);
         v.extend_from_slice(&(size as u16).to_be_bytes());
         v.push(0);
         v.push(self.bitstream_version);
@@ -191,7 +196,12 @@ impl PictureHeader {
         let picture_size = u32::from_be_bytes([data[1], data[2], data[3], data[4]]) as usize;
         let num_slices = u16::from_be_bytes([data[5], data[6]]) as usize;
         let log2_slice_mbs = (data[7] >> 4) & 3;
-        Ok(PictureHeader { header_size, picture_size, num_slices, log2_slice_mbs })
+        Ok(PictureHeader {
+            header_size,
+            picture_size,
+            num_slices,
+            log2_slice_mbs,
+        })
     }
 
     pub fn write(&self, out: &mut Vec<u8>) {

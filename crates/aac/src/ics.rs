@@ -40,7 +40,13 @@ pub struct IcsInfo {
 
 impl Default for IcsInfo {
     fn default() -> Self {
-        IcsInfo { window_sequence: WindowSequence::OnlyLong, window_shape: WindowShape::Sine, max_sfb: 0, num_groups: 1, group_len: [1, 0, 0, 0, 0, 0, 0, 0] }
+        IcsInfo {
+            window_sequence: WindowSequence::OnlyLong,
+            window_shape: WindowShape::Sine,
+            max_sfb: 0,
+            num_groups: 1,
+            group_len: [1, 0, 0, 0, 0, 0, 0, 0],
+        }
     }
 }
 
@@ -55,7 +61,11 @@ impl IcsInfo {
     }
     /// Band offsets of one window.
     pub fn swb_offsets(&self, sf_index: u8) -> &'static [u16] {
-        if self.is_short() { swb_offsets_short(sf_index) } else { swb_offsets_long(sf_index) }
+        if self.is_short() {
+            swb_offsets_short(sf_index)
+        } else {
+            swb_offsets_long(sf_index)
+        }
     }
     /// Number of bands for this window length (`num_swb`).
     pub fn num_swb(&self, sf_index: u8) -> usize {
@@ -72,7 +82,11 @@ impl IcsInfo {
         }
         let window_sequence = WindowSequence::from_bits(br.read_bits(2)?);
         let window_shape = WindowShape::from_bit(br.read_bits(1)? == 1);
-        let mut info = IcsInfo { window_sequence, window_shape, ..Default::default() };
+        let mut info = IcsInfo {
+            window_sequence,
+            window_shape,
+            ..Default::default()
+        };
         if info.is_short() {
             info.max_sfb = br.read_bits(4)? as usize;
             let grouping = br.read_bits(7)?;
@@ -93,7 +107,9 @@ impl IcsInfo {
             }
         }
         if info.max_sfb > info.num_swb(sf_index) {
-            return Err(Error::Bitstream("max_sfb exceeds the number of scalefactor bands"));
+            return Err(Error::Bitstream(
+                "max_sfb exceeds the number of scalefactor bands",
+            ));
         }
         Ok(info)
     }

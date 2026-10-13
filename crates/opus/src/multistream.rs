@@ -39,7 +39,14 @@ impl Decoder {
             d.set_gain_q8(head.output_gain);
             streams.push(d);
         }
-        Ok(Decoder { rate: sample_rate, streams, trim_pre_skip: false, skip_remaining: 0, scratch: vec![Vec::new(); head.streams], head })
+        Ok(Decoder {
+            rate: sample_rate,
+            streams,
+            trim_pre_skip: false,
+            skip_remaining: 0,
+            scratch: vec![Vec::new(); head.streams],
+            head,
+        })
     }
 
     pub fn head(&self) -> &OpusHead {
@@ -81,7 +88,11 @@ impl Decoder {
         for s in &mut self.streams {
             s.reset();
         }
-        self.skip_remaining = if self.trim_pre_skip { self.pre_skip() } else { 0 };
+        self.skip_remaining = if self.trim_pre_skip {
+            self.pre_skip()
+        } else {
+            0
+        };
     }
 
     /// Decodes one packet (`None` = lost packet, concealed) into planar channels.
@@ -99,7 +110,11 @@ impl Decoder {
                     if rest.is_empty() {
                         return Err(Error::InvalidPacket("truncated multistream packet"));
                     }
-                    let used = if s + 1 < n { Packet::parse_self_delimited(rest)?.1 } else { rest.len() };
+                    let used = if s + 1 < n {
+                        Packet::parse_self_delimited(rest)?.1
+                    } else {
+                        rest.len()
+                    };
                     let pkt = &rest[..used];
                     let r = if s + 1 < n {
                         // Re-frame the self-delimited packet as a regular one for the stream decoder.
@@ -133,7 +148,11 @@ impl Decoder {
             if m == 255 {
                 continue;
             }
-            let (s, ch, nch) = if m < 2 * self.head.coupled_streams { (m / 2, m % 2, 2) } else { (m - self.head.coupled_streams, 0, 1) };
+            let (s, ch, nch) = if m < 2 * self.head.coupled_streams {
+                (m / 2, m % 2, 2)
+            } else {
+                (m - self.head.coupled_streams, 0, 1)
+            };
             let src = &self.scratch[s];
             for (i, v) in o.iter_mut().enumerate() {
                 *v = src[i * nch + ch];

@@ -16,7 +16,14 @@ pub struct Planes {
 impl Planes {
     pub fn new(width: usize, height: usize) -> Self {
         let (cw, ch) = (width / 2, height / 2);
-        Planes { y: vec![0; width * height], cb: vec![128; cw * ch], cr: vec![128; cw * ch], width, height, cwidth: cw }
+        Planes {
+            y: vec![0; width * height],
+            cb: vec![128; cw * ch],
+            cr: vec![128; cw * ch],
+            width,
+            height,
+            cwidth: cw,
+        }
     }
     pub fn gray(width: usize, height: usize) -> Self {
         let mut p = Self::new(width, height);
@@ -44,7 +51,10 @@ pub enum MbKind {
 impl MbKind {
     #[inline]
     pub fn is_intra(self) -> bool {
-        matches!(self, MbKind::I4x4 | MbKind::I8x8 | MbKind::I16x16 | MbKind::IPcm)
+        matches!(
+            self,
+            MbKind::I4x4 | MbKind::I8x8 | MbKind::I16x16 | MbKind::IPcm
+        )
     }
 }
 
@@ -158,7 +168,16 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(id: u32, poc: i32, mb_w: usize, mb_h: usize) -> Self {
-        Frame { id, poc, width: mb_w * 16, height: mb_h * 16, cwidth: mb_w * 8, cheight: mb_h * 8, mb_w, rows: (0..mb_h).map(|_| OnceLock::new()).collect() }
+        Frame {
+            id,
+            poc,
+            width: mb_w * 16,
+            height: mb_h * 16,
+            cwidth: mb_w * 8,
+            cheight: mb_h * 8,
+            mb_w,
+            rows: (0..mb_h).map(|_| OnceLock::new()).collect(),
+        }
     }
 
     pub fn mb_h(&self) -> usize {
@@ -185,7 +204,10 @@ impl Frame {
         {
             static EMPTY_ROW: std::sync::OnceLock<FrameRow> = std::sync::OnceLock::new();
             let empty = EMPTY_ROW.get_or_init(FrameRow::default);
-            self.rows.get(r).and_then(|slot| slot.get()).unwrap_or(empty)
+            self.rows
+                .get(r)
+                .and_then(|slot| slot.get())
+                .unwrap_or(empty)
         }
     }
 
@@ -197,7 +219,12 @@ impl Frame {
     }
 
     /// Build a published row from a contiguous plane set (rows of MB row `r`) and motion data.
-    pub fn make_row(planes: &Planes, r: usize, mbs: &[MbState], ref_ids: &dyn Fn(&MbState, usize, i8) -> u32) -> FrameRow {
+    pub fn make_row(
+        planes: &Planes,
+        r: usize,
+        mbs: &[MbState],
+        ref_ids: &dyn Fn(&MbState, usize, i8) -> u32,
+    ) -> FrameRow {
         let w = planes.width;
         let cw = planes.cwidth;
         let mb_w = w / 16;
@@ -228,7 +255,15 @@ impl Frame {
         let [mv0, mv1] = mv;
         let [ri0, ri1] = ref_idx;
         let [id0, id1] = ref_id;
-        FrameRow { y, cb, cr, mv: [mv0.into(), mv1.into()], ref_idx: [ri0.into(), ri1.into()], ref_id: [id0.into(), id1.into()], intra: intra.into() }
+        FrameRow {
+            y,
+            cb,
+            cr,
+            mv: [mv0.into(), mv1.into()],
+            ref_idx: [ri0.into(), ri1.into()],
+            ref_id: [id0.into(), id1.into()],
+            intra: intra.into(),
+        }
     }
 
     /// A frame with every row published from `planes` and no motion (intra), e.g. "non-existing"
@@ -257,7 +292,16 @@ impl Frame {
 
     /// Copy the w x h window of chroma component `c` at (x0, y0) (clamped) into `out`.
     #[inline]
-    pub fn chroma_window(&self, c: usize, x0: i32, y0: i32, w: usize, h: usize, out: &mut [u8], os: usize) {
+    pub fn chroma_window(
+        &self,
+        c: usize,
+        x0: i32,
+        y0: i32,
+        w: usize,
+        h: usize,
+        out: &mut [u8],
+        os: usize,
+    ) {
         let (cw, ch) = (self.cwidth, self.cheight);
         for r in 0..h {
             let yy = (y0 + r as i32).clamp(0, ch as i32 - 1) as usize;
@@ -275,7 +319,9 @@ impl Frame {
         let mut y = alloc(cw * ch);
         for r in cy..cy + ch {
             let row = self.row(r >> 4);
-            y.extend_from_slice(&row.y[(r & 15) * self.width + cx..(r & 15) * self.width + cx + cw]);
+            y.extend_from_slice(
+                &row.y[(r & 15) * self.width + cx..(r & 15) * self.width + cx + cw],
+            );
         }
         let (ccx, ccy, ccw, cch) = (cx / 2, cy / 2, cw.div_ceil(2), ch.div_ceil(2));
         let mut u = alloc(ccw * cch);

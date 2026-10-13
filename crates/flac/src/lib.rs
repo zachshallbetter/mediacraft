@@ -30,7 +30,17 @@
 //! # Ok::<(), craft_flac::Error>(())
 //! ```
 
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unimplemented,
+        clippy::todo,
+        clippy::unreachable
+    )
+)]
 
 mod crc;
 mod frame;
@@ -72,7 +82,13 @@ pub struct EncoderConfig {
 
 impl EncoderConfig {
     pub fn new(sample_rate: u32, channels: u8, bits_per_sample: u8) -> Self {
-        EncoderConfig { sample_rate, channels, bits_per_sample, block_size: 4096, level: 5 }
+        EncoderConfig {
+            sample_rate,
+            channels,
+            bits_per_sample,
+            block_size: 4096,
+            level: 5,
+        }
     }
 }
 
@@ -134,10 +150,21 @@ impl Encoder {
 
     /// The final STREAMINFO body: frame sizes, total samples and MD5 of what has been encoded.
     pub fn streaminfo(&self) -> [u8; 34] {
-        self.streaminfo_with(self.min_frame, self.max_frame, self.total_samples, self.md5.digest())
+        self.streaminfo_with(
+            self.min_frame,
+            self.max_frame,
+            self.total_samples,
+            self.md5.digest(),
+        )
     }
 
-    fn streaminfo_with(&self, min_frame: u32, max_frame: u32, total: u64, md5: [u8; 16]) -> [u8; 34] {
+    fn streaminfo_with(
+        &self,
+        min_frame: u32,
+        max_frame: u32,
+        total: u64,
+        md5: [u8; 16],
+    ) -> [u8; 34] {
         let mut w = mediacraft_bitstream::BitWriter::new();
         let bs = u32::from(self.cfg.block_size);
         w.write_bits(bs, 16);
@@ -165,7 +192,10 @@ impl Encoder {
     /// [`Encoder::encode`] with each completed frame on its own (one MP4 / QuickTime sample each).
     pub fn encode_frames(&mut self, planar: &[&[i32]]) -> Result<Vec<Vec<u8>>, Error> {
         if planar.len() != self.pending.len() {
-            return Err(Error::Channels { expected: self.pending.len(), got: planar.len() });
+            return Err(Error::Channels {
+                expected: self.pending.len(),
+                got: planar.len(),
+            });
         }
         let n = planar.first().map_or(0, |c| c.len());
         if planar.iter().any(|c| c.len() != n) {
@@ -173,7 +203,11 @@ impl Encoder {
         }
         // i64: at 32 bits the range is all of i32 (1 << 31 overflows i32)
         let max = (1i64 << (self.cfg.bits_per_sample - 1)) - 1;
-        if let Some(&bad) = planar.iter().flat_map(|c| c.iter()).find(|&&s| i64::from(s) > max || i64::from(s) < -max - 1) {
+        if let Some(&bad) = planar
+            .iter()
+            .flat_map(|c| c.iter())
+            .find(|&&s| i64::from(s) > max || i64::from(s) < -max - 1)
+        {
             return Err(Error::SampleRange(bad));
         }
         for (p, c) in self.pending.iter_mut().zip(planar) {
@@ -182,7 +216,11 @@ impl Encoder {
         let bs = usize::from(self.cfg.block_size);
         let mut out = Vec::new();
         while self.pending.first().is_some_and(|p| p.len() >= bs) {
-            let block: Vec<Vec<i32>> = self.pending.iter_mut().map(|p| p.drain(..bs).collect()).collect();
+            let block: Vec<Vec<i32>> = self
+                .pending
+                .iter_mut()
+                .map(|p| p.drain(..bs).collect())
+                .collect();
             out.push(self.frame(&block));
         }
         Ok(out)
@@ -211,7 +249,14 @@ impl Encoder {
         let mut raw = Vec::with_capacity(n * block.len() * bytes);
         for i in 0..n {
             for c in block {
-                raw.extend_from_slice(c.get(i).copied().unwrap_or(0).to_le_bytes().get(..bytes).unwrap_or_default());
+                raw.extend_from_slice(
+                    c.get(i)
+                        .copied()
+                        .unwrap_or(0)
+                        .to_le_bytes()
+                        .get(..bytes)
+                        .unwrap_or_default(),
+                );
             }
         }
         self.md5.update(&raw);
@@ -223,27 +268,58 @@ impl Encoder {
             [l, r] if effort.stereo && bps < 32 => {
                 let side: Vec<i32> = l.iter().zip(r).map(|(&a, &b)| a - b).collect();
                 let mid: Vec<i32> = l.iter().zip(r).map(|(&a, &b)| (a + b) >> 1).collect();
-                let (cl, cr, cs, cm) = (code(l, bps), code(r, bps), code(&side, bps + 1), code(&mid, bps));
-                let options =
-                    [(Stereo::Independent, cl.1 + cr.1), (Stereo::LeftSide, cl.1 + cs.1), (Stereo::SideRight, cs.1 + cr.1), (Stereo::MidSide, cm.1 + cs.1)];
-                let best = options.iter().min_by_key(|o| o.1).map_or(Stereo::Independent, |o| o.0);
+                let (cl, cr, cs, cm) = (
+                    code(l, bps),
+                    code(r, bps),
+                    code(&side, bps + 1),
+                    code(&mid, bps),
+                );
+                let options = [
+                    (Stereo::Independent, cl.1 + cr.1),
+                    (Stereo::LeftSide, cl.1 + cs.1),
+                    (Stereo::SideRight, cs.1 + cr.1),
+                    (Stereo::MidSide, cm.1 + cs.1),
+                ];
+                let best = options
+                    .iter()
+                    .min_by_key(|o| o.1)
+                    .map_or(Stereo::Independent, |o| o.0);
                 let channels: Vec<(&[i32], Subframe, u8)> = match best {
                     Stereo::Independent => vec![(l, cl.0, bps), (r, cr.0, bps)],
                     Stereo::LeftSide => vec![(l, cl.0, bps), (&side, cs.0, bps + 1)],
                     Stereo::SideRight => vec![(&side, cs.0, bps + 1), (r, cr.0, bps)],
                     Stereo::MidSide => vec![(&mid, cm.0, bps), (&side, cs.0, bps + 1)],
                 };
-                frame::write(&FrameSpec { number: self.frame_number, sample_rate: self.cfg.sample_rate, bps, stereo: Some(best), channels: &channels })
+                frame::write(&FrameSpec {
+                    number: self.frame_number,
+                    sample_rate: self.cfg.sample_rate,
+                    bps,
+                    stereo: Some(best),
+                    channels: &channels,
+                })
             }
             _ => {
-                let channels: Vec<(&[i32], Subframe, u8)> = block.iter().map(|c| (c.as_slice(), code(c, bps).0, bps)).collect();
-                frame::write(&FrameSpec { number: self.frame_number, sample_rate: self.cfg.sample_rate, bps, stereo: None, channels: &channels })
+                let channels: Vec<(&[i32], Subframe, u8)> = block
+                    .iter()
+                    .map(|c| (c.as_slice(), code(c, bps).0, bps))
+                    .collect();
+                frame::write(&FrameSpec {
+                    number: self.frame_number,
+                    sample_rate: self.cfg.sample_rate,
+                    bps,
+                    stereo: None,
+                    channels: &channels,
+                })
             }
         };
         self.frame_number += 1;
         self.total_samples += n as u64;
         let size = u32::try_from(data.len()).unwrap_or(u32::MAX);
-        self.min_frame = if self.min_frame == 0 { size } else { self.min_frame.min(size) };
+        self.min_frame = if self.min_frame == 0 {
+            size
+        } else {
+            self.min_frame.min(size)
+        };
         self.max_frame = self.max_frame.max(size);
         data
     }

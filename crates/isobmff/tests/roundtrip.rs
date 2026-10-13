@@ -13,7 +13,14 @@ struct S {
 }
 
 fn sample_strategy() -> impl Strategy<Value = S> {
-    (0usize..300, 1u32..3000, -200i32..2000, any::<bool>()).prop_map(|(size, duration, cto, sync)| S { size, duration, cto, sync })
+    (0usize..300, 1u32..3000, -200i32..2000, any::<bool>()).prop_map(
+        |(size, duration, cto, sync)| S {
+            size,
+            duration,
+            cto,
+            sync,
+        },
+    )
 }
 
 fn payload(track: usize, i: usize, n: usize) -> Vec<u8> {
@@ -22,7 +29,15 @@ fn payload(track: usize, i: usize, n: usize) -> Vec<u8> {
 
 fn entry(kind: u8) -> SampleEntry {
     match kind {
-        0 => SampleEntry::avc(AvcConfig::new(vec![vec![0x67, 0x64, 0, 0x28, 1, 2]], vec![vec![0x68, 3]], 4), 320, 240),
+        0 => SampleEntry::avc(
+            AvcConfig::new(
+                vec![vec![0x67, 0x64, 0, 0x28, 1, 2]],
+                vec![vec![0x68, 3]],
+                4,
+            ),
+            320,
+            240,
+        ),
         1 => SampleEntry::prores(FourCc(*b"apcn"), 1920, 1080),
         2 => SampleEntry::aac(vec![0x11, 0x90], 2, 48000),
         _ => SampleEntry::jpeg(64, 64),
@@ -146,7 +161,16 @@ fn sample_lookup() {
     // I P B B pattern: decode order I0 P3 B1 B2 | I4 P7 B5 B6
     let cto = [1, 3, 0, 0, 1, 3, 0, 0];
     for (i, c) in cto.iter().enumerate() {
-        w.write_sample(t, WriteSample { data: &[i as u8], duration: 1, composition_offset: *c, is_sync: i % 4 == 0 }).unwrap();
+        w.write_sample(
+            t,
+            WriteSample {
+                data: &[i as u8],
+                duration: 1,
+                composition_offset: *c,
+                is_sync: i % 4 == 0,
+            },
+        )
+        .unwrap();
     }
     let out = w.finish().unwrap().into_inner();
     let f = open(out.as_slice()).unwrap();
@@ -170,7 +194,16 @@ fn large_offsets_use_co64_and_largesize_mdat() {
     let mut moov = Vec::new();
     let mut w = Mp4Writer::new(Cursor::new(Vec::new()), WriterOptions::new(Brand::Mp4)).unwrap();
     let t = w.add_track(TrackConfig::new(entry(3), 30)).unwrap();
-    w.write_sample(t, WriteSample { data: b"abc", duration: 1, composition_offset: 0, is_sync: true }).unwrap();
+    w.write_sample(
+        t,
+        WriteSample {
+            data: b"abc",
+            duration: 1,
+            composition_offset: 0,
+            is_sync: true,
+        },
+    )
+    .unwrap();
     let out = w.finish().unwrap().into_inner();
     // Replace stco with co64 (same entry count, 64-bit offsets) and rebuild.
     let f = open(out.as_slice()).unwrap();
@@ -210,10 +243,20 @@ fn large_offsets_use_co64_and_largesize_mdat() {
 #[test]
 fn all_empty_samples_roundtrip() {
     for n in [1usize, 3] {
-        let mut w = Mp4Writer::new(Cursor::new(Vec::new()), WriterOptions::new(Brand::Mp4)).unwrap();
+        let mut w =
+            Mp4Writer::new(Cursor::new(Vec::new()), WriterOptions::new(Brand::Mp4)).unwrap();
         w.add_track(TrackConfig::new(entry(0), 1000)).unwrap();
         for _ in 0..n {
-            w.write_sample(0, WriteSample { data: &[], duration: 1, composition_offset: 0, is_sync: false }).unwrap();
+            w.write_sample(
+                0,
+                WriteSample {
+                    data: &[],
+                    duration: 1,
+                    composition_offset: 0,
+                    is_sync: false,
+                },
+            )
+            .unwrap();
         }
         let out = w.finish().unwrap().into_inner();
         let f = open(out.as_slice()).unwrap();

@@ -5,7 +5,8 @@ use std::sync::OnceLock;
 use mediacraft_bitstream::{BitReader, BitWriter};
 
 use crate::huffman_tables::{
-    SCALEFACTOR, SPECTRUM_1, SPECTRUM_2, SPECTRUM_3, SPECTRUM_4, SPECTRUM_5, SPECTRUM_6, SPECTRUM_7, SPECTRUM_8, SPECTRUM_9, SPECTRUM_10, SPECTRUM_11,
+    SCALEFACTOR, SPECTRUM_1, SPECTRUM_2, SPECTRUM_3, SPECTRUM_4, SPECTRUM_5, SPECTRUM_6,
+    SPECTRUM_7, SPECTRUM_8, SPECTRUM_9, SPECTRUM_10, SPECTRUM_11,
 };
 use crate::{Error, Result};
 
@@ -34,17 +35,83 @@ pub struct Book {
 }
 
 static BOOKS: [Book; 11] = [
-    Book { dim: 4, signed: true, lav: 1, modulo: 3, codes: &SPECTRUM_1 },
-    Book { dim: 4, signed: true, lav: 1, modulo: 3, codes: &SPECTRUM_2 },
-    Book { dim: 4, signed: false, lav: 2, modulo: 3, codes: &SPECTRUM_3 },
-    Book { dim: 4, signed: false, lav: 2, modulo: 3, codes: &SPECTRUM_4 },
-    Book { dim: 2, signed: true, lav: 4, modulo: 9, codes: &SPECTRUM_5 },
-    Book { dim: 2, signed: true, lav: 4, modulo: 9, codes: &SPECTRUM_6 },
-    Book { dim: 2, signed: false, lav: 7, modulo: 8, codes: &SPECTRUM_7 },
-    Book { dim: 2, signed: false, lav: 7, modulo: 8, codes: &SPECTRUM_8 },
-    Book { dim: 2, signed: false, lav: 12, modulo: 13, codes: &SPECTRUM_9 },
-    Book { dim: 2, signed: false, lav: 12, modulo: 13, codes: &SPECTRUM_10 },
-    Book { dim: 2, signed: false, lav: 16, modulo: 17, codes: &SPECTRUM_11 },
+    Book {
+        dim: 4,
+        signed: true,
+        lav: 1,
+        modulo: 3,
+        codes: &SPECTRUM_1,
+    },
+    Book {
+        dim: 4,
+        signed: true,
+        lav: 1,
+        modulo: 3,
+        codes: &SPECTRUM_2,
+    },
+    Book {
+        dim: 4,
+        signed: false,
+        lav: 2,
+        modulo: 3,
+        codes: &SPECTRUM_3,
+    },
+    Book {
+        dim: 4,
+        signed: false,
+        lav: 2,
+        modulo: 3,
+        codes: &SPECTRUM_4,
+    },
+    Book {
+        dim: 2,
+        signed: true,
+        lav: 4,
+        modulo: 9,
+        codes: &SPECTRUM_5,
+    },
+    Book {
+        dim: 2,
+        signed: true,
+        lav: 4,
+        modulo: 9,
+        codes: &SPECTRUM_6,
+    },
+    Book {
+        dim: 2,
+        signed: false,
+        lav: 7,
+        modulo: 8,
+        codes: &SPECTRUM_7,
+    },
+    Book {
+        dim: 2,
+        signed: false,
+        lav: 7,
+        modulo: 8,
+        codes: &SPECTRUM_8,
+    },
+    Book {
+        dim: 2,
+        signed: false,
+        lav: 12,
+        modulo: 13,
+        codes: &SPECTRUM_9,
+    },
+    Book {
+        dim: 2,
+        signed: false,
+        lav: 12,
+        modulo: 13,
+        codes: &SPECTRUM_10,
+    },
+    Book {
+        dim: 2,
+        signed: false,
+        lav: 16,
+        modulo: 17,
+        codes: &SPECTRUM_11,
+    },
 ];
 
 /// Spectrum codebook 1..=11.
@@ -100,7 +167,15 @@ impl Tree {
 
 fn trees() -> &'static [Tree; 12] {
     static TREES: OnceLock<[Tree; 12]> = OnceLock::new();
-    TREES.get_or_init(|| std::array::from_fn(|i| if i == 0 { Tree::build(&SCALEFACTOR) } else { Tree::build(BOOKS[i - 1].codes) }))
+    TREES.get_or_init(|| {
+        std::array::from_fn(|i| {
+            if i == 0 {
+                Tree::build(&SCALEFACTOR)
+            } else {
+                Tree::build(BOOKS[i - 1].codes)
+            }
+        })
+    })
 }
 
 /// Decode one scalefactor difference (`-60..=60`).
@@ -164,7 +239,11 @@ pub fn decode_spectral(br: &mut BitReader, cb: u8, out: &mut [i32]) -> Result<()
 fn index_of(b: &Book, vals: &[i32]) -> usize {
     let mut idx = 0u32;
     for &v in &vals[..b.dim] {
-        let d = if b.signed { (v + b.lav as i32) as u32 } else { v.unsigned_abs().min(b.lav) };
+        let d = if b.signed {
+            (v + b.lav as i32) as u32
+        } else {
+            v.unsigned_abs().min(b.lav)
+        };
         idx = idx * b.modulo + d;
     }
     idx as usize
@@ -269,7 +348,11 @@ mod tests {
             for _ in 0..400 {
                 seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
                 let r = (seed >> 8) as i32;
-                let v = if cb == 11 && r % 3 == 0 { r % (lim + 1) } else { r % (b.lav.min(16) as i32 + 1) };
+                let v = if cb == 11 && r % 3 == 0 {
+                    r % (lim + 1)
+                } else {
+                    r % (b.lav.min(16) as i32 + 1)
+                };
                 let v = v.min(lim);
                 vals.push(if b.signed || r & 1 == 0 { v } else { -v });
             }

@@ -62,7 +62,13 @@ impl Toc {
             24..=27 => (Mode::CeltOnly, Bandwidth::SuperWideband),
             _ => (Mode::CeltOnly, Bandwidth::Fullband),
         };
-        Toc { config, mode, bandwidth, stereo: b & 4 != 0, code: b & 3 }
+        Toc {
+            config,
+            mode,
+            bandwidth,
+            stereo: b & 4 != 0,
+            code: b & 3,
+        }
     }
 
     /// Samples per frame at 48 kHz.
@@ -252,11 +258,22 @@ impl<'a> Packet<'a> {
             frames.push(&data[pos..pos + s]);
             pos += s;
         }
-        let total = if self_delimited { pos + padding } else { data.len() };
+        let total = if self_delimited {
+            pos + padding
+        } else {
+            data.len()
+        };
         if total > data.len() {
             return Err(BAD);
         }
-        Ok((Packet { toc, frames, padding }, total))
+        Ok((
+            Packet {
+                toc,
+                frames,
+                padding,
+            },
+            total,
+        ))
     }
 }
 

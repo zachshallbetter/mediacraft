@@ -33,7 +33,9 @@ impl StreamDecoder {
     /// Creates a decoder producing `channels` (1 or 2) at `rate` (8/12/16/24/48 kHz).
     pub fn new(rate: u32, channels: usize) -> Result<StreamDecoder> {
         if !SAMPLE_RATES.contains(&rate) {
-            return Err(Error::InvalidArgument("sample rate must be 8000, 12000, 16000, 24000 or 48000"));
+            return Err(Error::InvalidArgument(
+                "sample rate must be 8000, 12000, 16000, 24000 or 48000",
+            ));
         }
         if !(1..=2).contains(&channels) {
             return Err(Error::InvalidArgument("channels must be 1 or 2"));
@@ -99,11 +101,19 @@ impl StreamDecoder {
 
     /// Decodes a packet into interleaved samples appended to `out`. `None` conceals one lost
     /// packet of the last packet's duration. Returns samples per channel.
-    pub fn decode_interleaved(&mut self, packet: Option<&[u8]>, out: &mut Vec<f32>) -> Result<usize> {
+    pub fn decode_interleaved(
+        &mut self,
+        packet: Option<&[u8]>,
+        out: &mut Vec<f32>,
+    ) -> Result<usize> {
         match packet {
             Some(p) if !p.is_empty() => self.decode_packet(p, out),
             _ => {
-                let n = if self.last_packet_duration > 0 { self.last_packet_duration } else { self.rate as usize / 50 };
+                let n = if self.last_packet_duration > 0 {
+                    self.last_packet_duration
+                } else {
+                    self.rate as usize / 50
+                };
                 self.conceal(n, out)
             }
         }
@@ -113,13 +123,20 @@ impl StreamDecoder {
     pub fn conceal(&mut self, n: usize, out: &mut Vec<f32>) -> Result<usize> {
         let f2_5 = self.rate as usize / 400;
         if n == 0 || !n.is_multiple_of(f2_5) {
-            return Err(Error::InvalidArgument("concealment length must be a multiple of 2.5 ms"));
+            return Err(Error::InvalidArgument(
+                "concealment length must be a multiple of 2.5 ms",
+            ));
         }
         let start = out.len();
         out.resize(start + n * self.channels, 0.0);
         let mut done = 0;
         while done < n {
-            let r = self.decode_frame(None, &mut out[start + done * self.channels..], n - done, false)?;
+            let r = self.decode_frame(
+                None,
+                &mut out[start + done * self.channels..],
+                n - done,
+                false,
+            )?;
             done += r;
         }
         self.last_packet_duration = n;
@@ -160,7 +177,8 @@ impl StreamDecoder {
         out.resize(start + fs * p.frames.len() * self.channels, 0.0);
         let mut nb = 0;
         for f in &p.frames {
-            let r = self.decode_frame(Some(f), &mut out[start + nb * self.channels..], fs, false)?;
+            let r =
+                self.decode_frame(Some(f), &mut out[start + nb * self.channels..], fs, false)?;
             nb += r;
         }
         out.truncate(start + nb * self.channels);
@@ -169,7 +187,13 @@ impl StreamDecoder {
     }
 
     /// `opus_decode_frame`: decodes one frame (or conceals when `data` is `None`/≤1 byte).
-    fn decode_frame(&mut self, data: Option<&[u8]>, pcm: &mut [f32], frame_size: usize, fec: bool) -> Result<usize> {
+    fn decode_frame(
+        &mut self,
+        data: Option<&[u8]>,
+        pcm: &mut [f32],
+        frame_size: usize,
+        fec: bool,
+    ) -> Result<usize> {
         let ch = self.channels;
         let fs = self.rate as usize;
         let f20 = fs / 50;
@@ -204,7 +228,12 @@ impl StreamDecoder {
                 if audiosize > f20 {
                     let mut done = 0;
                     while done < audiosize {
-                        let r = self.decode_frame(None, &mut pcm[done * ch..], (audiosize - done).min(f20), false)?;
+                        let r = self.decode_frame(
+                            None,
+                            &mut pcm[done * ch..],
+                            (audiosize - done).min(f20),
+                            false,
+                        )?;
                         done += r;
                     }
                     return Ok(frame_size);
@@ -229,7 +258,9 @@ impl StreamDecoder {
         let mut transition = false;
         if data.is_some()
             && self.prev_mode.is_some()
-            && ((mode == Mode::CeltOnly && self.prev_mode != Some(Mode::CeltOnly) && !self.prev_redundancy)
+            && ((mode == Mode::CeltOnly
+                && self.prev_mode != Some(Mode::CeltOnly)
+                && !self.prev_redundancy)
                 || (mode != Mode::CeltOnly && self.prev_mode == Some(Mode::CeltOnly)))
         {
             transition = true;
@@ -275,7 +306,13 @@ impl StreamDecoder {
             let mut decoded = 0;
             while decoded < frame_size {
                 let first = decoded == 0;
-                let n = match self.silk.decode(dec.as_deref_mut(), lost, first, payload_ms, &mut pcm_silk[decoded * ch..]) {
+                let n = match self.silk.decode(
+                    dec.as_deref_mut(),
+                    lost,
+                    first,
+                    payload_ms,
+                    &mut pcm_silk[decoded * ch..],
+                ) {
                     Ok(n) => n,
                     Err(e) => {
                         if lost != LostFlag::Normal {
@@ -304,10 +341,18 @@ impl StreamDecoder {
             && let Some(d) = dec.as_deref_mut()
             && d.tell() + 17 + 20 * (self.mode == Some(Mode::Hybrid)) as i32 <= 8 * len as i32
         {
-            redundancy = if mode == Mode::Hybrid { d.bit_logp(12) } else { true };
+            redundancy = if mode == Mode::Hybrid {
+                d.bit_logp(12)
+            } else {
+                true
+            };
             if redundancy {
                 celt_to_silk = d.bit_logp(1);
-                redundancy_bytes = if mode == Mode::Hybrid { d.uint(256) as usize + 2 } else { len - ((d.tell() as usize + 7) >> 3) };
+                redundancy_bytes = if mode == Mode::Hybrid {
+                    d.uint(256) as usize + 2
+                } else {
+                    len - ((d.tell() as usize + 7) >> 3)
+                };
                 if redundancy_bytes > len || (len - redundancy_bytes) * 8 < d.tell() as usize {
                     len = 0;
                     redundancy_bytes = 0;
@@ -338,7 +383,8 @@ impl StreamDecoder {
         let red_data = data.map(|d| &d[len..len + redundancy_bytes]);
         if redundancy && celt_to_silk {
             self.celt.start = 0;
-            self.celt.decode(red_data, f5, &mut redundant_audio, false, None)?;
+            self.celt
+                .decode(red_data, f5, &mut redundant_audio, false, None)?;
             redundant_rng = self.celt.rng;
         }
         self.celt.start = start_band;
@@ -353,7 +399,9 @@ impl StreamDecoder {
             self.celt.decode(cdata, celt_frame, pcm, false, cdec)?;
         } else {
             pcm[..frame_size * ch].fill(0.0);
-            if self.prev_mode == Some(Mode::Hybrid) && !(redundancy && celt_to_silk && self.prev_redundancy) {
+            if self.prev_mode == Some(Mode::Hybrid)
+                && !(redundancy && celt_to_silk && self.prev_redundancy)
+            {
                 self.celt.start = 0;
                 let silence = [0xFFu8, 0xFF];
                 self.celt.decode(Some(&silence), f2_5, pcm, true, None)?;
@@ -368,22 +416,47 @@ impl StreamDecoder {
         if redundancy && !celt_to_silk {
             self.celt.reset();
             self.celt.start = 0;
-            self.celt.decode(red_data, f5, &mut redundant_audio, false, None)?;
+            self.celt
+                .decode(red_data, f5, &mut redundant_audio, false, None)?;
             redundant_rng = self.celt.rng;
             let o = ch * (frame_size - f2_5);
             let tail: Vec<f32> = pcm[o..o + f2_5 * ch].to_vec();
-            smooth_fade(&tail, &redundant_audio[ch * f2_5..], &mut pcm[o..], f2_5, ch, window, self.rate);
+            smooth_fade(
+                &tail,
+                &redundant_audio[ch * f2_5..],
+                &mut pcm[o..],
+                f2_5,
+                ch,
+                window,
+                self.rate,
+            );
         }
         if redundancy && celt_to_silk {
             pcm[..f2_5 * ch].copy_from_slice(&redundant_audio[..f2_5 * ch]);
             let cur: Vec<f32> = pcm[ch * f2_5..ch * 2 * f2_5].to_vec();
-            smooth_fade(&redundant_audio[ch * f2_5..], &cur, &mut pcm[ch * f2_5..], f2_5, ch, window, self.rate);
+            smooth_fade(
+                &redundant_audio[ch * f2_5..],
+                &cur,
+                &mut pcm[ch * f2_5..],
+                f2_5,
+                ch,
+                window,
+                self.rate,
+            );
         }
         if transition {
             if audiosize >= f5 {
                 pcm[..f2_5 * ch].copy_from_slice(&pcm_transition[..f2_5 * ch]);
                 let cur: Vec<f32> = pcm[ch * f2_5..ch * 2 * f2_5].to_vec();
-                smooth_fade(&pcm_transition[ch * f2_5..], &cur, &mut pcm[ch * f2_5..], f2_5, ch, window, self.rate);
+                smooth_fade(
+                    &pcm_transition[ch * f2_5..],
+                    &cur,
+                    &mut pcm[ch * f2_5..],
+                    f2_5,
+                    ch,
+                    window,
+                    self.rate,
+                );
             } else {
                 let cur: Vec<f32> = pcm[..ch * f2_5].to_vec();
                 smooth_fade(&pcm_transition, &cur, pcm, f2_5, ch, window, self.rate);
@@ -405,7 +478,15 @@ impl StreamDecoder {
     }
 }
 
-fn smooth_fade(in1: &[f32], in2: &[f32], out: &mut [f32], overlap: usize, ch: usize, window: &[f32; OVERLAP], rate: u32) {
+fn smooth_fade(
+    in1: &[f32],
+    in2: &[f32],
+    out: &mut [f32],
+    overlap: usize,
+    ch: usize,
+    window: &[f32; OVERLAP],
+    rate: u32,
+) {
     let inc = (48000 / rate) as usize;
     for c in 0..ch {
         for i in 0..overlap {

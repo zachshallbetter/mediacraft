@@ -7,18 +7,20 @@ use craft_aac::{Decoder, Encoder, EncoderConfig, EncoderStats, split_adts};
 
 /// ffmpeg binary finder or None.
 pub fn ffmpeg() -> Option<PathBuf> {
-    for p in &["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"] {
+    for p in &[
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+    ] {
         let pb = PathBuf::from(p);
         if pb.is_file() {
             return Some(pb);
         }
     }
     if let Ok(out) = Command::new("which").arg("ffmpeg").output() {
-        if out.status.success() {
-            let path_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                return Some(PathBuf::from(path_str));
-            }
+        let path_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if out.status.success() && !path_str.is_empty() {
+            return Some(PathBuf::from(path_str));
         }
     }
     None
@@ -50,7 +52,8 @@ pub fn sweep(rate: u32, n: usize, amp: f32) -> Vec<f32> {
     (0..n)
         .map(|i| {
             let t = i as f64 / rate as f64;
-            let phase = 2.0 * std::f64::consts::PI * f0 * t_total / k * ((t / t_total * k).exp() - 1.0);
+            let phase =
+                2.0 * std::f64::consts::PI * f0 * t_total / k * ((t / t_total * k).exp() - 1.0);
             (phase.sin() as f32) * amp
         })
         .collect()
@@ -82,7 +85,11 @@ pub fn speech(rate: u32, n: usize, seed: u64) -> Vec<f32> {
         };
         let syll = (2.0 * PI * 3.0 * t).sin().max(0.0);
         let voiced = if (t * 1.3).fract() < 0.8 { syll } else { 0.0 };
-        let fric = if (t * 1.3).fract() > 0.85 { 0.05 * r.next() } else { 0.0 };
+        let fric = if (t * 1.3).fract() > 0.85 {
+            0.05 * r.next()
+        } else {
+            0.0
+        };
         let mut s = 0f32;
         for (j, &(f, bw)) in formants.iter().enumerate() {
             let rr = (-PI * bw / fs).exp();
@@ -129,7 +136,11 @@ pub fn clicks(rate: u32, n: usize) -> Vec<f32> {
         .map(|i| {
             let t = i as f32 / fs;
             let k = i % period;
-            let click = if k < 256 { 0.8 * (-(k as f32) / 24.0).exp() * (2.0 * PI * 1500.0 * k as f32 / fs).cos() } else { 0.0 };
+            let click = if k < 256 {
+                0.8 * (-(k as f32) / 24.0).exp() * (2.0 * PI * 1500.0 * k as f32 / fs).cos()
+            } else {
+                0.0
+            };
             0.02 * (2.0 * PI * 330.0 * t).sin() + click
         })
         .collect()
@@ -164,19 +175,36 @@ pub fn encode(cfg: EncoderConfig, planar: &[Vec<f32>]) -> Encoded {
         adts.extend(au);
     }
     let stats = enc.stats();
-    Encoded { raw_bytes: stats.bytes as usize, frames: stats.frames as usize, stats, asc: enc.audio_specific_config(), bandwidth: enc.bandwidth(), adts }
+    Encoded {
+        raw_bytes: stats.bytes as usize,
+        frames: stats.frames as usize,
+        stats,
+        asc: enc.audio_specific_config(),
+        bandwidth: enc.bandwidth(),
+        adts,
+    }
 }
 
 /// Decode with ffmpeg → planar f32 (ffmpeg's own channel order), plus stderr.
 pub fn ffmpeg_decode(ff: &Path, file: &Path, channels: usize) -> (Vec<Vec<f32>>, String) {
-    let out = Command::new(ff).args(["-v", "error", "-i"]).arg(file).args(["-f", "f32le", "-"]).output().unwrap();
+    let out = Command::new(ff)
+        .args(["-v", "error", "-i"])
+        .arg(file)
+        .args(["-f", "f32le", "-"])
+        .output()
+        .unwrap();
     let data = out.stdout;
     let n = data.len() / 4 / channels;
     let mut planar = vec![Vec::with_capacity(n); channels];
     for i in 0..n {
         for c in 0..channels {
             let o = (i * channels + c) * 4;
-            planar[c].push(f32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]));
+            planar[c].push(f32::from_le_bytes([
+                data[o],
+                data[o + 1],
+                data[o + 2],
+                data[o + 3],
+            ]));
         }
     }
     (planar, String::from_utf8_lossy(&out.stderr).into_owned())
@@ -203,7 +231,18 @@ pub fn ffmpeg_encode(ff: &Path, planar: &[Vec<f32>], rate: u32, args: &[&str], o
         _ => "7.1(wide)",
     };
     let st = Command::new(ff)
-        .args(["-v", "error", "-y", "-f", "f32le", "-ar", &rate.to_string(), "-ch_layout", layout, "-i"])
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "f32le",
+            "-ar",
+            &rate.to_string(),
+            "-ch_layout",
+            layout,
+            "-i",
+        ])
         .arg(&raw)
         .args(["-c:a", "aac"])
         .args(args)
@@ -272,8 +311,13 @@ pub fn lowpass(x: &[f32], fc: f32, fs: f32) -> Vec<f32> {
     let h: Vec<f32> = (0..taps)
         .map(|i| {
             let n = i as f32 - m / 2.0;
-            let sinc = if n == 0.0 { 2.0 * wc } else { (2.0 * PI * wc * n).sin() / (PI * n) };
-            let w = 0.42 - 0.5 * (2.0 * PI * i as f32 / m).cos() + 0.08 * (4.0 * PI * i as f32 / m).cos();
+            let sinc = if n == 0.0 {
+                2.0 * wc
+            } else {
+                (2.0 * PI * wc * n).sin() / (PI * n)
+            };
+            let w = 0.42 - 0.5 * (2.0 * PI * i as f32 / m).cos()
+                + 0.08 * (4.0 * PI * i as f32 / m).cos();
             sinc * w
         })
         .collect();

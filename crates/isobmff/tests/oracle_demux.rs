@@ -8,9 +8,14 @@ use serde_json::Value;
 
 fn pcm_name_matches(ff: &str, c: &CodecConfig) -> bool {
     let CodecConfig::Pcm(p) = c else { return false };
-    let Some(rest) = ff.strip_prefix("pcm_") else { return false };
+    let Some(rest) = ff.strip_prefix("pcm_") else {
+        return false;
+    };
     let kind = rest.as_bytes()[0];
-    let digits: String = rest[1..].chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = rest[1..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
     let bits: u16 = digits.parse().unwrap_or(0);
     let endian = &rest[1 + digits.len()..];
     let kind_ok = match kind {
@@ -51,8 +56,13 @@ fn check_stream(file: &Mp4File, idx: usize, st: &Value) -> Result<(), String> {
     match t.kind {
         TrackKind::Video => {
             let v = t.video().ok_or("no video params")?;
-            if int(&st["width"]) != Some(v.width as i64) || int(&st["height"]) != Some(v.height as i64) {
-                return Err(format!("size {}x{} vs {}x{}", st["width"], st["height"], v.width, v.height));
+            if int(&st["width"]) != Some(v.width as i64)
+                || int(&st["height"]) != Some(v.height as i64)
+            {
+                return Err(format!(
+                    "size {}x{} vs {}x{}",
+                    st["width"], st["height"], v.width, v.height
+                ));
             }
             if let Some(n) = int(&st["nb_frames"])
                 && n != t.samples.len() as i64
@@ -71,7 +81,8 @@ fn check_stream(file: &Mp4File, idx: usize, st: &Value) -> Result<(), String> {
                 && cp == "bt709"
             {
                 match &v.color {
-                    Some(craft_isobmff::ColorInfo::Nclx { primaries: 1, .. }) | Some(craft_isobmff::ColorInfo::Nclc { primaries: 1, .. }) => {}
+                    Some(craft_isobmff::ColorInfo::Nclx { primaries: 1, .. })
+                    | Some(craft_isobmff::ColorInfo::Nclc { primaries: 1, .. }) => {}
                     other => return Err(format!("colr {other:?}")),
                 }
             }
@@ -106,7 +117,9 @@ fn check_stream(file: &Mp4File, idx: usize, st: &Value) -> Result<(), String> {
             }
         }
         TrackKind::Timecode => {
-            let CodecConfig::Timecode(tc) = codec else { return Err("tmcd codec".into()) };
+            let CodecConfig::Timecode(tc) = codec else {
+                return Err("tmcd codec".into());
+            };
             let want = st["tags"]["timecode"].as_str().ok_or("no timecode tag")?;
             let got = tc.format_frame(tc.start_frame.ok_or("no start frame")?);
             if got != want {
@@ -133,7 +146,9 @@ fn check_packets(file: &Mp4File, idx: usize, pk: &[&Value], strict: bool) -> Res
         let od: u64 = t.samples.iter().map(|s| s.duration as u64).sum();
         let td: i64 = pk.iter().filter_map(|p| int(&p["duration"])).sum();
         if ours as i64 != theirs || od as i64 != td {
-            return Err(format!("pcm totals: bytes {ours} vs {theirs}, dur {od} vs {td}"));
+            return Err(format!(
+                "pcm totals: bytes {ours} vs {theirs}, dur {od} vs {td}"
+            ));
         }
         return Ok(());
     }
@@ -144,7 +159,12 @@ fn check_packets(file: &Mp4File, idx: usize, pk: &[&Value], strict: bool) -> Res
         t.edit_offset
     } else {
         let e = int(&pk[0]["pts"]).unwrap_or(0) - t.samples[0].pts;
-        let max_dur = t.samples.iter().map(|s| s.duration as i64).max().unwrap_or(0);
+        let max_dur = t
+            .samples
+            .iter()
+            .map(|s| s.duration as i64)
+            .max()
+            .unwrap_or(0);
         if (e - t.edit_offset).abs() >= max_dur {
             return Err(format!("shift {e} vs edit offset {}", t.edit_offset));
         }
@@ -165,7 +185,9 @@ fn check_packets(file: &Mp4File, idx: usize, pk: &[&Value], strict: bool) -> Res
             && key == s.is_sync
             && (i == last || int(&p["duration"]).is_none_or(|d| d == s.duration as i64));
         if !ok {
-            return Err(format!("packet {i}: ffprobe {p} vs ours {s:?} (edit_offset {e})"));
+            return Err(format!(
+                "packet {i}: ffprobe {p} vs ours {s:?} (edit_offset {e})"
+            ));
         }
     }
     Ok(())
@@ -190,7 +212,10 @@ fn check_fixture(name: &str) {
             errors.push(format!("stream {i}: {e}"));
         }
         if matches!(file.tracks[i].kind, TrackKind::Video | TrackKind::Audio) {
-            let pk: Vec<&Value> = packets.iter().filter(|p| int(&p["stream_index"]) == Some(i as i64)).collect();
+            let pk: Vec<&Value> = packets
+                .iter()
+                .filter(|p| int(&p["stream_index"]) == Some(i as i64))
+                .collect();
             if let Err(e) = check_packets(&file, i, &pk, name != "editlist_cut.mp4") {
                 errors.push(format!("stream {i}: {e}"));
             }
@@ -245,7 +270,9 @@ fixture_tests! {
 
 #[test]
 fn specific_properties() {
-    let Some(p) = fixture("h264_bframes.mp4") else { return };
+    let Some(p) = fixture("h264_bframes.mp4") else {
+        return;
+    };
     let data = std::fs::read(&p).unwrap();
     let f = open(data.as_slice()).unwrap();
     assert!(!f.is_quicktime);
@@ -260,16 +287,24 @@ fn specific_properties() {
     assert_eq!(a.edits.len(), 1);
     assert_eq!(a.edit_offset, -1024);
 
-    let Some(p) = fixture("tmcd_2997df.mov") else { return };
+    let Some(p) = fixture("tmcd_2997df.mov") else {
+        return;
+    };
     let f = open(std::fs::read(&p).unwrap()).unwrap();
     assert!(f.is_quicktime);
     let t = &f.tracks[f.track_of_kind(TrackKind::Timecode).unwrap()];
-    let CodecConfig::Timecode(tc) = t.codec().unwrap() else { panic!() };
+    let CodecConfig::Timecode(tc) = t.codec().unwrap() else {
+        panic!()
+    };
     assert!(tc.drop_frame());
     assert_eq!(tc.frames_per_second, 30);
     assert_eq!(tc.start_frame, Some(107892));
     let v = &f.tracks[f.track_of_kind(TrackKind::Video).unwrap()];
-    assert!(v.references.iter().any(|(k, ids)| k.to_string() == "tmcd" && ids == &vec![t.id]));
+    assert!(
+        v.references
+            .iter()
+            .any(|(k, ids)| k.to_string() == "tmcd" && ids == &vec![t.id])
+    );
 }
 
 /// Pre-generate every fixture (`cargo xtask fixtures`).

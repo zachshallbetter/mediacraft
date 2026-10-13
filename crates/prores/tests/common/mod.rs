@@ -8,18 +8,20 @@ use std::process::Command;
 
 /// ffmpeg binary finder or None.
 pub fn ffmpeg() -> Option<PathBuf> {
-    for p in &["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"] {
+    for p in &[
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+    ] {
         let pb = PathBuf::from(p);
         if pb.is_file() {
             return Some(pb);
         }
     }
     if let Ok(out) = Command::new("which").arg("ffmpeg").output() {
-        if out.status.success() {
-            let path_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                return Some(PathBuf::from(path_str));
-            }
+        let path_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if out.status.success() && !path_str.is_empty() {
+            return Some(PathBuf::from(path_str));
         }
     }
     None
@@ -32,8 +34,17 @@ pub fn fixture_dir() -> PathBuf {
 }
 
 fn run(ff: &Path, args: &[&str]) {
-    let out = Command::new(ff).args(["-hide_banner", "-loglevel", "error", "-y"]).args(args).output().expect("run ffmpeg");
-    assert!(out.status.success(), "ffmpeg {:?} failed: {}", args, String::from_utf8_lossy(&out.stderr));
+    let out = Command::new(ff)
+        .args(["-hide_banner", "-loglevel", "error", "-y"])
+        .args(args)
+        .output()
+        .expect("run ffmpeg");
+    assert!(
+        out.status.success(),
+        "ffmpeg {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 /// A ProRes fixture: a lavfi source encoded by an ffmpeg ProRes encoder.
@@ -47,8 +58,18 @@ pub struct Spec {
 }
 
 impl Spec {
-    pub fn new(name: &'static str, lavfi: impl Into<String>, frames: u32, enc: &[&'static str]) -> Spec {
-        Spec { name, lavfi: lavfi.into(), frames, enc: enc.to_vec() }
+    pub fn new(
+        name: &'static str,
+        lavfi: impl Into<String>,
+        frames: u32,
+        enc: &[&'static str],
+    ) -> Spec {
+        Spec {
+            name,
+            lavfi: lavfi.into(),
+            frames,
+            enc: enc.to_vec(),
+        }
     }
 }
 
@@ -58,7 +79,14 @@ pub fn make(ff: &Path, spec: &Spec) -> PathBuf {
     if !path.exists() {
         let tmp = fixture_dir().join(format!("{}.tmp.{}.mov", spec.name, std::process::id()));
         let frames = spec.frames.to_string();
-        let mut args = vec!["-f", "lavfi", "-i", spec.lavfi.as_str(), "-frames:v", frames.as_str()];
+        let mut args = vec![
+            "-f",
+            "lavfi",
+            "-i",
+            spec.lavfi.as_str(),
+            "-frames:v",
+            frames.as_str(),
+        ];
         args.extend(spec.enc.iter().copied());
         let t = tmp.to_str().unwrap().to_string();
         args.push(&t);
@@ -77,7 +105,11 @@ pub fn packets(ff: &Path, mov: &Path) -> Vec<Vec<u8>> {
         .args(["-map", "0:v", "-c", "copy", "-f", "data", "-"])
         .output()
         .expect("run ffmpeg");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     split_frames(&out.stdout)
 }
 
@@ -100,13 +132,26 @@ pub fn reference(ff: &Path, mov: &Path, pix_fmt: &str) -> Vec<u16> {
         .args(["-f", "rawvideo", "-pix_fmt", pix_fmt, "-"])
         .output()
         .expect("run ffmpeg");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    out.stdout.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect()
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out.stdout
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect()
 }
 
 /// Number of u16 samples per frame of a raw planar image.
 pub fn frame_samples(w: usize, h: usize, chroma: ChromaFormat, alpha: bool) -> usize {
-    let cw = if chroma == ChromaFormat::Yuv422 { w.div_ceil(2) } else { w };
+    let cw = if chroma == ChromaFormat::Yuv422 {
+        w.div_ceil(2)
+    } else {
+        w
+    };
     w * h * (1 + alpha as usize) + 2 * cw * h
 }
 
@@ -160,8 +205,17 @@ pub fn compare(f: &Frame, raw: &[u16]) -> (Stats, Stats) {
 
 /// PSNR over given peak.
 pub fn psnr(a: &[u16], b: &[u16], peak: f64) -> f64 {
-    let mse: f64 = a.iter().zip(b).map(|(&x, &y)| (x as f64 - y as f64).powi(2)).sum::<f64>() / a.len() as f64;
-    if mse == 0.0 { 99.0 } else { 10.0 * (peak * peak / mse).log10() }
+    let mse: f64 = a
+        .iter()
+        .zip(b)
+        .map(|(&x, &y)| (x as f64 - y as f64).powi(2))
+        .sum::<f64>()
+        / a.len() as f64;
+    if mse == 0.0 {
+        99.0
+    } else {
+        10.0 * (peak * peak / mse).log10()
+    }
 }
 
 fn bx(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
@@ -175,10 +229,20 @@ fn bx(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
 const MATRIX: [u32; 9] = [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x4000_0000];
 
 /// Minimal QuickTime writer (test-only): one ProRes video track, all samples in one chunk.
-pub fn write_mov(path: &Path, fourcc: &[u8; 4], width: u16, height: u16, depth: u16, frames: &[Vec<u8>]) {
+pub fn write_mov(
+    path: &Path,
+    fourcc: &[u8; 4],
+    width: u16,
+    height: u16,
+    depth: u16,
+    frames: &[Vec<u8>],
+) {
     let n = frames.len() as u32;
     let be32 = |v: u32| v.to_be_bytes();
-    let ftyp = bx(b"ftyp", &[b"qt  ".as_slice(), &be32(0x200), b"qt  "].concat());
+    let ftyp = bx(
+        b"ftyp",
+        &[b"qt  ".as_slice(), &be32(0x200), b"qt  "].concat(),
+    );
     let mdat_payload: Vec<u8> = frames.concat();
     let data_off = ftyp.len() as u32 + 8;
     let mdat = bx(b"mdat", &mdat_payload);
@@ -211,7 +275,10 @@ pub fn write_mov(path: &Path, fourcc: &[u8; 4], width: u16, height: u16, depth: 
     mdhd.extend_from_slice(&[0; 4]);
     let hdlr = [&[0u8; 4][..], b"mhlr", b"vide", &[0; 12], &[0]].concat();
     let vmhd = [0u8, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0];
-    let dref = bx(b"dref", &[&[0u8; 4][..], &be32(1), &bx(b"alis", &[0, 0, 0, 1])].concat());
+    let dref = bx(
+        b"dref",
+        &[&[0u8; 4][..], &be32(1), &bx(b"alis", &[0, 0, 0, 1])].concat(),
+    );
     let dinf = bx(b"dinf", &dref);
 
     let mut entry = vec![0u8; 6];
@@ -229,9 +296,18 @@ pub fn write_mov(path: &Path, fourcc: &[u8; 4], width: u16, height: u16, depth: 
     entry.extend_from_slice(&[0; 32]);
     entry.extend_from_slice(&depth.to_be_bytes());
     entry.extend_from_slice(&[0xff, 0xff]);
-    let stsd = bx(b"stsd", &[&[0u8; 4][..], &be32(1), &bx(fourcc, &entry)].concat());
-    let stts = bx(b"stts", &[&[0u8; 4][..], &be32(1), &be32(n), &be32(1)].concat());
-    let stsc = bx(b"stsc", &[&[0u8; 4][..], &be32(1), &be32(1), &be32(n), &be32(1)].concat());
+    let stsd = bx(
+        b"stsd",
+        &[&[0u8; 4][..], &be32(1), &bx(fourcc, &entry)].concat(),
+    );
+    let stts = bx(
+        b"stts",
+        &[&[0u8; 4][..], &be32(1), &be32(n), &be32(1)].concat(),
+    );
+    let stsc = bx(
+        b"stsc",
+        &[&[0u8; 4][..], &be32(1), &be32(1), &be32(n), &be32(1)].concat(),
+    );
     let mut stsz = vec![0u8; 4];
     stsz.extend_from_slice(&be32(0));
     stsz.extend_from_slice(&be32(n));
@@ -239,10 +315,16 @@ pub fn write_mov(path: &Path, fourcc: &[u8; 4], width: u16, height: u16, depth: 
         stsz.extend_from_slice(&be32(f.len() as u32));
     }
     let stsz = bx(b"stsz", &stsz);
-    let stco = bx(b"stco", &[&[0u8; 4][..], &be32(1), &be32(data_off)].concat());
+    let stco = bx(
+        b"stco",
+        &[&[0u8; 4][..], &be32(1), &be32(data_off)].concat(),
+    );
     let stbl = bx(b"stbl", &[stsd, stts, stsc, stsz, stco].concat());
     let minf = bx(b"minf", &[bx(b"vmhd", &vmhd), dinf, stbl].concat());
-    let mdia = bx(b"mdia", &[bx(b"mdhd", &mdhd), bx(b"hdlr", &hdlr), minf].concat());
+    let mdia = bx(
+        b"mdia",
+        &[bx(b"mdhd", &mdhd), bx(b"hdlr", &hdlr), minf].concat(),
+    );
     let trak = bx(b"trak", &[bx(b"tkhd", &tkhd), mdia].concat());
     let moov = bx(b"moov", &[bx(b"mvhd", &mvhd), trak].concat());
     std::fs::write(path, [ftyp, mdat, moov].concat()).unwrap();
@@ -258,11 +340,28 @@ pub fn ffmpeg_decode(ff: &Path, mov: &Path, pix_fmt: &str) -> (Vec<u16>, String)
         .expect("run ffmpeg");
     let err = String::from_utf8_lossy(&out.stderr).to_string();
     assert!(out.status.success(), "ffmpeg failed: {err}");
-    (out.stdout.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect(), err)
+    (
+        out.stdout
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect(),
+        err,
+    )
 }
 
 /// Render a lavfi source to raw 10-bit planar frames with ffmpeg and load them as [`Frame`]s.
-pub fn source_frames(ff: &Path, name: &str, lavfi: &str, frames: u32, w: u32, h: u32, chroma: ChromaFormat, alpha: bool) -> Vec<Frame> {
+pub fn source_frames(
+    ff: &Path,
+    name: &str,
+    lavfi: &str,
+    frames: u32,
+    w: u32,
+    h: u32,
+    chroma: ChromaFormat,
+    alpha: bool,
+) -> Vec<Frame> {
     let path = fixture_dir().join(format!("{name}.raw"));
     if !path.exists() {
         let pix = match (chroma, alpha) {
@@ -272,18 +371,47 @@ pub fn source_frames(ff: &Path, name: &str, lavfi: &str, frames: u32, w: u32, h:
         };
         let tmp = fixture_dir().join(format!("{name}.tmp.raw"));
         let f = frames.to_string();
-        run(ff, &["-f", "lavfi", "-i", lavfi, "-frames:v", &f, "-f", "rawvideo", "-pix_fmt", pix, tmp.to_str().unwrap()]);
+        run(
+            ff,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                lavfi,
+                "-frames:v",
+                &f,
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                pix,
+                tmp.to_str().unwrap(),
+            ],
+        );
         std::fs::rename(&tmp, &path).unwrap();
     }
     let bytes = std::fs::read(&path).unwrap();
-    let s: Vec<u16> = bytes.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    let s: Vec<u16> = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
     let (w, h) = (w as usize, h as usize);
     let per = frame_samples(w, h, chroma, alpha);
     assert_eq!(s.len(), per * frames as usize);
-    s.chunks_exact(per).map(|p| frame_from_raw(p, w as u32, h as u32, chroma, 10, alpha)).collect()
+    s.chunks_exact(per)
+        .map(|p| frame_from_raw(p, w as u32, h as u32, chroma, 10, alpha))
+        .collect()
 }
 
-pub fn frame_from_raw(p: &[u16], w: u32, h: u32, chroma: ChromaFormat, depth: u8, alpha: bool) -> Frame {
+pub fn frame_from_raw(
+    p: &[u16],
+    w: u32,
+    h: u32,
+    chroma: ChromaFormat,
+    depth: u8,
+    alpha: bool,
+) -> Frame {
     let mut f = Frame::new(w, h, chroma, depth, alpha);
     let n = f.y.len();
     let c = f.cb.len();
@@ -298,5 +426,9 @@ pub fn frame_from_raw(p: &[u16], w: u32, h: u32, chroma: ChromaFormat, depth: u8
 
 /// Frame planes concatenated (Y, Cb, Cr, A).
 pub fn planes(f: &Frame) -> Vec<u16> {
-    [&f.y, &f.cb, &f.cr].into_iter().chain(f.alpha.as_ref()).flat_map(|p| p.iter().copied()).collect()
+    [&f.y, &f.cb, &f.cr]
+        .into_iter()
+        .chain(f.alpha.as_ref())
+        .flat_map(|p| p.iter().copied())
+        .collect()
 }

@@ -18,7 +18,12 @@ impl Rng {
 
 fn seeds() -> Vec<Vec<u8>> {
     let mut v = Vec::new();
-    for (p, w, h) in [(Profile::Proxy, 96u32, 48u32), (Profile::Hq, 70, 38), (Profile::P4444, 64, 32), (Profile::P4444Xq, 48, 20)] {
+    for (p, w, h) in [
+        (Profile::Proxy, 96u32, 48u32),
+        (Profile::Hq, 70, 38),
+        (Profile::P4444, 64, 32),
+        (Profile::P4444Xq, 48, 20),
+    ] {
         let chroma = p.chroma();
         let mut f = Frame::new(w, h, chroma, 10, chroma == ChromaFormat::Yuv444);
         for (i, s) in f.y.iter_mut().enumerate() {
@@ -39,7 +44,14 @@ fn seeds() -> Vec<Vec<u8>> {
             "fuzz_seed_interlaced",
             "testsrc2=s=64x48:r=25,setfield=tff,format=yuv422p10le",
             1,
-            &["-c:v", "prores_ks", "-profile:v", "2", "-flags", "+ildct+ilme"],
+            &[
+                "-c:v",
+                "prores_ks",
+                "-profile:v",
+                "2",
+                "-flags",
+                "+ildct+ilme",
+            ],
         );
         let mov = common::make(&ff, &spec);
         v.extend(common::packets(&ff, &mov));
@@ -99,7 +111,10 @@ fn mutated_streams_never_panic() {
             }
         }
         for depth in [None, Some(8), Some(16)] {
-            let opts = DecodeOptions { bit_depth: depth, threads: i % 2 == 0 };
+            let opts = DecodeOptions {
+                bit_depth: depth,
+                threads: i % 2 == 0,
+            };
             if let Ok(f) = decode_frame_with(&d, &opts) {
                 decoded_ok += 1;
                 assert_eq!(f.y.len(), f.width as usize * f.height as usize);

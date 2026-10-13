@@ -35,13 +35,24 @@ const IDENT_CTX: [u8; 64] = {
 const CHROMA_DC_CTX: [u8; 4] = [0, 1, 2, 2];
 
 /// Table 9-40 ctxIdxBlockCatOffset for ctxBlockCat 0..=5: (coded_block_flag, significant/last, abs level).
-const CAT_OFFSET: [(usize, usize, usize); 6] = [(0, 0, 0), (4, 15, 10), (8, 29, 20), (12, 44, 30), (16, 47, 39), (0, 0, 0)];
+const CAT_OFFSET: [(usize, usize, usize); 6] = [
+    (0, 0, 0),
+    (4, 15, 10),
+    (8, 29, 20),
+    (12, 44, 30),
+    (16, 47, 39),
+    (0, 0, 0),
+];
 
 impl SliceDecoder<'_> {
     /// Decode slice_data() with CABAC. `rbsp` is the whole slice RBSP.
     pub fn decode_cabac(&mut self, rbsp: &[u8]) -> Result<()> {
         let start = self.sh.header_bits.div_ceil(8) * 8;
-        let init = if self.sh.slice_type.is_intra() { 3 } else { self.sh.cabac_init_idc as usize };
+        let init = if self.sh.slice_type.is_intra() {
+            3
+        } else {
+            self.sh.cabac_init_idc as usize
+        };
         let mut c = Cabac::new(rbsp, start, self.sh.qp(self.pps), init)?;
         let total = self.mb_w * self.mb_h;
         let mut addr = self.sh.first_mb_in_slice as usize;
@@ -66,7 +77,8 @@ impl SliceDecoder<'_> {
     }
 
     fn decode_skip_flag(&mut self, c: &mut Cabac) -> bool {
-        let cond = |n: Option<usize>| n.map(|m| !self.pic.mbs[m].kind_is_skip()).unwrap_or(false) as usize;
+        let cond =
+            |n: Option<usize>| n.map(|m| !self.pic.mbs[m].kind_is_skip()).unwrap_or(false) as usize;
         let inc = cond(self.nb[0]) + cond(self.nb[1]);
         let base = if self.sh.slice_type.is_b() { 24 } else { 11 };
         c.decode_decision(base + inc) == 1
@@ -77,7 +89,10 @@ impl SliceDecoder<'_> {
     fn decode_mb_type_i(&mut self, c: &mut Cabac, base: usize) -> u32 {
         let islice = base == 3;
         let b0 = if islice {
-            let cond = |n: Option<usize>| n.map(|m| !matches!(self.pic.mbs[m].kind, MbKind::I4x4 | MbKind::I8x8)).unwrap_or(false) as usize;
+            let cond = |n: Option<usize>| {
+                n.map(|m| !matches!(self.pic.mbs[m].kind, MbKind::I4x4 | MbKind::I8x8))
+                    .unwrap_or(false) as usize
+            };
             let inc = cond(self.nb[0]) + cond(self.nb[1]);
             c.decode_decision(base + inc)
         } else {
@@ -89,8 +104,11 @@ impl SliceDecoder<'_> {
         if c.decode_terminate() == 1 {
             return 25;
         }
-        let (c_luma, c_chroma, c_chroma2, c_pred0, c_pred1) =
-            if islice { (base + 3, base + 4, base + 5, base + 6, base + 7) } else { (base + 1, base + 2, base + 2, base + 3, base + 3) };
+        let (c_luma, c_chroma, c_chroma2, c_pred0, c_pred1) = if islice {
+            (base + 3, base + 4, base + 5, base + 6, base + 7)
+        } else {
+            (base + 1, base + 2, base + 2, base + 3, base + 3)
+        };
         let luma = c.decode_decision(c_luma);
         let mut chroma = c.decode_decision(c_chroma);
         if chroma != 0 {
@@ -114,7 +132,10 @@ impl SliceDecoder<'_> {
                 }
             }
             SliceType::B => {
-                let cond = |n: Option<usize>| n.map(|m| !matches!(self.pic.mbs[m].kind, MbKind::BSkip | MbKind::BDirect16x16)).unwrap_or(false) as usize;
+                let cond = |n: Option<usize>| {
+                    n.map(|m| !matches!(self.pic.mbs[m].kind, MbKind::BSkip | MbKind::BDirect16x16))
+                        .unwrap_or(false) as usize
+                };
                 let inc = cond(self.nb[0]) + cond(self.nb[1]);
                 if c.decode_decision(27 + inc) == 0 {
                     b_mb_type(0)
@@ -272,7 +293,10 @@ impl SliceDecoder<'_> {
     }
 
     fn set_cur_mvd(&mut self, list: usize, x: usize, y: usize, w: usize, h: usize, d: [i32; 2]) {
-        let a = [d[0].unsigned_abs().min(127) as u8, d[1].unsigned_abs().min(127) as u8];
+        let a = [
+            d[0].unsigned_abs().min(127) as u8,
+            d[1].unsigned_abs().min(127) as u8,
+        ];
         let st = self.mb_mut();
         for yy in y..y + h {
             for xx in x..x + w {
@@ -286,8 +310,16 @@ impl SliceDecoder<'_> {
         for b8 in 0..4usize {
             let (bx, by) = ((b8 & 1) * 2, (b8 >> 1) * 2);
             // A
-            let ca = if bx > 0 { ((luma >> (b8 - 1)) & 1 == 0) as usize } else { self.cbp_luma_cond(self.nb[0], b8 + 1) };
-            let cb = if by > 0 { ((luma >> (b8 - 2)) & 1 == 0) as usize } else { self.cbp_luma_cond(self.nb[1], b8 + 2) };
+            let ca = if bx > 0 {
+                ((luma >> (b8 - 1)) & 1 == 0) as usize
+            } else {
+                self.cbp_luma_cond(self.nb[0], b8 + 1)
+            };
+            let cb = if by > 0 {
+                ((luma >> (b8 - 2)) & 1 == 0) as usize
+            } else {
+                self.cbp_luma_cond(self.nb[1], b8 + 2)
+            };
             let _ = (bx, by);
             let bin = c.decode_decision(73 + ca + 2 * cb);
             luma |= (bin as u8) << b8;
@@ -302,7 +334,11 @@ impl SliceDecoder<'_> {
                 return 0;
             }
             let ch = st.cbp >> 4;
-            if bin == 0 { (ch != 0) as usize } else { (ch == 2) as usize }
+            if bin == 0 {
+                (ch != 0) as usize
+            } else {
+                (ch == 2) as usize
+            }
         };
         let inc0 = cond(self.nb[0], 0) + 2 * cond(self.nb[1], 0);
         let mut chroma = 0u8;
@@ -349,14 +385,22 @@ impl SliceDecoder<'_> {
             return (self.mb().nnz[(by * 4 + bx) as usize] != 0) as usize;
         }
         let n = if bx < 0 { self.nb[0] } else { self.nb[1] };
-        let Some(m) = n else { return intra_cur as usize };
+        let Some(m) = n else {
+            return intra_cur as usize;
+        };
         let st = &self.pic.mbs[m];
-        let (x, y) = if bx < 0 { (3, by as usize) } else { (bx as usize, 3) };
+        let (x, y) = if bx < 0 {
+            (3, by as usize)
+        } else {
+            (bx as usize, 3)
+        };
         (st.nnz[y * 4 + x] != 0) as usize
     }
 
     fn cbf_dc_cond(&self, n: Option<usize>, bit: u8, intra_cur: bool) -> usize {
-        let Some(m) = n else { return intra_cur as usize };
+        let Some(m) = n else {
+            return intra_cur as usize;
+        };
         let st = &self.pic.mbs[m];
         if st.kind == MbKind::IPcm {
             return 1;
@@ -369,21 +413,41 @@ impl SliceDecoder<'_> {
             return (self.mb().nnz_c[comp][(by * 2 + bx) as usize] != 0) as usize;
         }
         let n = if bx < 0 { self.nb[0] } else { self.nb[1] };
-        let Some(m) = n else { return intra_cur as usize };
+        let Some(m) = n else {
+            return intra_cur as usize;
+        };
         let st = &self.pic.mbs[m];
-        let (x, y) = if bx < 0 { (1, by as usize) } else { (bx as usize, 1) };
+        let (x, y) = if bx < 0 {
+            (1, by as usize)
+        } else {
+            (bx as usize, 1)
+        };
         (st.nnz_c[comp][y * 2 + x] != 0) as usize
     }
 
     /// residual_block_cabac for ctxBlockCat `cat` (0..=5). Coefficients are written to `coeff`
     /// in list order (indices 0..max_num). `cbf_inc` is the coded_block_flag ctxIdxInc (ignored for cat 5).
     /// Returns the number of non-zero coefficients.
-    fn residual_block_cabac(&mut self, c: &mut Cabac, coeff: &mut [i32], cat: usize, max_num: usize, cbf_inc: usize) -> u8 {
+    fn residual_block_cabac(
+        &mut self,
+        c: &mut Cabac,
+        coeff: &mut [i32],
+        cat: usize,
+        max_num: usize,
+        cbf_inc: usize,
+    ) -> u8 {
         if cat != 5 && c.decode_decision(85 + CAT_OFFSET[cat].0 + cbf_inc) == 0 {
             return 0;
         }
-        let (sig_base, last_base, abs_base) =
-            if cat == 5 { (402, 417, 426) } else { (105 + CAT_OFFSET[cat].1, 166 + CAT_OFFSET[cat].1, 227 + CAT_OFFSET[cat].2) };
+        let (sig_base, last_base, abs_base) = if cat == 5 {
+            (402, 417, 426)
+        } else {
+            (
+                105 + CAT_OFFSET[cat].1,
+                166 + CAT_OFFSET[cat].1,
+                227 + CAT_OFFSET[cat].2,
+            )
+        };
         let (sig_tab, last_tab): (&[u8], &[u8]) = match cat {
             3 => (&CHROMA_DC_CTX, &CHROMA_DC_CTX),
             5 => (&SIG8_FRAME, &LAST8),
@@ -451,7 +515,8 @@ impl SliceDecoder<'_> {
         let intra = kind.is_intra();
         let t8 = self.mb().transform_8x8;
         if kind == MbKind::I16x16 {
-            let inc = self.cbf_dc_cond(self.nb[0], 0, intra) + 2 * self.cbf_dc_cond(self.nb[1], 0, intra);
+            let inc =
+                self.cbf_dc_cond(self.nb[0], 0, intra) + 2 * self.cbf_dc_cond(self.nb[1], 0, intra);
             let mut lv = [0i32; 16];
             if self.residual_block_cabac(c, &mut lv, 0, 16, inc) > 0 {
                 self.mb_mut().cbf_dc |= 1;
@@ -467,7 +532,12 @@ impl SliceDecoder<'_> {
                 let mut lv = [0i32; 64];
                 self.residual_block_cabac(c, &mut lv, 5, 64, 0);
                 let st = self.mb_mut();
-                for r in [by8 * 4 + bx8, by8 * 4 + bx8 + 1, (by8 + 1) * 4 + bx8, (by8 + 1) * 4 + bx8 + 1] {
+                for r in [
+                    by8 * 4 + bx8,
+                    by8 * 4 + bx8 + 1,
+                    (by8 + 1) * 4 + bx8,
+                    (by8 + 1) * 4 + bx8 + 1,
+                ] {
                     st.nnz[r] = 1;
                 }
                 self.put_luma8(b8, &lv);
@@ -475,7 +545,8 @@ impl SliceDecoder<'_> {
                 for i4 in 0..4 {
                     let (bx, by) = (bx8 + (i4 & 1), by8 + (i4 >> 1));
                     let raster = by * 4 + bx;
-                    let inc = self.cbf_luma_cond(bx as i32 - 1, by as i32, intra) + 2 * self.cbf_luma_cond(bx as i32, by as i32 - 1, intra);
+                    let inc = self.cbf_luma_cond(bx as i32 - 1, by as i32, intra)
+                        + 2 * self.cbf_luma_cond(bx as i32, by as i32 - 1, intra);
                     let mut lv = [0i32; 16];
                     let n = if kind == MbKind::I16x16 {
                         self.residual_block_cabac(c, &mut lv[1..], 1, 15, inc)
@@ -493,7 +564,8 @@ impl SliceDecoder<'_> {
         if cbp_c != 0 {
             for comp in 0..2 {
                 let bit = 1 + comp as u8;
-                let inc = self.cbf_dc_cond(self.nb[0], bit, intra) + 2 * self.cbf_dc_cond(self.nb[1], bit, intra);
+                let inc = self.cbf_dc_cond(self.nb[0], bit, intra)
+                    + 2 * self.cbf_dc_cond(self.nb[1], bit, intra);
                 let mut lv = [0i32; 4];
                 if self.residual_block_cabac(c, &mut lv, 3, 4, inc) > 0 {
                     self.mb_mut().cbf_dc |= 1 << bit;
@@ -505,7 +577,8 @@ impl SliceDecoder<'_> {
             for comp in 0..2 {
                 for b in 0..4 {
                     let (bx, by) = ((b & 1) as i32, (b >> 1) as i32);
-                    let inc = self.cbf_chroma_ac_cond(comp, bx - 1, by, intra) + 2 * self.cbf_chroma_ac_cond(comp, bx, by - 1, intra);
+                    let inc = self.cbf_chroma_ac_cond(comp, bx - 1, by, intra)
+                        + 2 * self.cbf_chroma_ac_cond(comp, bx, by - 1, intra);
                     let mut lv = [0i32; 16];
                     let n = self.residual_block_cabac(c, &mut lv[1..], 4, 15, inc);
                     self.mb_mut().nnz_c[comp][b] = n;
@@ -521,7 +594,10 @@ impl SliceDecoder<'_> {
     /// Parse and reconstruct one macroblock_layer() with CABAC.
     fn decode_mb_cabac(&mut self, c: &mut Cabac) -> Result<()> {
         let mut info = self.decode_mb_type(c)?;
-        self.cur = MbCur { info, ..Default::default() };
+        self.cur = MbCur {
+            info,
+            ..Default::default()
+        };
         if info.kind == MbKind::IPcm {
             // pcm alignment + samples, then re-initialise the arithmetic decoder
             let pos = c.bit_pos().div_ceil(8);
@@ -574,7 +650,10 @@ impl SliceDecoder<'_> {
                     for p in 0..4 {
                         self.cur.sub[p] = self.decode_sub_mb_type(c)?;
                     }
-                    let direct_mask: u8 = (0..4).filter(|&p| self.cur.sub[p].direct).map(|p| 1u8 << p).sum();
+                    let direct_mask: u8 = (0..4)
+                        .filter(|&p| self.cur.sub[p].direct)
+                        .map(|p| 1u8 << p)
+                        .sum();
                     self.mb_mut().direct8x8 = direct_mask;
                     for l in 0..2 {
                         for p in 0..4 {
@@ -583,7 +662,11 @@ impl SliceDecoder<'_> {
                                 continue;
                             }
                             let (x, y) = ((p & 1) * 2, (p >> 1) * 2);
-                            let r = if n_ref[l] > 1 && !info.ref0 { self.decode_ref_idx(c, l, x, y) as i8 } else { 0 };
+                            let r = if n_ref[l] > 1 && !info.ref0 {
+                                self.decode_ref_idx(c, l, x, y) as i8
+                            } else {
+                                0
+                            };
                             self.cur.ref_idx[l][p] = r;
                             self.set_cur_ref(l, x, y, 2, 2, r);
                         }
@@ -613,7 +696,11 @@ impl SliceDecoder<'_> {
                                 continue;
                             }
                             let (x, y, w, h) = info.part.rect(p);
-                            let r = if n_ref[l] > 1 { self.decode_ref_idx(c, l, x, y) as i8 } else { 0 };
+                            let r = if n_ref[l] > 1 {
+                                self.decode_ref_idx(c, l, x, y) as i8
+                            } else {
+                                0
+                            };
                             self.cur.ref_idx[l][p] = r;
                             self.set_cur_ref(l, x, y, w, h, r);
                         }
@@ -633,7 +720,11 @@ impl SliceDecoder<'_> {
                 }
             }
         }
-        let cbp = if info.kind == MbKind::I16x16 { info.i16_cbp } else { self.decode_cbp(c) };
+        let cbp = if info.kind == MbKind::I16x16 {
+            info.i16_cbp
+        } else {
+            self.decode_cbp(c)
+        };
         self.cur.cbp = cbp;
         self.mb_mut().cbp = cbp;
         if !intra && cbp & 15 != 0 && self.pps.transform_8x8_mode && self.no_sub_8x8_lt() {
@@ -663,7 +754,8 @@ impl SliceDecoder<'_> {
     }
 
     fn decode_t8x8_flag(&mut self, c: &mut Cabac) -> bool {
-        let cond = |n: Option<usize>| n.map(|m| self.pic.mbs[m].transform_8x8).unwrap_or(false) as usize;
+        let cond =
+            |n: Option<usize>| n.map(|m| self.pic.mbs[m].transform_8x8).unwrap_or(false) as usize;
         let inc = cond(self.nb[0]) + cond(self.nb[1]);
         c.decode_decision(399 + inc) == 1
     }

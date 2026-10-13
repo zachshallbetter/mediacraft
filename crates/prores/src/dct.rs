@@ -32,8 +32,10 @@ pub(crate) fn idct8x8(block: &mut [f32; 64]) {
         nz[r] = true;
         let mut out = [0f32; 8];
         for x in 0..4 {
-            let e = c[0] * BASIS[0][x] + c[2] * BASIS[2][x] + c[4] * BASIS[4][x] + c[6] * BASIS[6][x];
-            let o = c[1] * BASIS[1][x] + c[3] * BASIS[3][x] + c[5] * BASIS[5][x] + c[7] * BASIS[7][x];
+            let e =
+                c[0] * BASIS[0][x] + c[2] * BASIS[2][x] + c[4] * BASIS[4][x] + c[6] * BASIS[6][x];
+            let o =
+                c[1] * BASIS[1][x] + c[3] * BASIS[3][x] + c[5] * BASIS[5][x] + c[7] * BASIS[7][x];
             out[x] = e + o;
             out[7 - x] = e - o;
         }
@@ -107,8 +109,16 @@ mod tests {
                 let mut s = 0f64;
                 for v in 0..8 {
                     for u in 0..8 {
-                        let cu = if u == 0 { std::f64::consts::FRAC_1_SQRT_2 } else { 1.0 };
-                        let cv = if v == 0 { std::f64::consts::FRAC_1_SQRT_2 } else { 1.0 };
+                        let cu = if u == 0 {
+                            std::f64::consts::FRAC_1_SQRT_2
+                        } else {
+                            1.0
+                        };
+                        let cv = if v == 0 {
+                            std::f64::consts::FRAC_1_SQRT_2
+                        } else {
+                            1.0
+                        };
                         s += cu * cv / 4.0
                             * c[v * 8 + u] as f64
                             * (((2 * x + 1) * u) as f64 * std::f64::consts::PI / 16.0).cos()

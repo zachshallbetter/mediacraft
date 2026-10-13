@@ -19,7 +19,12 @@ pub(crate) struct Reader<'a> {
 impl<'a> Reader<'a> {
     #[inline]
     pub fn new(data: &'a [u8]) -> Self {
-        let mut r = Self { data, next: 0, cache: 0, avail: 0 };
+        let mut r = Self {
+            data,
+            next: 0,
+            cache: 0,
+            avail: 0,
+        };
         r.refill();
         r
     }
@@ -114,7 +119,11 @@ impl<'a> Reader<'a> {
         if q <= rq {
             let rice = cb.rice as u32;
             let len = q + 1 + rice;
-            let low = if rice == 0 { 0 } else { ((w << (q + 1)) >> (64 - rice)) as u32 };
+            let low = if rice == 0 {
+                0
+            } else {
+                ((w << (q + 1)) >> (64 - rice)) as u32
+            };
             self.consume(len);
             Some((q << rice) | low)
         } else {

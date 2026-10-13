@@ -79,7 +79,14 @@ impl<'a> Cabac<'a> {
     /// Create an engine over `data` (slice RBSP) starting at bit `pos` (must be byte aligned),
     /// with contexts initialised for `slice_qp` and `init` (0..=2 cabac_init_idc, 3 = I slice).
     pub fn new(data: &'a [u8], pos: usize, slice_qp: i32, init: usize) -> Result<Self> {
-        let mut c = Cabac { data, next_byte: pos / 8, range: 0, value: 0, bits: 0, ctx: [0; NUM_CTX] };
+        let mut c = Cabac {
+            data,
+            next_byte: pos / 8,
+            range: 0,
+            value: 0,
+            bits: 0,
+            ctx: [0; NUM_CTX],
+        };
         c.init_contexts(slice_qp, init);
         c.init_engine()?;
         Ok(c)
@@ -91,7 +98,11 @@ impl<'a> Cabac<'a> {
         for (c, &(m, n)) in self.ctx.iter_mut().zip(tab.iter()) {
             let pre = (((m as i32) * qp) >> 4) + n as i32;
             let pre = pre.clamp(1, 126);
-            *c = if pre <= 63 { ((63 - pre) << 1) as u8 } else { (((pre - 64) << 1) | 1) as u8 };
+            *c = if pre <= 63 {
+                ((63 - pre) << 1) as u8
+            } else {
+                (((pre - 64) << 1) | 1) as u8
+            };
         }
         // ctxIdx 276 (end_of_slice / I_PCM) is handled by decode_terminate.
     }
@@ -104,7 +115,10 @@ impl<'a> Cabac<'a> {
         self.refill();
         // the top 9 loaded bits form codIOffset; the remaining ones stay buffered below it
         self.bits -= 9;
-        ensure!((self.value >> self.bits) < 510, "invalid CABAC offset at init");
+        ensure!(
+            (self.value >> self.bits) < 510,
+            "invalid CABAC offset at init"
+        );
         Ok(())
     }
 
@@ -214,7 +228,14 @@ mod tests {
     }
     impl Enc {
         fn new(ctx: &[u8]) -> Self {
-            Enc { low: 0, range: 510, outstanding: 0, first: true, bits: vec![], ctx: ctx.to_vec() }
+            Enc {
+                low: 0,
+                range: 510,
+                outstanding: 0,
+                first: true,
+                bits: vec![],
+                ctx: ctx.to_vec(),
+            }
         }
         fn put(&mut self, b: bool) {
             if self.first {
@@ -285,7 +306,10 @@ mod tests {
             while !self.bits.len().is_multiple_of(8) {
                 self.bits.push(false);
             }
-            self.bits.chunks(8).map(|c| c.iter().fold(0u8, |a, &b| (a << 1) | b as u8)).collect()
+            self.bits
+                .chunks(8)
+                .map(|c| c.iter().fold(0u8, |a, &b| (a << 1) | b as u8))
+                .collect()
         }
     }
 
@@ -316,7 +340,11 @@ mod tests {
             let kind = rnd() % 4;
             let ctx = (rnd() % 16) as usize;
             // skewed bins so contexts adapt
-            let bin = if rnd() % 10 < 8 { (ctx & 1) as u32 } else { 1 - (ctx & 1) as u32 };
+            let bin = if rnd() % 10 < 8 {
+                (ctx & 1) as u32
+            } else {
+                1 - (ctx & 1) as u32
+            };
             if kind == 0 {
                 enc.bypass(bin);
             } else {
@@ -327,7 +355,11 @@ mod tests {
         let bytes = enc.terminate_flush();
         let mut dec = Cabac::new(&bytes, 0, 30, 0).unwrap();
         for (i, &(kind, ctx, bin)) in ops.iter().enumerate() {
-            let got = if kind == 0 { dec.decode_bypass() } else { dec.decode_decision(ctx) };
+            let got = if kind == 0 {
+                dec.decode_bypass()
+            } else {
+                dec.decode_decision(ctx)
+            };
             assert_eq!(got, bin, "bin {i}");
         }
         assert_eq!(dec.decode_terminate(), 1);

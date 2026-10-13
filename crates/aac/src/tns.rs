@@ -58,7 +58,11 @@ impl TnsData {
                     let bits = 3 + win.coef_res as u32 - filt.coef_compress as u32;
                     for i in 0..filt.order as usize {
                         let v = br.read_bits(bits)? as i32;
-                        let v = if v & (1 << (bits - 1)) != 0 { v - (1 << bits) } else { v };
+                        let v = if v & (1 << (bits - 1)) != 0 {
+                            v - (1 << bits)
+                        } else {
+                            v
+                        };
                         filt.coef[i] = v as i8;
                     }
                 }
@@ -107,7 +111,8 @@ impl TnsData {
                 let filt = &win.filt[f];
                 n += if short { 7 } else { 11 };
                 if filt.order > 0 {
-                    n += 2 + filt.order as u32 * (3 + win.coef_res as u32 - filt.coef_compress as u32);
+                    n += 2 + filt.order as u32
+                        * (3 + win.coef_res as u32 - filt.coef_compress as u32);
                 }
             }
         }
@@ -132,7 +137,11 @@ pub fn quant_coef(k: f64, coef_res: bool) -> i8 {
     let a = k.clamp(-1.0, 1.0).asin();
     let lo = -(1 << (res - 1));
     let hi = (1 << (res - 1)) - 1;
-    let q = if a >= 0.0 { (a * iqfac).round() } else { (a * iqfac_m).round() };
+    let q = if a >= 0.0 {
+        (a * iqfac).round()
+    } else {
+        (a * iqfac_m).round()
+    };
     (q as i32).clamp(lo, hi) as i8
 }
 
@@ -176,7 +185,10 @@ fn regions(info: &IcsInfo, sf_index: u8, win: &TnsWindow) -> Vec<(usize, usize, 
 }
 
 fn lpc_of(filt: &TnsFilter, coef_res: bool) -> [f64; 13] {
-    let k: Vec<f64> = filt.coef[..filt.order as usize].iter().map(|&c| dequant_coef(c, coef_res)).collect();
+    let k: Vec<f64> = filt.coef[..filt.order as usize]
+        .iter()
+        .map(|&c| dequant_coef(c, coef_res))
+        .collect();
     parcor_to_lpc(&k)
 }
 
@@ -193,7 +205,11 @@ pub fn apply_decoder(spec: &mut [f32], info: &IcsInfo, sf_index: u8, tns: &TnsDa
             let size = end - start;
             let mut state = [0f64; 12];
             for m in 0..size {
-                let idx = if filt.direction { end - 1 - m } else { start + m };
+                let idx = if filt.direction {
+                    end - 1 - m
+                } else {
+                    start + m
+                };
                 let mut y = s[idx] as f64;
                 for i in 0..order {
                     y -= a[i + 1] * state[i];
@@ -223,7 +239,11 @@ pub fn apply_encoder(spec: &mut [f32], info: &IcsInfo, sf_index: u8, tns: &TnsDa
             let size = end - start;
             let mut state = [0f64; 12];
             for m in 0..size {
-                let idx = if filt.direction { end - 1 - m } else { start + m };
+                let idx = if filt.direction {
+                    end - 1 - m
+                } else {
+                    start + m
+                };
                 let x = s[idx] as f64;
                 let mut y = x;
                 for i in 0..order {
@@ -291,12 +311,25 @@ mod tests {
 
     #[test]
     fn encoder_decoder_filters_are_inverse() {
-        let info = IcsInfo { window_sequence: WindowSequence::OnlyLong, window_shape: WindowShape::Sine, max_sfb: 49, ..Default::default() };
+        let info = IcsInfo {
+            window_sequence: WindowSequence::OnlyLong,
+            window_shape: WindowShape::Sine,
+            max_sfb: 49,
+            ..Default::default()
+        };
         let mut t = TnsData::default();
         t.windows[0].n_filt = 1;
         t.windows[0].coef_res = true;
-        t.windows[0].filt[0] = TnsFilter { length: 40, order: 4, direction: true, coef_compress: false, coef: [3, -2, 1, 5, 0, 0, 0, 0, 0, 0, 0, 0] };
-        let orig: Vec<f32> = (0..1024).map(|i| ((i * 37 % 101) as f32 - 50.0) * 0.1).collect();
+        t.windows[0].filt[0] = TnsFilter {
+            length: 40,
+            order: 4,
+            direction: true,
+            coef_compress: false,
+            coef: [3, -2, 1, 5, 0, 0, 0, 0, 0, 0, 0, 0],
+        };
+        let orig: Vec<f32> = (0..1024)
+            .map(|i| ((i * 37 % 101) as f32 - 50.0) * 0.1)
+            .collect();
         let mut s = orig.clone();
         apply_encoder(&mut s, &info, 4, &t);
         assert_ne!(s, orig);

@@ -21,12 +21,24 @@ pub fn synth(w: u32, h: u32, chroma: ChromaFormat, depth: u8, alpha: bool, seed:
         for x in 0..wu {
             let fx = x as f32 / w as f32;
             let fy = y as f32 / h as f32;
-            let grid = if (x / 24 + y / 24) % 2 == 0 { 0.15 } else { 0.0 };
-            let disc = if (fx - 0.6).powi(2) + (fy - 0.4).powi(2) < 0.04 { 0.2 } else { 0.0 };
+            let grid = if (x / 24 + y / 24) % 2 == 0 {
+                0.15
+            } else {
+                0.0
+            };
+            let disc = if (fx - 0.6).powi(2) + (fy - 0.4).powi(2) < 0.04 {
+                0.2
+            } else {
+                0.0
+            };
             let v = 0.1 + 0.5 * fx * (1.0 - fy) + grid + disc + 0.01 * rnd();
             f.y[y * wu + x] = (v.clamp(0.0, 1.0) * max) as u16;
             if let Some(a) = f.alpha.as_mut() {
-                a[y * wu + x] = if disc > 0.0 { max as u16 } else { ((fx * max) as u16) & !7 };
+                a[y * wu + x] = if disc > 0.0 {
+                    max as u16
+                } else {
+                    ((fx * max) as u16) & !7
+                };
             }
         }
         for x in 0..cw {
@@ -44,11 +56,25 @@ fn quality(profile: Profile, w: u32, h: u32) -> (f64, f64, usize, usize) {
     let mut enc = Encoder::new(profile, w, h);
     let coded = enc.encode(&src).unwrap();
     let hdr = probe(&coded).unwrap();
-    assert_eq!((hdr.width as u32, hdr.height as u32, hdr.chroma), (w, h, chroma));
-    let dec = decode_frame_with(&coded, &DecodeOptions { bit_depth: Some(10), threads: true }).unwrap();
+    assert_eq!(
+        (hdr.width as u32, hdr.height as u32, hdr.chroma),
+        (w, h, chroma)
+    );
+    let dec = decode_frame_with(
+        &coded,
+        &DecodeOptions {
+            bit_depth: Some(10),
+            threads: true,
+        },
+    )
+    .unwrap();
     assert_eq!(dec.alpha, src.alpha, "alpha is lossless");
     let py = psnr(&dec.y, &src.y, 1023.0);
-    let pc = psnr(&[dec.cb, dec.cr].concat(), &[src.cb, src.cr].concat(), 1023.0);
+    let pc = psnr(
+        &[dec.cb, dec.cr].concat(),
+        &[src.cb, src.cr].concat(),
+        1023.0,
+    );
     (py, pc, coded.len(), enc.target_frame_bytes())
 }
 
@@ -59,7 +85,10 @@ fn every_profile_round_trips() {
         let (py, pc, size, target) = quality(p, 640, 360);
         println!("{p:?}: Y {py:.2} dB, C {pc:.2} dB, {size} / {target} bytes");
         assert!(size as f64 <= target as f64 * 1.15);
-        assert!(py >= last - 0.5, "quality should not drop with a higher profile");
+        assert!(
+            py >= last - 0.5,
+            "quality should not drop with a higher profile"
+        );
         assert!(py > 38.0 && pc > 38.0);
         last = py;
     }
@@ -91,7 +120,9 @@ fn odd_sizes_and_slice_widths() {
 #[test]
 fn twelve_bit_input_and_output() {
     let src = synth(256, 128, ChromaFormat::Yuv444, 12, true, 3);
-    let coded = Encoder::new(Profile::P4444Xq, 256, 128).encode(&src).unwrap();
+    let coded = Encoder::new(Profile::P4444Xq, 256, 128)
+        .encode(&src)
+        .unwrap();
     let dec = decode_frame(&coded).unwrap();
     assert_eq!(dec.bit_depth, 12);
     assert!(psnr(&dec.y, &src.y, 4095.0) > 50.0);
@@ -102,22 +133,42 @@ fn twelve_bit_input_and_output() {
 fn metadata_round_trips() {
     let src = synth(64, 32, ChromaFormat::Yuv422, 10, false, 1);
     let mut cfg = EncoderConfig::new(Profile::Standard, 64, 32);
-    cfg.color = ColorInfo { primaries: 9, transfer: 16, matrix: 9 };
+    cfg.color = ColorInfo {
+        primaries: 9,
+        transfer: 16,
+        matrix: 9,
+    };
     cfg.aspect_ratio = 1;
     cfg.frame_rate_code = 3;
     let coded = Encoder::with_config(cfg).encode(&src).unwrap();
     let hdr = probe(&coded).unwrap();
     assert_eq!(&hdr.encoder_id, b"fmcr");
     let dec = decode_frame(&coded).unwrap();
-    assert_eq!(dec.color, ColorInfo { primaries: 9, transfer: 16, matrix: 9 });
-    assert_eq!((dec.aspect_ratio, dec.frame_rate_code, dec.interlace), (1, 3, Interlace::Progressive));
+    assert_eq!(
+        dec.color,
+        ColorInfo {
+            primaries: 9,
+            transfer: 16,
+            matrix: 9
+        }
+    );
+    assert_eq!(
+        (dec.aspect_ratio, dec.frame_rate_code, dec.interlace),
+        (1, 3, Interlace::Progressive)
+    );
 }
 
 #[test]
 fn rejects_bad_input() {
     let mut enc = Encoder::new(Profile::Hq, 64, 32);
-    assert!(enc.encode(&Frame::new(32, 32, ChromaFormat::Yuv422, 10, false)).is_err());
-    assert!(enc.encode(&Frame::new(64, 32, ChromaFormat::Yuv444, 10, false)).is_err());
+    assert!(
+        enc.encode(&Frame::new(32, 32, ChromaFormat::Yuv422, 10, false))
+            .is_err()
+    );
+    assert!(
+        enc.encode(&Frame::new(64, 32, ChromaFormat::Yuv444, 10, false))
+            .is_err()
+    );
     let mut short = Frame::new(64, 32, ChromaFormat::Yuv422, 10, false);
     short.cb.truncate(10);
     assert!(enc.encode(&short).is_err());

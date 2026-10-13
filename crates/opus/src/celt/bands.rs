@@ -14,7 +14,13 @@ pub fn lcg_rand(seed: u32) -> u32 {
 }
 
 /// Decodes a PVQ codeword of `k` pulses in `n` dimensions; returns the sum of squares.
-fn decode_pulses(y: &mut [i32], n: usize, k: usize, dec: &mut RangeDecoder, v: &mut Vec<u64>) -> f32 {
+fn decode_pulses(
+    y: &mut [i32],
+    n: usize,
+    k: usize,
+    dec: &mut RangeDecoder,
+    v: &mut Vec<u64>,
+) -> f32 {
     // Table of V(nn, kk) for nn in 0..=n, kk in 0..=k (saturating).
     let w = k + 1;
     v.clear();
@@ -148,7 +154,13 @@ fn ordery(stride: usize) -> &'static [usize] {
     &ORDERY[stride - 2..2 * stride - 2]
 }
 
-fn deinterleave_hadamard(x: &mut [f32], n0: usize, stride: usize, hadamard: bool, tmp: &mut Vec<f32>) {
+fn deinterleave_hadamard(
+    x: &mut [f32],
+    n0: usize,
+    stride: usize,
+    hadamard: bool,
+    tmp: &mut Vec<f32>,
+) {
     let n = n0 * stride;
     tmp.clear();
     tmp.resize(n, 0.0);
@@ -169,7 +181,13 @@ fn deinterleave_hadamard(x: &mut [f32], n0: usize, stride: usize, hadamard: bool
     x[..n].copy_from_slice(tmp);
 }
 
-fn interleave_hadamard(x: &mut [f32], n0: usize, stride: usize, hadamard: bool, tmp: &mut Vec<f32>) {
+fn interleave_hadamard(
+    x: &mut [f32],
+    n0: usize,
+    stride: usize,
+    hadamard: bool,
+    tmp: &mut Vec<f32>,
+) {
     let n = n0 * stride;
     tmp.clear();
     tmp.resize(n, 0.0);
@@ -207,7 +225,8 @@ fn bitexact_log2tan(isin: i32, icos: i32) -> i32 {
     let ls = ilog(isin as u32);
     let icos = icos << (15 - lc);
     let isin = isin << (15 - ls);
-    (ls - lc) * (1 << 11) + frac_mul16(isin, frac_mul16(isin, -2597) + 7932) - frac_mul16(icos, frac_mul16(icos, -2597) + 7932)
+    (ls - lc) * (1 << 11) + frac_mul16(isin, frac_mul16(isin, -2597) + 7932)
+        - frac_mul16(icos, frac_mul16(icos, -2597) + 7932)
 }
 
 fn isqrt32(v: u32) -> u32 {
@@ -270,10 +289,24 @@ struct Split {
 }
 
 impl BandCtx<'_, '_, '_> {
-    fn compute_theta(&mut self, n: i32, b: &mut i32, bb: usize, b0: usize, lm: i32, stereo: bool, fill: &mut u32) -> Split {
+    fn compute_theta(
+        &mut self,
+        n: i32,
+        b: &mut i32,
+        bb: usize,
+        b0: usize,
+        lm: i32,
+        stereo: bool,
+        fill: &mut u32,
+    ) -> Split {
         let i = self.i;
         let pulse_cap = self.m.log_n[i] + lm * (1 << BITRES);
-        let offset = (pulse_cap >> 1) - if stereo && n == 2 { QTHETA_OFFSET_TWOPHASE } else { QTHETA_OFFSET };
+        let offset = (pulse_cap >> 1)
+            - if stereo && n == 2 {
+                QTHETA_OFFSET_TWOPHASE
+            } else {
+                QTHETA_OFFSET
+            };
         let mut qn = compute_qn(n, *b, offset, pulse_cap, stereo);
         if stereo && i >= self.intensity {
             qn = 1;
@@ -287,8 +320,16 @@ impl BandCtx<'_, '_, '_> {
                 let x0 = (qn / 2) as u32;
                 let ft = p0 * (x0 + 1) + x0;
                 let fs = self.dec.decode(ft);
-                let x = if fs < (x0 + 1) * p0 { fs / p0 } else { x0 + 1 + (fs - (x0 + 1) * p0) };
-                let (fl, fh) = if x <= x0 { (p0 * x, p0 * (x + 1)) } else { ((x - 1 - x0) + (x0 + 1) * p0, (x - x0) + (x0 + 1) * p0) };
+                let x = if fs < (x0 + 1) * p0 {
+                    fs / p0
+                } else {
+                    x0 + 1 + (fs - (x0 + 1) * p0)
+                };
+                let (fl, fh) = if x <= x0 {
+                    (p0 * x, p0 * (x + 1))
+                } else {
+                    ((x - 1 - x0) + (x0 + 1) * p0, (x - x0) + (x0 + 1) * p0)
+                };
                 self.dec.update(fl, fh, ft);
                 itheta = x as i32;
             } else if b0 > 1 || stereo {
@@ -340,10 +381,22 @@ impl BandCtx<'_, '_, '_> {
             iside = bitexact_cos(16384 - itheta);
             delta = frac_mul16((n - 1) << 7, bitexact_log2tan(iside, imid));
         }
-        Split { inv, imid, iside, delta, itheta, qalloc }
+        Split {
+            inv,
+            imid,
+            iside,
+            delta,
+            itheta,
+            qalloc,
+        }
     }
 
-    fn quant_band_n1(&mut self, x: &mut [f32], y: Option<&mut [f32]>, lowband_out: Option<&mut [f32]>) -> u32 {
+    fn quant_band_n1(
+        &mut self,
+        x: &mut [f32],
+        y: Option<&mut [f32]>,
+        lowband_out: Option<&mut [f32]>,
+    ) -> u32 {
         let dec_sign = |ctx: &mut Self| -> f32 {
             let mut sign = 0;
             if ctx.remaining_bits >= 1 << BITRES {
@@ -363,7 +416,17 @@ impl BandCtx<'_, '_, '_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn quant_partition(&mut self, x: &mut [f32], n: usize, mut b: i32, mut bb: usize, lowband: Option<&[f32]>, mut lm: i32, gain: f32, mut fill: u32) -> u32 {
+    fn quant_partition(
+        &mut self,
+        x: &mut [f32],
+        n: usize,
+        mut b: i32,
+        mut bb: usize,
+        lowband: Option<&[f32]>,
+        mut lm: i32,
+        gain: f32,
+        mut fill: u32,
+    ) -> u32 {
         let b0 = bb;
         let i = self.i;
         let cache = self.m.cache(lm, i);
@@ -399,9 +462,27 @@ impl BandCtx<'_, '_, '_> {
                 if rebalance > 3 << BITRES && sp.itheta != 0 {
                     sbits += rebalance - (3 << BITRES);
                 }
-                cm |= self.quant_partition(ya, n, sbits, bb, next_lowband2, lm, gain * side, fill >> bb) << (b0 >> 1);
+                cm |= self.quant_partition(
+                    ya,
+                    n,
+                    sbits,
+                    bb,
+                    next_lowband2,
+                    lm,
+                    gain * side,
+                    fill >> bb,
+                ) << (b0 >> 1);
             } else {
-                cm = self.quant_partition(ya, n, sbits, bb, next_lowband2, lm, gain * side, fill >> bb) << (b0 >> 1);
+                cm = self.quant_partition(
+                    ya,
+                    n,
+                    sbits,
+                    bb,
+                    next_lowband2,
+                    lm,
+                    gain * side,
+                    fill >> bb,
+                ) << (b0 >> 1);
                 rebalance = sbits - (rebalance - self.remaining_bits);
                 if rebalance > 3 << BITRES && sp.itheta != 16384 {
                     mbits += rebalance - (3 << BITRES);
@@ -453,7 +534,11 @@ impl BandCtx<'_, '_, '_> {
                     Some(lb) => {
                         for j in 0..n {
                             self.seed = lcg_rand(self.seed);
-                            let tmp = if self.seed & 0x8000 != 0 { 1.0 / 256.0 } else { -1.0 / 256.0 };
+                            let tmp = if self.seed & 0x8000 != 0 {
+                                1.0 / 256.0
+                            } else {
+                                -1.0 / 256.0
+                            };
                             x[j] = lb[j] + tmp;
                         }
                         fill
@@ -497,7 +582,8 @@ impl BandCtx<'_, '_, '_> {
             if let Some(lb) = lowband.as_deref_mut() {
                 haar1(lb, n >> k, 1 << k);
             }
-            fill = BIT_INTERLEAVE[(fill & 0xF) as usize] | (BIT_INTERLEAVE[(fill >> 4) as usize] << 2);
+            fill =
+                BIT_INTERLEAVE[(fill & 0xF) as usize] | (BIT_INTERLEAVE[(fill >> 4) as usize] << 2);
         }
         bb >>= recombine;
         n_b <<= recombine;
@@ -532,7 +618,10 @@ impl BandCtx<'_, '_, '_> {
             cm |= cm >> bb;
             haar1(x, n_b, bb);
         }
-        const BIT_DEINTERLEAVE: [u32; 16] = [0x00, 0x03, 0x0C, 0x0F, 0x30, 0x33, 0x3C, 0x3F, 0xC0, 0xC3, 0xCC, 0xCF, 0xF0, 0xF3, 0xFC, 0xFF];
+        const BIT_DEINTERLEAVE: [u32; 16] = [
+            0x00, 0x03, 0x0C, 0x0F, 0x30, 0x33, 0x3C, 0x3F, 0xC0, 0xC3, 0xCC, 0xCF, 0xF0, 0xF3,
+            0xFC, 0xFF,
+        ];
         for k in 0..recombine {
             cm = BIT_DEINTERLEAVE[(cm & 0xF) as usize];
             haar1(x, n0 >> k, 1 << k);
@@ -726,7 +815,9 @@ pub fn quant_all_bands(
         } else {
             0
         };
-        if (mm * EBANDS[i] as usize >= n + norm_offset || i == start + 1) && (update_lowband || lowband_offset == 0) {
+        if (mm * EBANDS[i] as usize >= n + norm_offset || i == start + 1)
+            && (update_lowband || lowband_offset == 0)
+        {
             lowband_offset = i;
         }
         if i == start + 1 {
@@ -789,20 +880,32 @@ pub fn quant_all_bands(
                 scratch[..n].copy_from_slice(&norm[e..e + n]);
                 &mut scratch[..n]
             });
-            let lo = if last { None } else { Some(&mut norm[out_off..out_off + n]) };
+            let lo = if last {
+                None
+            } else {
+                Some(&mut norm[out_off..out_off + n])
+            };
             x_cm = ctx.quant_band(x, n, b / 2, bb, lb, lm as i32, lo, 1.0, x_cm);
             let lb2 = effective_lowband.map(|e| {
                 scratch2[..n].copy_from_slice(&norm2[e..e + n]);
                 &mut scratch2[..n]
             });
-            let lo2 = if last { None } else { Some(&mut norm2[out_off..out_off + n]) };
+            let lo2 = if last {
+                None
+            } else {
+                Some(&mut norm2[out_off..out_off + n])
+            };
             y_cm = ctx.quant_band(y, n, b / 2, bb, lb2, lm as i32, lo2, 1.0, y_cm);
         } else {
             let lb = effective_lowband.map(|e| {
                 scratch[..n].copy_from_slice(&norm[e..e + n]);
                 &mut scratch[..n]
             });
-            let lo = if last { None } else { Some(&mut norm[out_off..out_off + n]) };
+            let lo = if last {
+                None
+            } else {
+                Some(&mut norm[out_off..out_off + n])
+            };
             if let Some(yb) = y_buf.as_deref_mut() {
                 let y = &mut yb[xo..xo + n];
                 x_cm = ctx.quant_band_stereo(x, y, n, b, bb, lb, lm as i32, lo, x_cm | y_cm);
@@ -876,7 +979,16 @@ pub fn anti_collapse(
 
 /// Multiplies the normalised shapes by the band energies (`denormalise_bands`).
 #[allow(clippy::too_many_arguments)]
-pub fn denormalise_bands(x: &[f32], freq: &mut [f32], band_log_e: &[f32], mut start: usize, mut end: usize, mm: usize, downsample: usize, silence: bool) {
+pub fn denormalise_bands(
+    x: &[f32],
+    freq: &mut [f32],
+    band_log_e: &[f32],
+    mut start: usize,
+    mut end: usize,
+    mm: usize,
+    downsample: usize,
+    silence: bool,
+) {
     let n = mm * SHORT_MDCT;
     let mut bound = mm * EBANDS[end] as usize;
     if downsample != 1 {
@@ -941,9 +1053,15 @@ mod tests {
                     let mut y = vec![0i32; n];
                     let mut v = Vec::new();
                     let ryy = decode_pulses(&mut y, n, k, &mut d, &mut v);
-                    assert_eq!(y.iter().map(|v| v.unsigned_abs() as usize).sum::<usize>(), k);
+                    assert_eq!(
+                        y.iter().map(|v| v.unsigned_abs() as usize).sum::<usize>(),
+                        k
+                    );
                     assert_eq!(ryy as i32, y.iter().map(|v| v * v).sum::<i32>());
-                    assert!(seen.insert(y.clone()), "duplicate codeword n={n} k={k} idx={idx}");
+                    assert!(
+                        seen.insert(y.clone()),
+                        "duplicate codeword n={n} k={k} idx={idx}"
+                    );
                 }
             }
         }

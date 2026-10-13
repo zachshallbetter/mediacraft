@@ -35,7 +35,14 @@ pub const FIXTURES: &[Fixture] = &[
         height: 360,
         frames: 30,
         filter: NOISE,
-        args: &["-c:v", "h264_videotoolbox", "-profile:v", "high", "-b:v", "3M"],
+        args: &[
+            "-c:v",
+            "h264_videotoolbox",
+            "-profile:v",
+            "high",
+            "-b:v",
+            "3M",
+        ],
     },
     Fixture {
         name: "vt_main",
@@ -44,7 +51,14 @@ pub const FIXTURES: &[Fixture] = &[
         height: 360,
         frames: 30,
         filter: NOISE,
-        args: &["-c:v", "h264_videotoolbox", "-profile:v", "main", "-b:v", "2M"],
+        args: &[
+            "-c:v",
+            "h264_videotoolbox",
+            "-profile:v",
+            "main",
+            "-b:v",
+            "2M",
+        ],
     },
     Fixture {
         name: "vt_baseline",
@@ -53,7 +67,14 @@ pub const FIXTURES: &[Fixture] = &[
         height: 240,
         frames: 30,
         filter: NOISE,
-        args: &["-c:v", "h264_videotoolbox", "-profile:v", "baseline", "-b:v", "1M"],
+        args: &[
+            "-c:v",
+            "h264_videotoolbox",
+            "-profile:v",
+            "baseline",
+            "-b:v",
+            "1M",
+        ],
     },
     Fixture {
         name: "vt_high_1080p",
@@ -62,7 +83,14 @@ pub const FIXTURES: &[Fixture] = &[
         height: 1080,
         frames: 10,
         filter: "",
-        args: &["-c:v", "h264_videotoolbox", "-profile:v", "high", "-b:v", "8M"],
+        args: &[
+            "-c:v",
+            "h264_videotoolbox",
+            "-profile:v",
+            "high",
+            "-b:v",
+            "8M",
+        ],
     },
     // performance reference stream (see tests/perf.rs)
     Fixture {
@@ -81,7 +109,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 144,
         frames: 3,
         filter: "",
-        args: &["-profile:v", "baseline", "-x264-params", "keyint=1:no-deblock=1"],
+        args: &[
+            "-profile:v",
+            "baseline",
+            "-x264-params",
+            "keyint=1:no-deblock=1",
+        ],
     },
     Fixture {
         name: "intra_cavlc_noise",
@@ -90,7 +123,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 3,
         filter: NOISE,
-        args: &["-profile:v", "baseline", "-x264-params", "keyint=1:no-deblock=1"],
+        args: &[
+            "-profile:v",
+            "baseline",
+            "-x264-params",
+            "keyint=1:no-deblock=1",
+        ],
     },
     Fixture {
         name: "intra_cavlc_8x8",
@@ -99,7 +137,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 3,
         filter: NOISE,
-        args: &["-profile:v", "high", "-x264-params", "keyint=1:no-deblock=1:cabac=0"],
+        args: &[
+            "-profile:v",
+            "high",
+            "-x264-params",
+            "keyint=1:no-deblock=1:cabac=0",
+        ],
     },
     Fixture {
         name: "intra_cavlc_cqm",
@@ -108,7 +151,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 3,
         filter: NOISE,
-        args: &["-profile:v", "high", "-x264-params", "keyint=1:no-deblock=1:cabac=0:cqm=jvt"],
+        args: &[
+            "-profile:v",
+            "high",
+            "-x264-params",
+            "keyint=1:no-deblock=1:cabac=0:cqm=jvt",
+        ],
     },
     Fixture {
         name: "p_cavlc_nodeblock",
@@ -117,7 +165,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 20,
         filter: NOISE,
-        args: &["-profile:v", "baseline", "-x264-params", "no-deblock=1:ref=3"],
+        args: &[
+            "-profile:v",
+            "baseline",
+            "-x264-params",
+            "no-deblock=1:ref=3",
+        ],
     },
     Fixture {
         name: "baseline_qcif",
@@ -128,7 +181,15 @@ pub const FIXTURES: &[Fixture] = &[
         filter: "",
         args: &["-profile:v", "baseline", "-x264-params", "keyint=15"],
     },
-    Fixture { name: "baseline_cif_noise", source: "mandelbrot", width: 352, height: 288, frames: 25, filter: NOISE, args: &["-profile:v", "baseline"] },
+    Fixture {
+        name: "baseline_cif_noise",
+        source: "mandelbrot",
+        width: 352,
+        height: 288,
+        frames: 25,
+        filter: NOISE,
+        args: &["-profile:v", "baseline"],
+    },
     Fixture {
         name: "cavlc_b",
         source: "testsrc2",
@@ -145,7 +206,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 30,
         filter: NOISE,
-        args: &["-profile:v", "main", "-x264-params", "cabac=0:bframes=3:direct=temporal:weightb=1"],
+        args: &[
+            "-profile:v",
+            "main",
+            "-x264-params",
+            "cabac=0:bframes=3:direct=temporal:weightb=1",
+        ],
     },
     Fixture {
         name: "cavlc_weightp",
@@ -154,12 +220,49 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 30,
         filter: "fade=in:0:25",
-        args: &["-profile:v", "main", "-x264-params", "cabac=0:weightp=2:bframes=2:weightb=1"],
+        args: &[
+            "-profile:v",
+            "main",
+            "-x264-params",
+            "cabac=0:weightp=2:bframes=2:weightb=1",
+        ],
     },
-    Fixture { name: "main_cabac_b", source: "testsrc2", width: 352, height: 288, frames: 30, filter: NOISE, args: &["-profile:v", "main"] },
-    Fixture { name: "high_720p", source: "smptehdbars", width: 1280, height: 720, frames: 10, filter: NOISE, args: &["-profile:v", "high"] },
-    Fixture { name: "high_1080p", source: "testsrc2", width: 1920, height: 1080, frames: 6, filter: "", args: &["-profile:v", "high"] },
-    Fixture { name: "crop_1918x1078", source: "testsrc2", width: 1918, height: 1078, frames: 5, filter: NOISE, args: &["-profile:v", "high"] },
+    Fixture {
+        name: "main_cabac_b",
+        source: "testsrc2",
+        width: 352,
+        height: 288,
+        frames: 30,
+        filter: NOISE,
+        args: &["-profile:v", "main"],
+    },
+    Fixture {
+        name: "high_720p",
+        source: "smptehdbars",
+        width: 1280,
+        height: 720,
+        frames: 10,
+        filter: NOISE,
+        args: &["-profile:v", "high"],
+    },
+    Fixture {
+        name: "high_1080p",
+        source: "testsrc2",
+        width: 1920,
+        height: 1080,
+        frames: 6,
+        filter: "",
+        args: &["-profile:v", "high"],
+    },
+    Fixture {
+        name: "crop_1918x1078",
+        source: "testsrc2",
+        width: 1918,
+        height: 1078,
+        frames: 5,
+        filter: NOISE,
+        args: &["-profile:v", "high"],
+    },
     Fixture {
         name: "bpyramid",
         source: "testsrc2",
@@ -167,7 +270,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 30,
         filter: NOISE,
-        args: &["-profile:v", "high", "-x264-params", "bframes=3:b-pyramid=normal"],
+        args: &[
+            "-profile:v",
+            "high",
+            "-x264-params",
+            "bframes=3:b-pyramid=normal",
+        ],
     },
     Fixture {
         name: "weightp2",
@@ -194,7 +302,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 30,
         filter: NOISE,
-        args: &["-profile:v", "high", "-x264-params", "direct=temporal:bframes=3"],
+        args: &[
+            "-profile:v",
+            "high",
+            "-x264-params",
+            "direct=temporal:bframes=3",
+        ],
     },
     Fixture {
         name: "direct_spatial",
@@ -203,7 +316,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 30,
         filter: NOISE,
-        args: &["-profile:v", "high", "-x264-params", "direct=spatial:bframes=3"],
+        args: &[
+            "-profile:v",
+            "high",
+            "-x264-params",
+            "direct=spatial:bframes=3",
+        ],
     },
     Fixture {
         name: "ref4",
@@ -275,7 +393,12 @@ pub const FIXTURES: &[Fixture] = &[
         height: 288,
         frames: 40,
         filter: NOISE,
-        args: &["-profile:v", "high", "-x264-params", "open-gop=1:keyint=12:bframes=3"],
+        args: &[
+            "-profile:v",
+            "high",
+            "-x264-params",
+            "open-gop=1:keyint=12:bframes=3",
+        ],
     },
     Fixture {
         name: "constrained_intra",
@@ -295,8 +418,24 @@ pub const FIXTURES: &[Fixture] = &[
         filter: NOISE,
         args: &["-profile:v", "high", "-x264-params", "8x8dct=0"],
     },
-    Fixture { name: "qp50", source: "testsrc2", width: 352, height: 288, frames: 20, filter: NOISE, args: &["-profile:v", "high", "-qp", "50"] },
-    Fixture { name: "qp1", source: "mandelbrot", width: 352, height: 288, frames: 10, filter: NOISE, args: &["-profile:v", "high", "-qp", "1"] },
+    Fixture {
+        name: "qp50",
+        source: "testsrc2",
+        width: 352,
+        height: 288,
+        frames: 20,
+        filter: NOISE,
+        args: &["-profile:v", "high", "-qp", "50"],
+    },
+    Fixture {
+        name: "qp1",
+        source: "mandelbrot",
+        width: 352,
+        height: 288,
+        frames: 10,
+        filter: NOISE,
+        args: &["-profile:v", "high", "-qp", "1"],
+    },
     Fixture {
         name: "qp1_cavlc",
         source: "mandelbrot",
@@ -309,23 +448,28 @@ pub const FIXTURES: &[Fixture] = &[
 ];
 
 pub fn fixture(name: &str) -> &'static Fixture {
-    FIXTURES.iter().find(|f| f.name == name).unwrap_or_else(|| panic!("unknown fixture {name}"))
+    FIXTURES
+        .iter()
+        .find(|f| f.name == name)
+        .unwrap_or_else(|| panic!("unknown fixture {name}"))
 }
 
 /// ffmpeg binary finder or None.
 pub fn ffmpeg() -> Option<PathBuf> {
-    for p in &["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"] {
+    for p in &[
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+    ] {
         let pb = PathBuf::from(p);
         if pb.is_file() {
             return Some(pb);
         }
     }
     if let Ok(out) = Command::new("which").arg("ffmpeg").output() {
-        if out.status.success() {
-            let path_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                return Some(PathBuf::from(path_str));
-            }
+        let path_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if out.status.success() && !path_str.is_empty() {
+            return Some(PathBuf::from(path_str));
         }
     }
     None
@@ -341,7 +485,11 @@ fn run(cmd: &mut Command) -> bool {
     match cmd.output() {
         Ok(o) if o.status.success() => true,
         Ok(o) => {
-            eprintln!("command failed: {:?}\n{}", cmd, String::from_utf8_lossy(&o.stderr));
+            eprintln!(
+                "command failed: {:?}\n{}",
+                cmd,
+                String::from_utf8_lossy(&o.stderr)
+            );
             false
         }
         Err(e) => {
@@ -355,19 +503,33 @@ fn run(cmd: &mut Command) -> bool {
 /// Returns None (with a message) when ffmpeg is unavailable.
 pub fn ensure(f: &Fixture) -> Option<(PathBuf, PathBuf)> {
     let ff = ffmpeg()?;
-    let _generation = FIXTURE_GENERATION.lock().unwrap_or_else(PoisonError::into_inner);
+    let _generation = FIXTURE_GENERATION
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let dir = fixtures_dir();
     let h264 = dir.join(format!("{}.h264", f.name));
     let yuv = dir.join(format!("{}.yuv", f.name));
     if !h264.exists() {
         let tmp = h264.with_extension(format!("tmp.{}", std::process::id()));
-        let mut vf = format!("{}=size={}x{}:rate=25,format=yuv420p", f.source, f.width, f.height);
+        let mut vf = format!(
+            "{}=size={}x{}:rate=25,format=yuv420p",
+            f.source, f.width, f.height
+        );
         if !f.filter.is_empty() {
             vf.push(',');
             vf.push_str(f.filter);
         }
         let mut c = Command::new(&ff);
-        c.args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", &vf]);
+        c.args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            &vf,
+        ]);
         c.args(["-frames:v", &f.frames.to_string()]);
         if !f.args.contains(&"-c:v") {
             c.args(["-c:v", "libx264"]);
@@ -376,7 +538,11 @@ pub fn ensure(f: &Fixture) -> Option<(PathBuf, PathBuf)> {
         c.args(["-f", "h264"]).arg(&tmp);
         if !run(&mut c) {
             // Platform encoders (VideoToolbox) are optional; libx264 fixtures must generate.
-            assert!(f.args.contains(&"-c:v"), "fixture generation failed for {}", f.name);
+            assert!(
+                f.args.contains(&"-c:v"),
+                "fixture generation failed for {}",
+                f.name
+            );
             eprintln!("SKIPPED ({}): encoder unavailable", f.name);
             return None;
         }
@@ -385,8 +551,17 @@ pub fn ensure(f: &Fixture) -> Option<(PathBuf, PathBuf)> {
     if !yuv.exists() {
         let tmp = yuv.with_extension(format!("tmp.{}", std::process::id()));
         let mut c = Command::new(&ff);
-        c.args(["-hide_banner", "-loglevel", "error", "-y", "-i"]).arg(&h264);
-        c.args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p"]).arg(&tmp);
+        c.args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+            .arg(&h264);
+        c.args([
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(&tmp);
         assert!(run(&mut c), "reference decode failed for {}", f.name);
         std::fs::rename(&tmp, &yuv).unwrap();
     }
@@ -448,9 +623,17 @@ pub fn decode_file_threads(path: &Path, threads: usize) -> Result<Vec<Picture>, 
 }
 
 /// [`decode_file_threads`] with draft mode ([`Decoder::set_draft`]) on or off.
-pub fn decode_file_opts(path: &Path, threads: usize, draft: bool) -> Result<Vec<Picture>, DecodeFailure> {
+pub fn decode_file_opts(
+    path: &Path,
+    threads: usize,
+    draft: bool,
+) -> Result<Vec<Picture>, DecodeFailure> {
     let data = std::fs::read(path).unwrap();
-    let mut dec = if threads == 0 { Decoder::new() } else { Decoder::with_threads(threads) };
+    let mut dec = if threads == 0 {
+        Decoder::new()
+    } else {
+        Decoder::with_threads(threads)
+    };
     assert!(!dec.draft(), "draft mode is off by default");
     dec.set_draft(draft);
     let mut out = Vec::new();
@@ -474,14 +657,24 @@ pub fn compare(pics: &[Picture], reference: &[u8], w: usize, h: usize) -> Result
     let nref = reference.len() / fsize;
     for (i, p) in pics.iter().enumerate() {
         if i >= nref {
-            return Err(format!("decoder produced {} frames, reference has {}", pics.len(), nref));
+            return Err(format!(
+                "decoder produced {} frames, reference has {}",
+                pics.len(),
+                nref
+            ));
         }
         if p.width as usize != w || p.height as usize != h {
-            return Err(format!("frame {i}: size {}x{} != {}x{}", p.width, p.height, w, h));
+            return Err(format!(
+                "frame {i}: size {}x{} != {}x{}",
+                p.width, p.height, w, h
+            ));
         }
         let f = &reference[i * fsize..(i + 1) * fsize];
-        let planes =
-            [("Y", &p.y[..], &f[..w * h], w, h, 16), ("U", &p.u[..], &f[w * h..w * h + cw * ch], cw, ch, 8), ("V", &p.v[..], &f[w * h + cw * ch..], cw, ch, 8)];
+        let planes = [
+            ("Y", &p.y[..], &f[..w * h], w, h, 16),
+            ("U", &p.u[..], &f[w * h..w * h + cw * ch], cw, ch, 8),
+            ("V", &p.v[..], &f[w * h + cw * ch..], cw, ch, 8),
+        ];
         for (name, got, exp, pw, ph, mbs) in planes {
             if got != exp {
                 let mut first = None;
@@ -513,7 +706,11 @@ pub fn compare(pics: &[Picture], reference: &[u8], w: usize, h: usize) -> Result
         }
     }
     if pics.len() != nref {
-        return Err(format!("decoder produced {} frames, reference has {}", pics.len(), nref));
+        return Err(format!(
+            "decoder produced {} frames, reference has {}",
+            pics.len(),
+            nref
+        ));
     }
     Ok(())
 }
@@ -521,7 +718,9 @@ pub fn compare(pics: &[Picture], reference: &[u8], w: usize, h: usize) -> Result
 /// Full check of one fixture: generate, decode, compare. Returns Ok(false) when skipped.
 pub fn check_fixture(name: &str) -> Result<bool, String> {
     let f = fixture(name);
-    let Some((h264, yuv)) = ensure(f) else { return Ok(false) };
+    let Some((h264, yuv)) = ensure(f) else {
+        return Ok(false);
+    };
     let reference = std::fs::read(&yuv).unwrap();
     // single-threaded and frame-threaded decoding (an odd thread count and every core) must all
     // be bit-exact
@@ -530,13 +729,21 @@ pub fn check_fixture(name: &str) -> Result<bool, String> {
             Ok(p) => p,
             Err((au, e, partial)) => {
                 // still report comparison of what was decoded
-                let cmp = compare(&partial, &reference, f.width as usize, f.height as usize).err().unwrap_or_default();
-                return Err(format!("{name} (threads {threads}): decode error at access unit {au}: {e} (after {} pictures) {cmp}", partial.len()));
+                let cmp = compare(&partial, &reference, f.width as usize, f.height as usize)
+                    .err()
+                    .unwrap_or_default();
+                return Err(format!(
+                    "{name} (threads {threads}): decode error at access unit {au}: {e} (after {} pictures) {cmp}",
+                    partial.len()
+                ));
             }
         };
-        compare(&pics, &reference, f.width as usize, f.height as usize).map_err(|e| format!("{name} (threads {threads}): {e}"))?;
+        compare(&pics, &reference, f.width as usize, f.height as usize)
+            .map_err(|e| format!("{name} (threads {threads}): {e}"))?;
         if pics.iter().any(|p| p.draft) {
-            return Err(format!("{name} (threads {threads}): draft picture without draft mode"));
+            return Err(format!(
+                "{name} (threads {threads}): draft picture without draft mode"
+            ));
         }
         check_pts(&pics).map_err(|e| format!("{name} (threads {threads}): {e}"))?;
     }
@@ -556,7 +763,10 @@ pub fn check_pts(pics: &[Picture]) -> Result<(), String> {
     }
     for w in pics.windows(2) {
         if !w[1].key && w[1].poc <= w[0].poc {
-            return Err(format!("output POC order violated: {} then {}", w[0].poc, w[1].poc));
+            return Err(format!(
+                "output POC order violated: {} then {}",
+                w[0].poc, w[1].poc
+            ));
         }
     }
     Ok(())

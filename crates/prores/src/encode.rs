@@ -57,7 +57,9 @@ const Q_MAX: u8 = 224;
 
 impl Encoder {
     pub fn new(profile: Profile, width: u32, height: u32) -> Encoder {
-        Encoder { cfg: EncoderConfig::new(profile, width, height) }
+        Encoder {
+            cfg: EncoderConfig::new(profile, width, height),
+        }
     }
 
     pub fn with_config(cfg: EncoderConfig) -> Encoder {
@@ -69,7 +71,9 @@ impl Encoder {
     }
 
     pub fn bits_per_mb(&self) -> u32 {
-        self.cfg.bits_per_mb.unwrap_or_else(|| self.cfg.profile.nominal_bits_per_mb())
+        self.cfg
+            .bits_per_mb
+            .unwrap_or_else(|| self.cfg.profile.nominal_bits_per_mb())
     }
 
     /// The rate-control target for one frame in bytes (excluding alpha).
@@ -83,14 +87,20 @@ impl Encoder {
     pub fn encode(&mut self, frame: &Frame) -> Result<Vec<u8>> {
         let cfg = &self.cfg;
         if frame.width != cfg.width || frame.height != cfg.height {
-            return Err(Error::Input(format!("frame is {}x{}, encoder is {}x{}", frame.width, frame.height, cfg.width, cfg.height)));
+            return Err(Error::Input(format!(
+                "frame is {}x{}, encoder is {}x{}",
+                frame.width, frame.height, cfg.width, cfg.height
+            )));
         }
         if cfg.width == 0 || cfg.height == 0 || cfg.width > 65535 || cfg.height > 65535 {
             return Err(Error::Input("unsupported frame size".into()));
         }
         let chroma = cfg.profile.chroma();
         if frame.chroma != chroma {
-            return Err(Error::Input(format!("{:?} input for a {:?} profile", frame.chroma, chroma)));
+            return Err(Error::Input(format!(
+                "{:?} input for a {:?} profile",
+                frame.chroma, chroma
+            )));
         }
         if !(8..=16).contains(&frame.bit_depth) {
             return Err(Error::Input("bit depth must be 8..=16".into()));
@@ -100,7 +110,8 @@ impl Encoder {
         if frame.y.len() < w * h || frame.cb.len() < cw * h || frame.cr.len() < cw * h {
             return Err(Error::Input("plane too small".into()));
         }
-        let with_alpha = cfg.encode_alpha && chroma == ChromaFormat::Yuv444 && frame.alpha.is_some();
+        let with_alpha =
+            cfg.encode_alpha && chroma == ChromaFormat::Yuv444 && frame.alpha.is_some();
         if let Some(a) = &frame.alpha
             && with_alpha
             && a.len() < w * h
@@ -133,7 +144,9 @@ impl Encoder {
             bits_per_mb: self.bits_per_mb(),
         };
         let threads = cfg.threads;
-        let prepared: Vec<SliceData> = par_map(threads, &jobs, |&(x, row, sw)| prepare_slice(&src, x, row, sw));
+        let prepared: Vec<SliceData> = par_map(threads, &jobs, |&(x, row, sw)| {
+            prepare_slice(&src, x, row, sw)
+        });
         let qs = choose_quantisers(&prepared, &src, mb_width * mb_height, threads);
         let items: Vec<(&SliceData, u8)> = prepared.iter().zip(qs).collect();
         let slices: Vec<Vec<u8>> = par_map(threads, &items, |&(sd, q)| write_slice(sd, q));
@@ -149,7 +162,11 @@ impl Encoder {
             aspect_ratio: cfg.aspect_ratio & 15,
             frame_rate_code: cfg.frame_rate_code & 15,
             color: cfg.color,
-            alpha: if with_alpha { AlphaType::Bits16 } else { AlphaType::None },
+            alpha: if with_alpha {
+                AlphaType::Bits16
+            } else {
+                AlphaType::None
+            },
             qmat_luma: [4; 64],
             qmat_chroma: [4; 64],
             luma_matrix_present: false,
@@ -163,7 +180,13 @@ impl Encoder {
         out.extend_from_slice(&(total as u32).to_be_bytes());
         out.extend_from_slice(&FRAME_ID);
         out.extend_from_slice(&fh);
-        PictureHeader { header_size: 8, picture_size: pic_size, num_slices: slices.len(), log2_slice_mbs: cfg.log2_slice_mbs }.write(&mut out);
+        PictureHeader {
+            header_size: 8,
+            picture_size: pic_size,
+            num_slices: slices.len(),
+            log2_slice_mbs: cfg.log2_slice_mbs,
+        }
+        .write(&mut out);
         for s in &slices {
             out.extend_from_slice(&(s.len() as u16).to_be_bytes());
         }
@@ -188,7 +211,14 @@ struct Source<'a> {
 }
 
 /// Load an 8×8 block (edge-replicated) into the 12-bit signed domain and transform it.
-fn load_block(plane: &[u16], stride: usize, height: usize, x0: usize, y0: usize, scale: f32) -> [f32; 64] {
+fn load_block(
+    plane: &[u16],
+    stride: usize,
+    height: usize,
+    x0: usize,
+    y0: usize,
+    scale: f32,
+) -> [f32; 64] {
     let mut b = [0f32; 64];
     for yy in 0..8 {
         let y = (y0 + yy).min(height - 1);
@@ -224,7 +254,11 @@ fn encode_component<S: Sink>(s: &mut S, levels: &[[i32; 64]], scan: &[u8; 64]) {
     let n = levels.len();
     // DC
     let first = levels[0][0];
-    let zz = if first >= 0 { (first as u32) << 1 } else { ((-(first as i64)) as u32) * 2 - 1 };
+    let zz = if first >= 0 {
+        (first as u32) << 1
+    } else {
+        ((-(first as i64)) as u32) * 2 - 1
+    };
     s.put_cw(FIRST_DC_CB, zz);
     let mut prev = first;
     let mut ctx = DC_CTX_INIT;
@@ -291,7 +325,11 @@ impl SliceData {
     }
 }
 
-fn par_map<T: Sync, R: Send>(threads: bool, items: &[T], f: impl Fn(&T) -> R + Sync + Send) -> Vec<R> {
+fn par_map<T: Sync, R: Send>(
+    threads: bool,
+    items: &[T],
+    f: impl Fn(&T) -> R + Sync + Send,
+) -> Vec<R> {
     #[cfg(feature = "threads")]
     if threads {
         use rayon::prelude::*;
@@ -308,7 +346,14 @@ fn prepare_slice(src: &Source, mb_x: usize, mb_y: usize, mbs: usize) -> SliceDat
     let mut luma = Vec::with_capacity(4 * mbs);
     for mb in 0..mbs {
         for i in 0..4 {
-            luma.push(load_block(&f.y, src.w, src.h, x0 + mb * 16 + (i & 1) * 8, y0 + (i >> 1) * 8, src.scale));
+            luma.push(load_block(
+                &f.y,
+                src.w,
+                src.h,
+                x0 + mb * 16 + (i & 1) * 8,
+                y0 + (i >> 1) * 8,
+                src.scale,
+            ));
         }
     }
     let mut chroma = [Vec::with_capacity(4 * mbs), Vec::with_capacity(4 * mbs)];
@@ -317,18 +362,35 @@ fn prepare_slice(src: &Source, mb_x: usize, mb_y: usize, mbs: usize) -> SliceDat
             if src.chroma444 {
                 // 4:4:4 chroma block order within a macroblock: TL, BL, TR, BR.
                 for i in 0..4 {
-                    chroma[k].push(load_block(plane, src.cw, src.h, x0 + mb * 16 + (i >> 1) * 8, y0 + (i & 1) * 8, src.scale));
+                    chroma[k].push(load_block(
+                        plane,
+                        src.cw,
+                        src.h,
+                        x0 + mb * 16 + (i >> 1) * 8,
+                        y0 + (i & 1) * 8,
+                        src.scale,
+                    ));
                 }
             } else {
                 for i in 0..2 {
-                    chroma[k].push(load_block(plane, src.cw, src.h, mb_x * 8 + mb * 8, y0 + i * 8, src.scale));
+                    chroma[k].push(load_block(
+                        plane,
+                        src.cw,
+                        src.h,
+                        mb_x * 8 + mb * 8,
+                        y0 + i * 8,
+                        src.scale,
+                    ));
                 }
             }
         }
     }
     let [cb, cr] = chroma;
     let alpha = src.alpha.then(|| encode_alpha_slice(src, x0, y0, mbs));
-    SliceData { comps: [luma, cb, cr], alpha }
+    SliceData {
+        comps: [luma, cb, cr],
+        alpha,
+    }
 }
 
 fn quantise_all(sd: &SliceData, q: u8, lv: &mut [Vec<[i32; 64]>; 3]) {
@@ -348,7 +410,12 @@ fn slice_bits(sd: &SliceData, q: u8) -> u64 {
 /// Frame-level rate control: the smallest uniform quantiser whose frame fits the budget, then
 /// one step finer on as many slices as the remaining budget allows. Uniform quantisation
 /// approximately minimises frame MSE for a given size.
-fn choose_quantisers(slices: &[SliceData], src: &Source, total_mbs: usize, threads: bool) -> Vec<u8> {
+fn choose_quantisers(
+    slices: &[SliceData],
+    src: &Source,
+    total_mbs: usize,
+    threads: bool,
+) -> Vec<u8> {
     let n = slices.len();
     let hsize = slices.first().map_or(6, SliceData::header_size);
     let fixed = 8 * (8 + 20 + 8 + n * (2 + hsize)) as u64;
@@ -412,7 +479,8 @@ fn write_slice(sd: &SliceData, q: u8) -> Vec<u8> {
         .collect();
     let hsize = sd.header_size();
     let alpha = sd.alpha.as_deref().unwrap_or(&[]);
-    let mut out = Vec::with_capacity(hsize + comps.iter().map(Vec::len).sum::<usize>() + alpha.len());
+    let mut out =
+        Vec::with_capacity(hsize + comps.iter().map(Vec::len).sum::<usize>() + alpha.len());
     out.push((hsize as u8) << 3);
     out.push(q);
     out.extend_from_slice(&(comps[0].len() as u16).to_be_bytes());
@@ -429,11 +497,17 @@ fn write_slice(sd: &SliceData, q: u8) -> Vec<u8> {
 
 /// Encode the slice's alpha samples (16-bit coding) in raster order over its 16 lines.
 fn encode_alpha_slice(src: &Source, x0: usize, y0: usize, mbs: usize) -> Vec<u8> {
-    let Some(a) = src.frame.alpha.as_ref() else { return Vec::new() };
+    let Some(a) = src.frame.alpha.as_ref() else {
+        return Vec::new();
+    };
     let d = src.frame.bit_depth as u32;
     let to16 = |v: u16| -> u32 {
         let v = v as u32 & ((1 << d) - 1);
-        if d >= 16 { v } else { ((v << (16 - d)) | (v >> (2 * d).saturating_sub(16).min(d))) & 0xffff }
+        if d >= 16 {
+            v
+        } else {
+            ((v << (16 - d)) | (v >> (2 * d).saturating_sub(16).min(d))) & 0xffff
+        }
     };
     let sw = mbs * 16;
     let mut vals = Vec::with_capacity(sw * 16);
@@ -461,7 +535,11 @@ pub(crate) fn encode_alpha(w: &mut Writer, vals: &[u32], bits: u32) {
         let v = vals[idx];
         let diff = v.wrapping_sub(prev) & mask;
         // signed difference in (-2^(bits-1), 2^(bits-1)]
-        let sd = if diff > mask >> 1 { diff as i32 - (mask as i32 + 1) } else { diff as i32 };
+        let sd = if diff > mask >> 1 {
+            diff as i32 - (mask as i32 + 1)
+        } else {
+            diff as i32
+        };
         if sd != 0 && sd.abs() <= short_max {
             w.put(0, 1);
             let c = (2 * sd.unsigned_abs() - 2) | (sd < 0) as u32;

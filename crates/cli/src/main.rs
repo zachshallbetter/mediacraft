@@ -307,14 +307,12 @@ fn main() {
                 caps.preferred_backend.description()
             );
             println!("\nClean-Room Codec Matrix:");
+            println!("  • Video: H.264 (craft-h264enc), ProRes (craft-prores), HEVC (craft-hevc)");
             println!(
-                "  • Video: H.264 (filmcraft-h264enc), ProRes (filmcraft-prores), HEVC (filmcraft-hevc)"
+                "  • Audio: AAC-LC (craft-aac), FLAC (craft-flac), Opus (craft-opus), PCM (wav)"
             );
             println!(
-                "  • Audio: AAC-LC (filmcraft-aac), FLAC (filmcraft-flac), Opus (filmcraft-opus), PCM (wav)"
-            );
-            println!(
-                "  • Multiplexers: MP4/M4A/MOV (filmcraft-isobmff), Faststart (mediacraft-bitstream)"
+                "  • Multiplexers: MP4/M4A/MOV (craft-isobmff), Matroska/WebM (craft-matroska), Faststart (mediacraft-bitstream)"
             );
         }
         "status" => {

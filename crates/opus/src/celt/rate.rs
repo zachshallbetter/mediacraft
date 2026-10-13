@@ -13,7 +13,11 @@ const ALLOC_STEPS: i32 = 6;
 
 /// Number of pulses represented by pseudo-pulse index `i`.
 pub fn get_pulses(i: i32) -> i32 {
-    if i < 8 { i } else { (8 + (i & 7)) << ((i >> 3) - 1) }
+    if i < 8 {
+        i
+    } else {
+        (8 + (i & 7)) << ((i >> 3) - 1)
+    }
 }
 
 /// Conservative (rounded up) log2 of `val` with `frac` fractional bits.
@@ -99,7 +103,12 @@ impl Mode {
             cache_bits,
             caps: Vec::new(),
             window: [0.0; OVERLAP],
-            mdct: [super::mdct::Imdct::new(1920), super::mdct::Imdct::new(960), super::mdct::Imdct::new(480), super::mdct::Imdct::new(240)],
+            mdct: [
+                super::mdct::Imdct::new(1920),
+                super::mdct::Imdct::new(960),
+                super::mdct::Imdct::new(480),
+                super::mdct::Imdct::new(240),
+            ],
         };
         m.caps = compute_caps(&m);
         for i in 0..OVERLAP {
@@ -129,12 +138,24 @@ impl Mode {
                 lo = mid;
             }
         }
-        let lo_bits = if lo == 0 { -1 } else { cache[lo as usize] as i32 };
-        if bits - lo_bits <= cache[hi as usize] as i32 - bits { lo } else { hi }
+        let lo_bits = if lo == 0 {
+            -1
+        } else {
+            cache[lo as usize] as i32
+        };
+        if bits - lo_bits <= cache[hi as usize] as i32 - bits {
+            lo
+        } else {
+            hi
+        }
     }
 
     pub fn pulses2bits(&self, band: usize, lm: i32, pulses: i32) -> i32 {
-        if pulses == 0 { 0 } else { self.cache(lm, band)[pulses as usize] as i32 + 1 }
+        if pulses == 0 {
+            0
+        } else {
+            self.cache(lm, band)[pulses as usize] as i32 + 1
+        }
     }
 
     /// Per-band allocation caps for this frame (`init_caps`).
@@ -241,7 +262,12 @@ fn compute_caps(m: &Mode) -> Vec<u8> {
                     }
                     if c == 2 {
                         mb <<= 1;
-                        let offset = ((m.log_n[j] + (i << BITRES)) >> 1) - if n == 2 { QTHETA_OFFSET_TWOPHASE } else { QTHETA_OFFSET };
+                        let offset = ((m.log_n[j] + (i << BITRES)) >> 1)
+                            - if n == 2 {
+                                QTHETA_OFFSET_TWOPHASE
+                            } else {
+                                QTHETA_OFFSET
+                            };
                         let ndof = 2 * n - 1 - (n == 2) as i32;
                         let p = if n == 2 { 512 } else { 487 };
                         let num = p * (mb + ndof * offset);
@@ -319,7 +345,12 @@ pub fn compute_allocation(
     for j in start..end {
         let w = EBANDS[j + 1] - EBANDS[j];
         thresh[j] = (ci << BITRES).max((3 * w << lmi << BITRES) >> 4);
-        trim_offset[j] = ci * w * (alloc_trim - 5 - lmi) * (end as i32 - j as i32 - 1) * (1 << (lmi + BITRES as i32)) >> 6;
+        trim_offset[j] = ci
+            * w
+            * (alloc_trim - 5 - lmi)
+            * (end as i32 - j as i32 - 1)
+            * (1 << (lmi + BITRES as i32))
+            >> 6;
         if w << lmi == 1 {
             trim_offset[j] -= ci << BITRES;
         }
@@ -359,7 +390,11 @@ pub fn compute_allocation(
     for j in start..end {
         let n = EBANDS[j + 1] - EBANDS[j];
         let mut bits1j = ci * n * (ALLOC[lo as usize][j] as i32) << lmi >> 2;
-        let mut bits2j = if hi >= nb_alloc { cap[j] } else { ci * n * (ALLOC[hi as usize][j] as i32) << lmi >> 2 };
+        let mut bits2j = if hi >= nb_alloc {
+            cap[j]
+        } else {
+            ci * n * (ALLOC[hi as usize][j] as i32) << lmi >> 2
+        };
         if bits1j > 0 {
             bits1j = (bits1j + trim_offset[j]).max(0);
         }
@@ -377,7 +412,23 @@ pub fn compute_allocation(
         bits1[j] = bits1j;
         bits2[j] = bits2j;
     }
-    interp_bits2pulses(m, start, end, skip_start, &bits1, &bits2, &thresh, cap, total, skip_rsv, intensity_rsv, dual_stereo_rsv, c, lm, dec)
+    interp_bits2pulses(
+        m,
+        start,
+        end,
+        skip_start,
+        &bits1,
+        &bits2,
+        &thresh,
+        cap,
+        total,
+        skip_rsv,
+        intensity_rsv,
+        dual_stereo_rsv,
+        c,
+        lm,
+        dec,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -472,12 +523,20 @@ fn interp_bits2pulses(
         }
         coded_bands -= 1;
     }
-    let intensity = if intensity_rsv > 0 { s + dec.uint((coded_bands + 1 - s) as u32) as usize } else { 0 };
+    let intensity = if intensity_rsv > 0 {
+        s + dec.uint((coded_bands + 1 - s) as u32) as usize
+    } else {
+        0
+    };
     if intensity <= s {
         total += dual_stereo_rsv;
         dual_stereo_rsv = 0;
     }
-    let dual_stereo = if dual_stereo_rsv > 0 { dec.bit_logp(1) } else { false };
+    let dual_stereo = if dual_stereo_rsv > 0 {
+        dec.bit_logp(1)
+    } else {
+        false
+    };
     let mut left = total - psum;
     let span = EBANDS[coded_bands] - EBANDS[s];
     let percoeff = left / span;
@@ -501,7 +560,12 @@ fn interp_bits2pulses(
         if n > 1 {
             excess = (bit - cap[j]).max(0);
             bits[j] = bit - excess;
-            let den = ci * n + if c == 2 && n > 2 && !dual_stereo && j < intensity { 1 } else { 0 };
+            let den = ci * n
+                + if c == 2 && n > 2 && !dual_stereo && j < intensity {
+                    1
+                } else {
+                    0
+                };
             let nclogn = den * (m.log_n[j] + log_m);
             let mut offset = (nclogn >> 1) - den * FINE_OFFSET;
             if n == 2 {
@@ -541,7 +605,15 @@ fn interp_bits2pulses(
         bits[j] = 0;
         fine_priority[j] = (ebits[j] < 1) as i32;
     }
-    Allocation { coded_bands, intensity, dual_stereo, balance, pulses: bits, fine_quant: ebits, fine_priority }
+    Allocation {
+        coded_bands,
+        intensity,
+        dual_stereo,
+        balance,
+        pulses: bits,
+        fine_quant: ebits,
+        fine_priority,
+    }
 }
 
 #[cfg(test)]
@@ -576,8 +648,9 @@ mod tests {
         assert!(m.caps[..8].iter().all(|&c| c == 224));
         assert!(m.caps[21..29].iter().all(|&c| c == 224));
         let first_rows: [u8; 42] = [
-            224, 224, 224, 224, 224, 224, 224, 224, 160, 160, 160, 160, 185, 185, 185, 178, 178, 168, 134, 61, 37, 224, 224, 224, 224, 224, 224, 224, 224, 240,
-            240, 240, 240, 207, 207, 207, 198, 198, 183, 144, 66, 40,
+            224, 224, 224, 224, 224, 224, 224, 224, 160, 160, 160, 160, 185, 185, 185, 178, 178,
+            168, 134, 61, 37, 224, 224, 224, 224, 224, 224, 224, 224, 240, 240, 240, 240, 207, 207,
+            207, 198, 198, 183, 144, 66, 40,
         ];
         assert_eq!(&m.caps[..42], &first_rows[..]);
     }

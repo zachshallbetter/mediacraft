@@ -23,11 +23,19 @@ pub fn smmul(a: i32, b: i32) -> i32 {
 }
 #[inline]
 pub fn rshift_round(a: i32, s: u32) -> i32 {
-    if s == 1 { (a >> 1) + (a & 1) } else { ((a >> (s - 1)) + 1) >> 1 }
+    if s == 1 {
+        (a >> 1) + (a & 1)
+    } else {
+        ((a >> (s - 1)) + 1) >> 1
+    }
 }
 #[inline]
 pub fn rshift_round64(a: i64, s: u32) -> i64 {
-    if s == 1 { (a >> 1) + (a & 1) } else { ((a >> (s - 1)) + 1) >> 1 }
+    if s == 1 {
+        (a >> 1) + (a & 1)
+    } else {
+        ((a >> (s - 1)) + 1) >> 1
+    }
 }
 #[inline]
 pub fn sat16(a: i32) -> i32 {
@@ -93,15 +101,27 @@ fn sqrt_approx(x: i32) -> i32 {
 pub fn nlsf_decode(indices: &[i32], wb: bool) -> [i32; MAX_LPC_ORDER] {
     let order = if wb { 16 } else { 10 };
     let i1 = indices[0] as usize;
-    let cb1: &[i32] = if wb { &NLSF_CB_WB[i1] } else { &NLSF_CB_NBMB[i1] };
+    let cb1: &[i32] = if wb {
+        &NLSF_CB_WB[i1]
+    } else {
+        &NLSF_CB_NBMB[i1]
+    };
     let qstep = if wb { 9830 } else { 11796 };
     // Residual dequantisation with backwards prediction.
     let mut res_q10 = [0i32; MAX_LPC_ORDER];
     let mut out_q10 = 0i32;
     for i in (0..order).rev() {
         let pred = if i + 1 < order {
-            let sel = if wb { NLSF_PSEL_WB[i1][i] } else { NLSF_PSEL_NBMB[i1][i] } as usize;
-            let w = if wb { NLSF_PRED_WB[sel][i] } else { NLSF_PRED_NBMB[sel][i] };
+            let sel = if wb {
+                NLSF_PSEL_WB[i1][i]
+            } else {
+                NLSF_PSEL_NBMB[i1][i]
+            } as usize;
+            let w = if wb {
+                NLSF_PRED_WB[sel][i]
+            } else {
+                NLSF_PRED_NBMB[sel][i]
+            };
             (out_q10 * w) >> 8
         } else {
             0
@@ -125,7 +145,11 @@ pub fn nlsf_decode(indices: &[i32], wb: bool) -> [i32; MAX_LPC_ORDER] {
         let v = (cb1[k] << 7) + (res_q10[k] << 14) / w_q9.max(1);
         nlsf[k] = v.clamp(0, 32767);
     }
-    let dmin: &[i32] = if wb { &NLSF_MIN_SPACING_WB } else { &NLSF_MIN_SPACING_NBMB };
+    let dmin: &[i32] = if wb {
+        &NLSF_MIN_SPACING_WB
+    } else {
+        &NLSF_MIN_SPACING_NBMB
+    };
     nlsf_stabilize(&mut nlsf[..order], dmin);
     nlsf
 }
@@ -160,7 +184,11 @@ pub fn nlsf_stabilize(nlsf: &mut [i32], dmin: &[i32]) {
             let mut max_center = 32768 - dmin[idx + 1..=l].iter().sum::<i32>();
             max_center -= dmin[idx] >> 1;
             let c = rshift_round(nlsf[idx - 1] + nlsf[idx], 1);
-            let c = if min_center > max_center { c.clamp(max_center, min_center) } else { c.clamp(min_center, max_center) };
+            let c = if min_center > max_center {
+                c.clamp(max_center, min_center)
+            } else {
+                c.clamp(min_center, max_center)
+            };
             nlsf[idx - 1] = c - (dmin[idx] >> 1);
             nlsf[idx] = nlsf[idx - 1] + dmin[idx];
         }
@@ -228,11 +256,17 @@ fn lpc_inverse_pred_gain(a_q12: &[i32]) -> i32 {
         for n in 0..(k + 1) >> 1 {
             let t1 = a[n];
             let t2 = a[k - n - 1];
-            let v1 = rshift_round64(t1.saturating_sub(mul32_frac_q31(t2, rc_q31)) as i64 * rc_mult2 as i64, mult2q as u32);
+            let v1 = rshift_round64(
+                t1.saturating_sub(mul32_frac_q31(t2, rc_q31)) as i64 * rc_mult2 as i64,
+                mult2q as u32,
+            );
             if v1 > i32::MAX as i64 || v1 < i32::MIN as i64 {
                 return 0;
             }
-            let v2 = rshift_round64(t2.saturating_sub(mul32_frac_q31(t1, rc_q31)) as i64 * rc_mult2 as i64, mult2q as u32);
+            let v2 = rshift_round64(
+                t2.saturating_sub(mul32_frac_q31(t1, rc_q31)) as i64 * rc_mult2 as i64,
+                mult2q as u32,
+            );
             if v2 > i32::MAX as i64 || v2 < i32::MIN as i64 {
                 return 0;
             }
@@ -255,7 +289,11 @@ fn lpc_inverse_pred_gain(a_q12: &[i32]) -> i32 {
 /// Converts NLSFs (Q15) to stable Q12 LPC coefficients (`silk_NLSF2A`).
 pub fn nlsf2a(nlsf: &[i32]) -> [i32; MAX_LPC_ORDER] {
     let d = nlsf.len();
-    let ordering: &[usize] = if d == 16 { &LSF_ORDER_WB } else { &LSF_ORDER_NBMB };
+    let ordering: &[usize] = if d == 16 {
+        &LSF_ORDER_WB
+    } else {
+        &LSF_ORDER_NBMB
+    };
     let mut c_q17 = [0i32; MAX_LPC_ORDER];
     for k in 0..d {
         let i = (nlsf[k] >> 8) as usize;

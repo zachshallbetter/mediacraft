@@ -2,7 +2,9 @@
 
 mod common;
 use common::*;
-use craft_prores::{ChromaFormat, DecodeOptions, Encoder, Frame, Profile, decode_frame, decode_frame_with};
+use craft_prores::{
+    ChromaFormat, DecodeOptions, Encoder, Frame, Profile, decode_frame, decode_frame_with,
+};
 
 struct Content {
     name: &'static str,
@@ -17,9 +19,21 @@ const H: u32 = 1080;
 fn contents(chroma: ChromaFormat) -> Vec<Content> {
     match chroma {
         ChromaFormat::Yuv422 => vec![
-            Content { name: "src422_testsrc2", lavfi: "testsrc2=s=1920x1080:r=25", busy: false },
-            Content { name: "src422_mandel", lavfi: "mandelbrot=s=1920x1080:r=25", busy: false },
-            Content { name: "src422_noise", lavfi: "testsrc2=s=1920x1080:r=25,noise=alls=40:allf=t", busy: true },
+            Content {
+                name: "src422_testsrc2",
+                lavfi: "testsrc2=s=1920x1080:r=25",
+                busy: false,
+            },
+            Content {
+                name: "src422_mandel",
+                lavfi: "mandelbrot=s=1920x1080:r=25",
+                busy: false,
+            },
+            Content {
+                name: "src422_noise",
+                lavfi: "testsrc2=s=1920x1080:r=25,noise=alls=40:allf=t",
+                busy: true,
+            },
         ],
         ChromaFormat::Yuv444 => vec![
             Content {
@@ -27,7 +41,11 @@ fn contents(chroma: ChromaFormat) -> Vec<Content> {
                 lavfi: "testsrc2=s=1920x1080:r=25,format=yuva444p10le,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='1023*lt(hypot(X-W/2,Y-H/2),400)'",
                 busy: false,
             },
-            Content { name: "src444a_noise", lavfi: "testsrc2=s=1920x1080:r=25,noise=alls=40:allf=t,format=yuva444p10le", busy: true },
+            Content {
+                name: "src444a_noise",
+                lavfi: "testsrc2=s=1920x1080:r=25,noise=alls=40:allf=t,format=yuva444p10le",
+                busy: true,
+            },
         ],
     }
 }
@@ -57,8 +75,19 @@ fn encoder_output_decodes_in_ffmpeg() {
             let coded: Vec<Vec<u8>> = src.iter().map(|f| enc.encode(f).unwrap()).collect();
             let target = enc.target_frame_bytes() as f64;
             let avg = coded.iter().map(|c| c.len()).sum::<usize>() as f64 / coded.len() as f64;
-            let mov = fixture_dir().join(format!("enc_{}_{}.mov", String::from_utf8_lossy(&profile.fourcc()), c.name));
-            write_mov(&mov, &profile.fourcc(), W as u16, H as u16, if alpha { 32 } else { 24 }, &coded);
+            let mov = fixture_dir().join(format!(
+                "enc_{}_{}.mov",
+                String::from_utf8_lossy(&profile.fourcc()),
+                c.name
+            ));
+            write_mov(
+                &mov,
+                &profile.fourcc(),
+                W as u16,
+                H as u16,
+                if alpha { 32 } else { 24 },
+                &coded,
+            );
             let fmt = native_fmt(chroma, alpha);
             let (ffraw, err) = ffmpeg_decode(&ff, &mov, fmt);
             if !err.trim().is_empty() {
@@ -74,9 +103,20 @@ fn encoder_output_decodes_in_ffmpeg() {
                 ffd.merge(&l);
                 ffd.merge(&cc);
                 // Quality against the 10-bit source.
-                let d10 = decode_frame_with(cf, &DecodeOptions { bit_depth: Some(10), threads: true }).unwrap();
+                let d10 = decode_frame_with(
+                    cf,
+                    &DecodeOptions {
+                        bit_depth: Some(10),
+                        threads: true,
+                    },
+                )
+                .unwrap();
                 py += psnr(&d10.y, &s.y, 1023.0) / coded.len() as f64;
-                pc += psnr(&[d10.cb.clone(), d10.cr.clone()].concat(), &[s.cb.clone(), s.cr.clone()].concat(), 1023.0) / coded.len() as f64;
+                pc += psnr(
+                    &[d10.cb.clone(), d10.cr.clone()].concat(),
+                    &[s.cb.clone(), s.cr.clone()].concat(),
+                    1023.0,
+                ) / coded.len() as f64;
                 if let (Some(a), Some(b)) = (&d10.alpha, &s.alpha) {
                     assert_eq!(a, b, "alpha is lossless");
                 }
@@ -95,10 +135,16 @@ fn encoder_output_decodes_in_ffmpeg() {
                 ffd.exact_pct()
             ));
             if ffd.max > 1 {
-                failures.push(format!("{profile:?}/{}: ffmpeg decode differs from ours by {}", c.name, ffd.max));
+                failures.push(format!(
+                    "{profile:?}/{}: ffmpeg decode differs from ours by {}",
+                    c.name, ffd.max
+                ));
             }
             if ratio > 1.15 || (c.busy && ratio < 0.85) {
-                failures.push(format!("{profile:?}/{}: frame size {avg:.0} vs target {target:.0}", c.name));
+                failures.push(format!(
+                    "{profile:?}/{}: frame size {avg:.0} vs target {target:.0}",
+                    c.name
+                ));
             }
             if profile == Profile::Hq && !c.busy && py.min(pc) < 45.0 {
                 failures.push(format!("HQ/{}: PSNR {py:.2}/{pc:.2} dB below 45", c.name));
@@ -115,16 +161,31 @@ fn encoder_output_decodes_in_ffmpeg() {
 #[test]
 fn odd_geometry_encodes() {
     let Some(ff) = ffmpeg() else { return };
-    for (profile, w, h) in [(Profile::Standard, 1918u32, 1080u32), (Profile::Proxy, 70, 38), (Profile::P4444, 333, 201)] {
+    for (profile, w, h) in [
+        (Profile::Standard, 1918u32, 1080u32),
+        (Profile::Proxy, 70, 38),
+        (Profile::P4444, 333, 201),
+    ] {
         let chroma = profile.chroma();
         let alpha = chroma == ChromaFormat::Yuv444;
         let lav = if alpha {
-            format!("mandelbrot=s={w}x{h}:r=25,format=yuva444p10le,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='mod(3*X+Y,1024)'")
+            format!(
+                "mandelbrot=s={w}x{h}:r=25,format=yuva444p10le,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='mod(3*X+Y,1024)'"
+            )
         } else {
             format!("mandelbrot=s={w}x{h}:r=25")
         };
         let name = format!("src_odd_{w}x{h}");
-        let src = source_frames(&ff, Box::leak(name.into_boxed_str()), &lav, 1, w, h, chroma, alpha);
+        let src = source_frames(
+            &ff,
+            Box::leak(name.into_boxed_str()),
+            &lav,
+            1,
+            w,
+            h,
+            chroma,
+            alpha,
+        );
         let mut enc = Encoder::new(profile, w, h);
         let coded = vec![enc.encode(&src[0]).unwrap()];
         let mov = fixture_dir().join(format!("enc_odd_{w}x{h}.mov"));

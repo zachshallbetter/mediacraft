@@ -13,10 +13,15 @@ fn main() {
     }
     let data = std::fs::read(&args[1]).expect("read input");
     // H264_BENCH_ITERS=n: decode n times without output and report the best run
-    if let Some(n) = std::env::var("H264_BENCH_ITERS").ok().and_then(|v| v.parse::<usize>().ok()) {
+    if let Some(n) = std::env::var("H264_BENCH_ITERS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+    {
         let mut best = f64::MAX;
         let mut frames = 0;
-        let threads = std::env::var("H264_THREADS").ok().and_then(|v| v.parse::<usize>().ok());
+        let threads = std::env::var("H264_THREADS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok());
         for _ in 0..n {
             let mut dec = threads.map(Decoder::with_threads).unwrap_or_default();
             dec.set_draft(std::env::var_os("H264_DRAFT").is_some());
@@ -24,10 +29,15 @@ fn main() {
             frames = dec.decode(&data, 0).expect("decode").len() + dec.flush().len();
             best = best.min(t0.elapsed().as_secs_f64());
         }
-        eprintln!("best of {n}: {frames} frames in {best:.3}s ({:.1} fps)", frames as f64 / best);
+        eprintln!(
+            "best of {n}: {frames} frames in {best:.3}s ({:.1} fps)",
+            frames as f64 / best
+        );
         return;
     }
-    let mut out = args.get(2).map(|p| std::io::BufWriter::new(std::fs::File::create(p).expect("create output")));
+    let mut out = args
+        .get(2)
+        .map(|p| std::io::BufWriter::new(std::fs::File::create(p).expect("create output")));
     let mut dec = Decoder::new();
     let t0 = std::time::Instant::now();
     let mut n = 0usize;

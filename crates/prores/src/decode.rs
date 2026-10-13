@@ -18,7 +18,10 @@ pub struct DecodeOptions {
 
 impl Default for DecodeOptions {
     fn default() -> Self {
-        DecodeOptions { bit_depth: None, threads: true }
+        DecodeOptions {
+            bit_depth: None,
+            threads: true,
+        }
     }
 }
 
@@ -50,7 +53,12 @@ impl OutConv {
         // at 10 bits; the same margin is kept at 12 bits, matching common decoders), and the
         // single lowest/highest code at 8 and 9 bits.
         let reserved = if depth >= 10 { 4 } else { 1 };
-        OutConv { scale, bias: (1u32 << (depth - 1)) as f32 + 0.5, min: reserved, max: (1i32 << depth) - 1 - reserved }
+        OutConv {
+            scale,
+            bias: (1u32 << (depth - 1)) as f32 + 0.5,
+            min: reserved,
+            max: (1i32 << depth) - 1 - reserved,
+        }
     }
     #[inline(always)]
     fn conv(&self, v: f32) -> u16 {
@@ -94,7 +102,10 @@ struct Scratch {
 
 impl Scratch {
     fn new() -> Scratch {
-        Scratch { coeffs: vec![[0f32; 64]; 32], alpha: vec![0; 16 * 128] }
+        Scratch {
+            coeffs: vec![[0f32; 64]; 32],
+            alpha: vec![0; 16 * 128],
+        }
     }
 }
 
@@ -122,7 +133,11 @@ pub fn decode_frame_into(data: &[u8], opts: &DecodeOptions, out: &mut Frame) -> 
     let cwidth = hdr.chroma.chroma_width(hdr.width as u32) as usize;
     let interlaced = hdr.interlace != Interlace::Progressive;
     let mb_width = width.div_ceil(16);
-    let mb_height = if interlaced { height.div_ceil(32) } else { height.div_ceil(16) };
+    let mb_height = if interlaced {
+        height.div_ceil(32)
+    } else {
+        height.div_ceil(16)
+    };
 
     let npics = if interlaced { 2 } else { 1 };
     let mut pics = Vec::with_capacity(npics);
@@ -166,7 +181,11 @@ pub fn decode_frame_into(data: &[u8], opts: &DecodeOptions, out: &mut Frame) -> 
         chroma444: hdr.chroma == ChromaFormat::Yuv444,
         qmat_luma: hdr.qmat_luma,
         qmat_chroma: hdr.qmat_chroma,
-        scan: if interlaced { &SCAN_INTERLACED } else { &SCAN_PROGRESSIVE },
+        scan: if interlaced {
+            &SCAN_INTERLACED
+        } else {
+            &SCAN_PROGRESSIVE
+        },
         alpha: hdr.alpha,
         conv: OutConv::new(depth),
         depth,
@@ -206,7 +225,20 @@ pub fn decode_frame_into(data: &[u8], opts: &DecodeOptions, out: &mut Frame) -> 
             for (k, &w) in widths.iter().enumerate() {
                 let si = row * widths.len() + k;
                 let (start, len) = pic.slices[si];
-                decode_slice(&ctx, &data[start..start + len], mb_x, w, band, step, pic.parity, scratch).map_err(|_| Error::Slice { picture: pi, slice: si })?;
+                decode_slice(
+                    &ctx,
+                    &data[start..start + len],
+                    mb_x,
+                    w,
+                    band,
+                    step,
+                    pic.parity,
+                    scratch,
+                )
+                .map_err(|_| Error::Slice {
+                    picture: pi,
+                    slice: si,
+                })?;
                 mb_x += w;
             }
         }
@@ -216,15 +248,24 @@ pub fn decode_frame_into(data: &[u8], opts: &DecodeOptions, out: &mut Frame) -> 
     #[cfg(feature = "threads")]
     if opts.threads {
         use rayon::prelude::*;
-        bands.par_iter_mut().enumerate().try_for_each_init(Scratch::new, |s, b| run_band(b, s))?;
+        bands
+            .par_iter_mut()
+            .enumerate()
+            .try_for_each_init(Scratch::new, |s, b| run_band(b, s))?;
     } else {
         let mut s = Scratch::new();
-        bands.iter_mut().enumerate().try_for_each(|b| run_band(b, &mut s))?;
+        bands
+            .iter_mut()
+            .enumerate()
+            .try_for_each(|b| run_band(b, &mut s))?;
     }
     #[cfg(not(feature = "threads"))]
     {
         let mut s = Scratch::new();
-        bands.iter_mut().enumerate().try_for_each(|b| run_band(b, &mut s))?;
+        bands
+            .iter_mut()
+            .enumerate()
+            .try_for_each(|b| run_band(b, &mut s))?;
     }
     drop(bands);
 
@@ -260,7 +301,16 @@ fn qfactors(qmat: &[u8; 64], qs: u32) -> [f32; 64] {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn decode_slice(ctx: &Ctx, d: &[u8], mb_x: usize, mbs: usize, band: &mut Band, step: usize, parity: usize, s: &mut Scratch) -> std::result::Result<(), ()> {
+fn decode_slice(
+    ctx: &Ctx,
+    d: &[u8],
+    mb_x: usize,
+    mbs: usize,
+    band: &mut Band,
+    step: usize,
+    parity: usize,
+    s: &mut Scratch,
+) -> std::result::Result<(), ()> {
     if d.len() < 6 {
         return Err(());
     }
@@ -273,7 +323,11 @@ fn decode_slice(ctx: &Ctx, d: &[u8], mb_x: usize, mbs: usize, band: &mut Band, s
     let ysize = be16(d, 2);
     let cbsize = be16(d, 4);
     let body = d.len() - hsize;
-    let crsize = if has_alpha { be16(d, 6) } else { body.checked_sub(ysize + cbsize).ok_or(())? };
+    let crsize = if has_alpha {
+        be16(d, 6)
+    } else {
+        body.checked_sub(ysize + cbsize).ok_or(())?
+    };
     if ysize + cbsize + crsize > body {
         return Err(());
     }
@@ -296,12 +350,26 @@ fn decode_slice(ctx: &Ctx, d: &[u8], mb_x: usize, mbs: usize, band: &mut Band, s
     for (b, blk) in s.coeffs[..nb].iter_mut().enumerate() {
         idct8x8(blk);
         let (mb, i) = (b >> 2, b & 3);
-        put_block(blk, band.y, ctx.width, x0 + mb * 16 + (i & 1) * 8, (i >> 1) * 8, band.rows, step, parity, ctx.conv);
+        put_block(
+            blk,
+            band.y,
+            ctx.width,
+            x0 + mb * 16 + (i & 1) * 8,
+            (i >> 1) * 8,
+            band.rows,
+            step,
+            parity,
+            ctx.conv,
+        );
     }
 
     // Chroma
     let qc = qfactors(&ctx.qmat_chroma, qs);
-    let (cnb, clog2) = if ctx.chroma444 { (4 * mbs, log2_mbs + 2) } else { (2 * mbs, log2_mbs + 1) };
+    let (cnb, clog2) = if ctx.chroma444 {
+        (4 * mbs, log2_mbs + 2)
+    } else {
+        (2 * mbs, log2_mbs + 1)
+    };
     for (data, plane) in [(cbdata, &mut *band.cb), (crdata, &mut *band.cr)] {
         decode_component(data, clog2, ctx.scan, &qc, &mut s.coeffs[..cnb])?;
         for (b, blk) in s.coeffs[..cnb].iter_mut().enumerate() {
@@ -314,7 +382,9 @@ fn decode_slice(ctx: &Ctx, d: &[u8], mb_x: usize, mbs: usize, band: &mut Band, s
                 let (mb, i) = (b >> 1, b & 1);
                 (mb_x * 8 + mb * 8, i * 8)
             };
-            put_block(blk, plane, ctx.cwidth, bx, by, band.rows, step, parity, ctx.conv);
+            put_block(
+                blk, plane, ctx.cwidth, bx, by, band.rows, step, parity, ctx.conv,
+            );
         }
     }
 
@@ -364,7 +434,13 @@ fn to_signed(code: u32) -> i64 {
 }
 
 /// Entropy-decode and dequantise one slice component into `blocks` (raster-order coefficients).
-fn decode_component(data: &[u8], log2_blocks: u32, scan: &[u8; 64], q: &[f32; 64], blocks: &mut [[f32; 64]]) -> std::result::Result<(), ()> {
+fn decode_component(
+    data: &[u8],
+    log2_blocks: u32,
+    scan: &[u8; 64],
+    q: &[f32; 64],
+    blocks: &mut [[f32; 64]],
+) -> std::result::Result<(), ()> {
     for b in blocks.iter_mut() {
         *b = [0f32; 64];
     }
@@ -402,7 +478,10 @@ fn decode_component(data: &[u8], log2_blocks: u32, scan: &[u8; 64], q: &[f32; 64
         if pos >= total {
             return Err(());
         }
-        let lev = r.read_cw(LEVEL_CB[lev_ctx.min(9) as usize]).ok_or(())?.saturating_add(1);
+        let lev = r
+            .read_cw(LEVEL_CB[lev_ctx.min(9) as usize])
+            .ok_or(())?
+            .saturating_add(1);
         lev_ctx = lev;
         let neg = r.read_bit();
         let i = scan[pos >> log2_blocks] as usize;
@@ -468,7 +547,17 @@ fn decode_alpha(data: &[u8], ty: AlphaType, out: &mut [u16]) -> std::result::Res
 
 #[allow(clippy::too_many_arguments)]
 #[inline]
-fn put_block(f: &[f32; 64], plane: &mut [u16], stride: usize, x0: usize, y0: usize, rows: usize, step: usize, parity: usize, conv: OutConv) {
+fn put_block(
+    f: &[f32; 64],
+    plane: &mut [u16],
+    stride: usize,
+    x0: usize,
+    y0: usize,
+    rows: usize,
+    step: usize,
+    parity: usize,
+    conv: OutConv,
+) {
     if x0 >= stride {
         return;
     }
@@ -476,7 +565,10 @@ fn put_block(f: &[f32; 64], plane: &mut [u16], stride: usize, x0: usize, y0: usi
     if xn == 8 && (y0 + 7) * step + parity < rows {
         for yy in 0..8 {
             let o = ((y0 + yy) * step + parity) * stride + x0;
-            let (Some(row), Some(src)) = (plane.get_mut(o..).and_then(|p| p.first_chunk_mut::<8>()), f.as_chunks::<8>().0.get(yy)) else {
+            let (Some(row), Some(src)) = (
+                plane.get_mut(o..).and_then(|p| p.first_chunk_mut::<8>()),
+                f.as_chunks::<8>().0.get(yy),
+            ) else {
                 return;
             };
             for x in 0..8 {

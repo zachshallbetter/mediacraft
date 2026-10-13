@@ -31,8 +31,22 @@
 //! # Ok::<(), craft_aac::Error>(())
 //! ```
 
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
-#![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::collapsible_if)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unimplemented,
+        clippy::todo,
+        clippy::unreachable
+    )
+)]
+#![allow(
+    clippy::needless_range_loop,
+    clippy::too_many_arguments,
+    clippy::collapsible_if
+)]
 
 mod config;
 mod decoder;
@@ -44,7 +58,9 @@ mod mdct;
 mod tables;
 mod tns;
 
-pub use config::{AdtsHeader, AudioSpecificConfig, ElementType, ProgramConfig, config_layout, split_adts};
+pub use config::{
+    AdtsHeader, AudioSpecificConfig, ElementType, ProgramConfig, config_layout, split_adts,
+};
 pub use decoder::Decoder;
 pub use encoder::{BitrateMode, Encoder, EncoderConfig, EncoderStats};
 pub use mdct::WindowShape;

@@ -98,9 +98,17 @@ fn write_residual(w: &mut BitWriter, residual: &Residual, r: &[i64], block: usiz
     let mut start = 0usize;
     for (p, &k) in residual.params.iter().enumerate() {
         w.write_bits(u32::from(k), if wide { 5 } else { 4 });
-        let n = if p == 0 { len.saturating_sub(order) } else { len };
+        let n = if p == 0 {
+            len.saturating_sub(order)
+        } else {
+            len
+        };
         for &v in r.get(start..start + n).unwrap_or_default() {
-            let u = if v >= 0 { (v as u64) << 1 } else { ((-v - 1) as u64) << 1 | 1 };
+            let u = if v >= 0 {
+                (v as u64) << 1
+            } else {
+                ((-v - 1) as u64) << 1 | 1
+            };
             let mut q = u >> k;
             while q >= 32 {
                 w.write_bits(0, 32);
@@ -136,14 +144,21 @@ fn write_subframe(w: &mut BitWriter, x: &[i32], sub: &Subframe, bps: u8) {
             let r = crate::predict::fixed_residual(x, o).unwrap_or_default();
             write_residual(w, residual, &r, x.len(), o);
         }
-        Subframe::Lpc { coefs, precision, shift, residual } => {
+        Subframe::Lpc {
+            coefs,
+            precision,
+            shift,
+            residual,
+        } => {
             let o = coefs.len();
             w.write_bits(0b100000 | (o as u32 - 1), 6);
             w.write_bit(false);
             x.iter().take(o).for_each(|&v| sample(w, v));
             w.write_bits(u32::from(*precision) - 1, 4);
             w.write_bits(u32::from(*shift), 5);
-            coefs.iter().for_each(|&c| w.write_bits(c as u32, u32::from(*precision)));
+            coefs
+                .iter()
+                .for_each(|&c| w.write_bits(c as u32, u32::from(*precision)));
             let r = crate::predict::lpc_residual(x, coefs, *shift).unwrap_or_default();
             write_residual(w, residual, &r, x.len(), o);
         }
@@ -160,7 +175,12 @@ pub fn write(spec: &FrameSpec) -> Vec<u8> {
         Some(Stereo::MidSide) => 10,
         _ => spec.channels.len().saturating_sub(1) as u8,
     };
-    let mut h = vec![0xFF, 0xF8, bs_code << 4 | sample_rate_code(spec.sample_rate), channel_code << 4 | sample_size_code(spec.bps) << 1];
+    let mut h = vec![
+        0xFF,
+        0xF8,
+        bs_code << 4 | sample_rate_code(spec.sample_rate),
+        channel_code << 4 | sample_size_code(spec.bps) << 1,
+    ];
     coded_number(spec.number, &mut h);
     if let Some((v, n)) = bs_extra {
         if n == 8 {
@@ -200,6 +220,9 @@ mod tests {
         assert_eq!(code(0xFFFF), [0xEF, 0xBF, 0xBF]);
         assert_eq!(code(0x1_0000), [0xF0, 0x90, 0x80, 0x80]);
         assert_eq!(code(0x7FFF_FFFF), [0xFD, 0xBF, 0xBF, 0xBF, 0xBF, 0xBF]);
-        assert_eq!(code(0xF_FFFF_FFFF), [0xFE, 0xBF, 0xBF, 0xBF, 0xBF, 0xBF, 0xBF]);
+        assert_eq!(
+            code(0xF_FFFF_FFFF),
+            [0xFE, 0xBF, 0xBF, 0xBF, 0xBF, 0xBF, 0xBF]
+        );
     }
 }

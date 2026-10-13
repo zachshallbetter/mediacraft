@@ -211,7 +211,13 @@ struct Enc {
 impl Enc {
     fn new(qp: i32, init: usize) -> Self {
         let c = Cabac::new(&[0, 0, 0, 0], 0, qp, init).unwrap();
-        Enc { low: 0, range: 510, outstanding: 0, first: true, ctx: c.ctx }
+        Enc {
+            low: 0,
+            range: 510,
+            outstanding: 0,
+            first: true,
+            ctx: c.ctx,
+        }
     }
     fn init(&mut self) {
         self.low = 0;
@@ -316,7 +322,8 @@ fn slice_nal(p: &Pic, cabac: bool) -> Vec<u8> {
             let a = if x > 0 { Some(i - 1) } else { None };
             let b = if y > 0 { Some(i - MB_W) } else { None };
             if p.inter() {
-                let inc = a.map(|n| !skip(n) as usize).unwrap_or(0) + b.map(|n| !skip(n) as usize).unwrap_or(0);
+                let inc = a.map(|n| !skip(n) as usize).unwrap_or(0)
+                    + b.map(|n| !skip(n) as usize).unwrap_or(0);
                 e.encode(&mut w, if p.b { 24 } else { 11 } + inc, skip(i) as u32);
             }
             if let Some(s) = mb {
@@ -350,7 +357,10 @@ fn random_mb(seed: &mut u32) -> Vec<u8> {
 }
 
 /// Expected cropped planes of a picture made of PCM blocks (`None` = copy from `reference`).
-fn render(mbs: &[Option<Vec<u8>>], reference: Option<&(Vec<u8>, Vec<u8>, Vec<u8>)>) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+fn render(
+    mbs: &[Option<Vec<u8>>],
+    reference: Option<&(Vec<u8>, Vec<u8>, Vec<u8>)>,
+) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let (w, h) = (MB_W * 16, MB_H * 16);
     let (mut y, mut u, mut v) = match reference {
         Some(r) => r.clone(),
@@ -376,33 +386,95 @@ fn build_and_check(cabac: bool, threads: usize) {
     let pcm_pic = |seed: &mut u32| (0..NMB).map(|_| Some(random_mb(seed))).collect::<Vec<_>>();
     let a = pcm_pic(&mut seed);
     let b = pcm_pic(&mut seed);
-    let mixed: Vec<Option<Vec<u8>>> = (0..NMB).map(|i| if i % 3 == 1 { Some(random_mb(&mut seed)) } else { None }).collect();
+    let mixed: Vec<Option<Vec<u8>>> = (0..NMB)
+        .map(|i| {
+            if i % 3 == 1 {
+                Some(random_mb(&mut seed))
+            } else {
+                None
+            }
+        })
+        .collect();
     let skip = vec![None; NMB];
     let pics = vec![
         // 0: IDR, all PCM, marked long-term (LongTermFrameIdx 0)
-        Pic { idr: true, frame_num: 0, ref_idc: 3, long_term_ref: true, mbs: a.clone(), ..Default::default() },
+        Pic {
+            idr: true,
+            frame_num: 0,
+            ref_idc: 3,
+            long_term_ref: true,
+            mbs: a.clone(),
+            ..Default::default()
+        },
         // 1: all PCM, short-term
-        Pic { frame_num: 1, ref_idc: 2, mbs: b.clone(), ..Default::default() },
+        Pic {
+            frame_num: 1,
+            ref_idc: 2,
+            mbs: b.clone(),
+            ..Default::default()
+        },
         // 2: P_Skip from the long-term picture via modification idc 2 (default list would use pic 1)
-        Pic { frame_num: 2, ref_idc: 2, mods: vec![(2, 0)], mbs: skip.clone(), ..Default::default() },
+        Pic {
+            frame_num: 2,
+            ref_idc: 2,
+            mods: vec![(2, 0)],
+            mbs: skip.clone(),
+            ..Default::default()
+        },
         // 3: frame_num gap (3, 4 missing); P_Skip from pic 2 (PicNum 2) via idc 0: 5 - (2 + 1) = 2
-        Pic { frame_num: 5, ref_idc: 2, mods: vec![(0, 2)], mbs: skip.clone(), ..Default::default() },
+        Pic {
+            frame_num: 5,
+            ref_idc: 2,
+            mods: vec![(0, 2)],
+            mbs: skip.clone(),
+            ..Default::default()
+        },
         // 4: mixed PCM / P_Skip from pic 1 (PicNum 1: 6 - 5); MMCO 4 raises MaxLongTermFrameIdx to 2,
         //    MMCO 2 drops long-term 0, MMCO 3 makes pic 1 (difference 6 - 1 - 1 = 4) long-term index 1
-        Pic { frame_num: 6, ref_idc: 2, mods: vec![(0, 4)], mmcos: vec![(4, 3, 0), (2, 0, 0), (3, 4, 1)], mbs: mixed.clone(), ..Default::default() },
+        Pic {
+            frame_num: 6,
+            ref_idc: 2,
+            mods: vec![(0, 4)],
+            mmcos: vec![(4, 3, 0), (2, 0, 0), (3, 4, 1)],
+            mbs: mixed.clone(),
+            ..Default::default()
+        },
         // 5: non-reference P_Skip from long-term index 1 (= pic 1)
-        Pic { frame_num: 7, ref_idc: 0, mods: vec![(2, 1)], mbs: skip.clone(), ..Default::default() },
+        Pic {
+            frame_num: 7,
+            ref_idc: 0,
+            mods: vec![(2, 1)],
+            mbs: skip.clone(),
+            ..Default::default()
+        },
         // 6: P_Skip with the default list: short-term by descending PicNum -> pic 4 first
-        Pic { frame_num: 7, ref_idc: 2, mmcos: vec![(1, 0, 0), (6, 0, 2)], mbs: skip.clone(), ..Default::default() },
+        Pic {
+            frame_num: 7,
+            ref_idc: 2,
+            mmcos: vec![(1, 0, 0), (6, 0, 2)],
+            mbs: skip.clone(),
+            ..Default::default()
+        },
         // 7: MMCO 5 picture made of PCM, then 8: P_Skip referencing it (only reference left)
-        Pic { frame_num: 8, ref_idc: 2, mmcos: vec![(5, 0, 0)], mbs: pcm_pic(&mut seed), ..Default::default() },
+        Pic {
+            frame_num: 8,
+            ref_idc: 2,
+            mmcos: vec![(5, 0, 0)],
+            mbs: pcm_pic(&mut seed),
+            ..Default::default()
+        },
     ];
     let mut stream = sps(if cabac { 77 } else { 66 }, 8, true, PocType::T2);
     stream.extend(pps(cabac, false));
     for p in &pics {
         stream.extend(slice_nal(p, cabac));
     }
-    let after5 = Pic { frame_num: 1, ref_idc: 2, mbs: skip.clone(), ..Default::default() };
+    let after5 = Pic {
+        frame_num: 1,
+        ref_idc: 2,
+        mbs: skip.clone(),
+        ..Default::default()
+    };
     stream.extend(slice_nal(&after5, cabac));
 
     // expected output
@@ -418,7 +490,11 @@ fn build_and_check(cabac: bool, threads: usize) {
     let expected = [pa, pb, p2, p3, p4, p5, p6, p7, p8];
 
     if threads == 1 {
-        cross_check_ffmpeg(&stream, &expected, if cabac { "synth_cabac" } else { "synth_cavlc" });
+        cross_check_ffmpeg(
+            &stream,
+            &expected,
+            if cabac { "synth_cabac" } else { "synth_cavlc" },
+        );
     }
     let mut dec = Decoder::with_threads(threads);
     let mut out = dec.decode(&stream, 0).unwrap();
@@ -426,17 +502,30 @@ fn build_and_check(cabac: bool, threads: usize) {
     assert!(dec.take_error().is_none());
     assert_eq!(out.len(), expected.len(), "cabac={cabac}");
     for (i, (p, e)) in out.iter().zip(expected.iter()).enumerate() {
-        assert_eq!((p.width as usize, p.height as usize), (MB_W * 16, MB_H * 16));
-        assert!(p.y == e.0 && p.u == e.1 && p.v == e.2, "picture {i} differs (cabac={cabac}, threads={threads})");
+        assert_eq!(
+            (p.width as usize, p.height as usize),
+            (MB_W * 16, MB_H * 16)
+        );
+        assert!(
+            p.y == e.0 && p.u == e.1 && p.v == e.2,
+            "picture {i} differs (cabac={cabac}, threads={threads})"
+        );
     }
     let s = dec.stats();
-    assert!(s.mb_pcm > 0 && s.frame_num_gaps == 1 && s.long_term_marks >= 3, "{s:?}");
+    assert!(
+        s.mb_pcm > 0 && s.frame_num_gaps == 1 && s.long_term_marks >= 3,
+        "{s:?}"
+    );
 }
 
 type Planes3 = (Vec<u8>, Vec<u8>, Vec<u8>);
 
 fn find_ffmpeg() -> Option<std::path::PathBuf> {
-    for p in &["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"] {
+    for p in &[
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+    ] {
         let pb = std::path::PathBuf::from(p);
         if pb.is_file() {
             return Some(pb);
@@ -464,7 +553,14 @@ fn cross_check_ffmpeg(stream: &[u8], expected: &[Planes3], name: &str) {
     let ok = std::process::Command::new(&ff)
         .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(&src)
-        .args(["-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p"])
+        .args([
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+        ])
         .arg(&dst)
         .status()
         .map(|s| s.success())
@@ -473,8 +569,16 @@ fn cross_check_ffmpeg(stream: &[u8], expected: &[Planes3], name: &str) {
     let got = std::fs::read(&dst).unwrap();
     let _ = std::fs::remove_file(&src);
     let _ = std::fs::remove_file(&dst);
-    let want: Vec<u8> = expected.iter().flat_map(|(y, u, v)| y.iter().chain(u).chain(v).copied()).collect();
-    assert!(got == want, "ffmpeg output differs from the expected output of {name} ({} vs {} bytes)", got.len(), want.len());
+    let want: Vec<u8> = expected
+        .iter()
+        .flat_map(|(y, u, v)| y.iter().chain(u).chain(v).copied())
+        .collect();
+    assert!(
+        got == want,
+        "ffmpeg output differs from the expected output of {name} ({} vs {} bytes)",
+        got.len(),
+        want.len()
+    );
 }
 
 #[test]
@@ -498,10 +602,39 @@ fn weighted_check(cabac: bool, threads: usize) {
     let wb = [[(40, -2), (4, 1), (9, -3)], [(30, 7), (6, 0), (2, 4)]];
     // decoding order: I (POC 0), P (POC 8), B (POC 4, both refs), non-reference weighted P_Skip (POC 12)
     let pics = [
-        Pic { idr: true, frame_num: 0, ref_idc: 3, poc_lsb: Some(0), mbs: a.clone(), ..Default::default() },
-        Pic { frame_num: 1, ref_idc: 2, poc_lsb: Some(8), mbs: b.clone(), wt: Some(wp), ..Default::default() },
-        Pic { frame_num: 2, ref_idc: 0, poc_lsb: Some(4), b: true, mbs: skip.clone(), wt: Some(wb), ..Default::default() },
-        Pic { frame_num: 2, ref_idc: 0, poc_lsb: Some(12), mbs: skip.clone(), wt: Some(wp), ..Default::default() },
+        Pic {
+            idr: true,
+            frame_num: 0,
+            ref_idc: 3,
+            poc_lsb: Some(0),
+            mbs: a.clone(),
+            ..Default::default()
+        },
+        Pic {
+            frame_num: 1,
+            ref_idc: 2,
+            poc_lsb: Some(8),
+            mbs: b.clone(),
+            wt: Some(wp),
+            ..Default::default()
+        },
+        Pic {
+            frame_num: 2,
+            ref_idc: 0,
+            poc_lsb: Some(4),
+            b: true,
+            mbs: skip.clone(),
+            wt: Some(wb),
+            ..Default::default()
+        },
+        Pic {
+            frame_num: 2,
+            ref_idc: 0,
+            poc_lsb: Some(12),
+            mbs: skip.clone(),
+            wt: Some(wp),
+            ..Default::default()
+        },
     ];
     let mut stream = sps(77, 2, false, PocType::T0);
     stream.extend(pps(cabac, true));
@@ -515,18 +648,37 @@ fn weighted_check(cabac: bool, threads: usize) {
         let (w0, o0) = wb[0][c];
         let (w1, o1) = wb[1][c];
         let d = if c == 0 { 5 } else { 3 };
-        x.iter().zip(y).map(|(&p, &q)| clip(((p as i32 * w0 + q as i32 * w1 + (1 << d)) >> (d + 1)) + ((o0 + o1 + 1) >> 1))).collect()
+        x.iter()
+            .zip(y)
+            .map(|(&p, &q)| {
+                clip(((p as i32 * w0 + q as i32 * w1 + (1 << d)) >> (d + 1)) + ((o0 + o1 + 1) >> 1))
+            })
+            .collect()
     };
     let single = |x: &[u8], c: usize| -> Vec<u8> {
         let (w, o) = wp[0][c];
         let d = if c == 0 { 5 } else { 3 };
-        x.iter().map(|&p| clip(((p as i32 * w + (1 << (d - 1))) >> d) + o)).collect()
+        x.iter()
+            .map(|&p| clip(((p as i32 * w + (1 << (d - 1))) >> d) + o))
+            .collect()
     };
-    let pbi = (mix(&pa.0, &pb.0, 0), mix(&pa.1, &pb.1, 1), mix(&pa.2, &pb.2, 2));
+    let pbi = (
+        mix(&pa.0, &pb.0, 0),
+        mix(&pa.1, &pb.1, 1),
+        mix(&pa.2, &pb.2, 2),
+    );
     let pp = (single(&pb.0, 0), single(&pb.1, 1), single(&pb.2, 2));
     let expected = [pa, pbi, pb, pp];
     if threads == 1 {
-        cross_check_ffmpeg(&stream, &expected, if cabac { "synth_wp_cabac" } else { "synth_wp_cavlc" });
+        cross_check_ffmpeg(
+            &stream,
+            &expected,
+            if cabac {
+                "synth_wp_cabac"
+            } else {
+                "synth_wp_cavlc"
+            },
+        );
     }
     let mut dec = Decoder::with_threads(threads);
     let mut out = dec.decode(&stream, 0).unwrap();
@@ -534,7 +686,10 @@ fn weighted_check(cabac: bool, threads: usize) {
     assert!(dec.take_error().is_none());
     assert_eq!(out.len(), 4);
     for (i, (p, e)) in out.iter().zip(expected.iter()).enumerate() {
-        assert!(p.y == e.0 && p.u == e.1 && p.v == e.2, "picture {i} differs (cabac={cabac}, threads={threads})");
+        assert!(
+            p.y == e.0 && p.u == e.1 && p.v == e.2,
+            "picture {i} differs (cabac={cabac}, threads={threads})"
+        );
     }
 }
 
@@ -551,13 +706,22 @@ fn explicit_weighted_prediction_p_and_b_skip() {
 fn poc_type1_reordering() {
     for cabac in [false, true] {
         let mut seed = 5u32;
-        let contents: Vec<Vec<Option<Vec<u8>>>> = (0..5).map(|_| (0..NMB).map(|_| Some(random_mb(&mut seed))).collect()).collect();
+        let contents: Vec<Vec<Option<Vec<u8>>>> = (0..5)
+            .map(|_| (0..NMB).map(|_| Some(random_mb(&mut seed))).collect())
+            .collect();
         // (frame_num, ref_idc): POCs 0, 4, 1, 8, 5
         let spec = [(0, 3), (1, 2), (2, 0), (2, 2), (3, 0)];
         let mut stream = sps(77, 2, false, PocType::T1);
         stream.extend(pps(cabac, false));
         for (i, &(frame_num, ref_idc)) in spec.iter().enumerate() {
-            let p = Pic { idr: i == 0, frame_num, ref_idc, poc_delta: Some(0), mbs: contents[i].clone(), ..Default::default() };
+            let p = Pic {
+                idr: i == 0,
+                frame_num,
+                ref_idc,
+                poc_delta: Some(0),
+                mbs: contents[i].clone(),
+                ..Default::default()
+            };
             stream.extend(slice_nal(&p, cabac));
         }
         let expected_order = [0usize, 2, 1, 4, 3];
@@ -570,7 +734,10 @@ fn poc_type1_reordering() {
             for (k, p) in out.iter().enumerate() {
                 let e = render(&contents[expected_order[k]], None);
                 assert_eq!(p.poc, expected_poc[k]);
-                assert!(p.y == e.0 && p.u == e.1 && p.v == e.2, "output {k} (cabac={cabac})");
+                assert!(
+                    p.y == e.0 && p.u == e.1 && p.v == e.2,
+                    "output {k} (cabac={cabac})"
+                );
             }
         }
     }

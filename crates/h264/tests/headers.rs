@@ -2,9 +2,9 @@
 
 mod common;
 
-use mediacraft_bitstream::{annexb_nals, unescape_rbsp};
 use craft_h264::params::{Pps, Sps};
 use craft_h264::slice::{NalHeader, PocState, SliceHeader, nal_type};
+use mediacraft_bitstream::{annexb_nals, unescape_rbsp};
 
 /// Parse every NAL of a fixture; returns (sps, number of pictures, pocs in decoding order).
 fn parse_stream(name: &str) -> Option<(Sps, usize, Vec<i32>)> {
@@ -61,7 +61,9 @@ fn parse_stream(name: &str) -> Option<(Sps, usize, Vec<i32>)> {
 
 #[test]
 fn baseline_headers() {
-    let Some((sps, pictures, pocs)) = parse_stream("baseline_qcif") else { return };
+    let Some((sps, pictures, pocs)) = parse_stream("baseline_qcif") else {
+        return;
+    };
     assert_eq!(sps.profile_idc, 66);
     assert_eq!((sps.width(), sps.height()), (176, 144));
     assert_eq!(pictures, 30);
@@ -73,7 +75,9 @@ fn baseline_headers() {
 
 #[test]
 fn cropped_high_profile_headers() {
-    let Some((sps, pictures, _)) = parse_stream("crop_1918x1078") else { return };
+    let Some((sps, pictures, _)) = parse_stream("crop_1918x1078") else {
+        return;
+    };
     assert_eq!(sps.profile_idc, 100);
     assert_eq!(sps.chroma_format_idc, 1);
     assert_eq!(sps.crop_rect(), (0, 0, 1918, 1078));
@@ -84,7 +88,9 @@ fn cropped_high_profile_headers() {
 
 #[test]
 fn b_frame_pocs_are_a_permutation() {
-    let Some((_, pictures, pocs)) = parse_stream("bpyramid") else { return };
+    let Some((_, pictures, pocs)) = parse_stream("bpyramid") else {
+        return;
+    };
     assert_eq!(pictures, 30);
     let mut sorted = pocs.clone();
     sorted.sort();
@@ -96,7 +102,9 @@ fn b_frame_pocs_are_a_permutation() {
 
 #[test]
 fn custom_scaling_matrices_parsed() {
-    let Some(f) = common::ensure(common::fixture("cqm_jvt")) else { return };
+    let Some(f) = common::ensure(common::fixture("cqm_jvt")) else {
+        return;
+    };
     let data = std::fs::read(f.0).unwrap();
     let mut spss: Vec<Option<Sps>> = vec![None; 32];
     let mut found = false;

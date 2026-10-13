@@ -129,7 +129,11 @@ impl<'a> RangeDecoder<'a> {
         let ext = self.rng / ft;
         let s = ext * (ft - fh);
         self.val = self.val.wrapping_sub(s);
-        self.rng = if fl > 0 { ext * (fh - fl) } else { self.rng - s };
+        self.rng = if fl > 0 {
+            ext * (fh - fl)
+        } else {
+            self.rng - s
+        };
         self.normalize();
     }
 
@@ -140,7 +144,11 @@ impl<'a> RangeDecoder<'a> {
         let ft = 1u32 << bits;
         let s = ext * (ft - fh);
         self.val = self.val.wrapping_sub(s);
-        self.rng = if fl > 0 { ext * (fh - fl) } else { self.rng - s };
+        self.rng = if fl > 0 {
+            ext * (fh - fl)
+        } else {
+            self.rng - s
+        };
         self.normalize();
     }
 
@@ -280,7 +288,17 @@ pub(crate) mod enc {
 
     impl RangeEncoder {
         pub fn new(size: usize) -> Self {
-            RangeEncoder { out: Vec::new(), end: Vec::new(), end_window: 0, nend_bits: 0, rng: CODE_TOP, low: 0, rem: -1, ext: 0, size }
+            RangeEncoder {
+                out: Vec::new(),
+                end: Vec::new(),
+                end_window: 0,
+                nend_bits: 0,
+                rng: CODE_TOP,
+                low: 0,
+                rem: -1,
+                ext: 0,
+                size,
+            }
         }
         fn carry_out(&mut self, c: u32) {
             if c != SYM_MAX {
@@ -392,7 +410,10 @@ pub(crate) mod enc {
                 window >>= SYM_BITS;
                 used -= SYM_BITS as i32;
             }
-            assert!(self.out.len() + self.end.len() <= self.size, "range encoder overflow");
+            assert!(
+                self.out.len() + self.end.len() <= self.size,
+                "range encoder overflow"
+            );
             let mut buf = self.out;
             buf.resize(self.size - self.end.len(), 0);
             for &b in self.end.iter().rev() {

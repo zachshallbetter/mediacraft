@@ -27,7 +27,11 @@ pub struct WriterOptions {
 
 impl WriterOptions {
     pub fn new(brand: Brand) -> Self {
-        WriterOptions { brand, movie_timescale: 1000, metadata: Vec::new() }
+        WriterOptions {
+            brand,
+            movie_timescale: 1000,
+            metadata: Vec::new(),
+        }
     }
 }
 
@@ -50,7 +54,14 @@ pub struct TrackConfig {
 
 impl TrackConfig {
     pub fn new(entry: SampleEntry, timescale: u32) -> Self {
-        TrackConfig { entry, timescale, language: "und".into(), edits: Vec::new(), media_start: None, handler_name: None }
+        TrackConfig {
+            entry,
+            timescale,
+            language: "und".into(),
+            edits: Vec::new(),
+            media_start: None,
+            handler_name: None,
+        }
     }
 }
 
@@ -107,7 +118,10 @@ struct Tables {
 
 impl Tables {
     fn new() -> Self {
-        Tables { all_sync: true, ..Default::default() }
+        Tables {
+            all_sync: true,
+            ..Default::default()
+        }
     }
     fn push_run<T: PartialEq + Copy>(runs: &mut Vec<(u32, T)>, count: u32, v: T) {
         if let Some(last) = runs.last_mut()
@@ -171,7 +185,11 @@ fn write_ftyp(b: &mut BoxBuf, brand: Brand) {
 }
 
 fn movie_duration(tracks: &[WTrack], movie_ts: u32) -> u64 {
-    tracks.iter().map(|t| presentation_duration(t, movie_ts)).max().unwrap_or(0)
+    tracks
+        .iter()
+        .map(|t| presentation_duration(t, movie_ts))
+        .max()
+        .unwrap_or(0)
 }
 
 fn effective_edits(t: &WTrack, movie_ts: u32) -> Vec<Edit> {
@@ -181,15 +199,26 @@ fn effective_edits(t: &WTrack, movie_ts: u32) -> Vec<Edit> {
     if let Some(start) = t.cfg.media_start {
         // presentation runs from `start` to the end of the last sample in composition order (with
         // B-frame reordering that is past the end of the decode timeline)
-        let rest = t.t.comp_end.max(t.t.media_duration).saturating_sub(start.max(0) as u64);
-        return vec![Edit { segment_duration: rescale(rest, t.cfg.timescale, movie_ts), media_time: start, media_rate: 0x10000 }];
+        let rest =
+            t.t.comp_end
+                .max(t.t.media_duration)
+                .saturating_sub(start.max(0) as u64);
+        return vec![Edit {
+            segment_duration: rescale(rest, t.cfg.timescale, movie_ts),
+            media_time: start,
+            media_rate: 0x10000,
+        }];
     }
     Vec::new()
 }
 
 fn presentation_duration(t: &WTrack, movie_ts: u32) -> u64 {
     let e = effective_edits(t, movie_ts);
-    if e.is_empty() { rescale(t.t.media_duration, t.cfg.timescale, movie_ts) } else { e.iter().map(|e| e.segment_duration).sum() }
+    if e.is_empty() {
+        rescale(t.t.media_duration, t.cfg.timescale, movie_ts)
+    } else {
+        e.iter().map(|e| e.segment_duration).sum()
+    }
 }
 
 fn write_mvhd(b: &mut BoxBuf, timescale: u32, duration: u64, next_id: u32) {
@@ -217,7 +246,14 @@ fn write_mvhd(b: &mut BoxBuf, timescale: u32, duration: u64, next_id: u32) {
     b.end(m);
 }
 
-fn write_trak(b: &mut BoxBuf, t: &WTrack, movie_ts: u32, qt: bool, shift: u64, force_co64: bool) -> Result<()> {
+fn write_trak(
+    b: &mut BoxBuf,
+    t: &WTrack,
+    movie_ts: u32,
+    qt: bool,
+    shift: u64,
+    force_co64: bool,
+) -> Result<()> {
     let trak = b.start(b"trak");
     let dur = presentation_duration(t, movie_ts);
     let v1 = dur > u32::MAX as u64;
@@ -238,7 +274,11 @@ fn write_trak(b: &mut BoxBuf, t: &WTrack, movie_ts: u32, qt: bool, shift: u64, f
     b.zeros(8);
     b.i16(0);
     b.u16(0);
-    b.i16(if t.handler == Handler::Audio { 0x100 } else { 0 });
+    b.i16(if t.handler == Handler::Audio {
+        0x100
+    } else {
+        0
+    });
     b.u16(0);
     for v in MATRIX {
         b.i32(v);
@@ -246,7 +286,9 @@ fn write_trak(b: &mut BoxBuf, t: &WTrack, movie_ts: u32, qt: bool, shift: u64, f
     let (w, h) = match &t.cfg.entry.video {
         Some(v) => {
             let w = match v.pixel_aspect {
-                Some((hs, vs)) if hs > 0 && vs > 0 => (v.width as u64 * hs as u64 / vs as u64) as u32,
+                Some((hs, vs)) if hs > 0 && vs > 0 => {
+                    (v.width as u64 * hs as u64 / vs as u64) as u32
+                }
                 _ => v.width as u32,
             };
             (w, v.height as u32)
@@ -259,7 +301,11 @@ fn write_trak(b: &mut BoxBuf, t: &WTrack, movie_ts: u32, qt: bool, shift: u64, f
     let edits = effective_edits(t, movie_ts);
     if !edits.is_empty() {
         let e = b.start(b"edts");
-        let v1 = edits.iter().any(|e| e.segment_duration > u32::MAX as u64 || e.media_time > i32::MAX as i64 || e.media_time < i32::MIN as i64);
+        let v1 = edits.iter().any(|e| {
+            e.segment_duration > u32::MAX as u64
+                || e.media_time > i32::MAX as i64
+                || e.media_time < i32::MIN as i64
+        });
         let l = b.start_full(b"elst", v1 as u8, 0);
         b.u32(edits.len() as u32);
         for ed in &edits {
@@ -305,7 +351,11 @@ fn write_trak(b: &mut BoxBuf, t: &WTrack, movie_ts: u32, qt: bool, shift: u64, f
         Handler::Timecode => (b"tmcd", "TimeCodeHandler"),
         Handler::Other => (b"meta", "MetaHandler"),
     };
-    let name = t.cfg.handler_name.clone().unwrap_or_else(|| default_name.into());
+    let name = t
+        .cfg
+        .handler_name
+        .clone()
+        .unwrap_or_else(|| default_name.into());
     let m = b.start_full(b"hdlr", 0, 0);
     b.bytes(if qt { b"mhlr" } else { &[0, 0, 0, 0] });
     b.bytes(htype);
@@ -496,7 +546,9 @@ fn validate_track(cfg: &TrackConfig) -> Result<Option<u32>> {
             return Err(Error::Mux("PCM needs bits and channels".into()));
         }
         if (p.sample_rate - cfg.timescale as f64).abs() > 0.5 {
-            return Err(Error::Mux("PCM track timescale must equal the sample rate".into()));
+            return Err(Error::Mux(
+                "PCM track timescale must equal the sample rate".into(),
+            ));
         }
         return Ok(Some(p.bytes_per_frame()));
     }
@@ -523,12 +575,27 @@ impl<W: Write + Seek> Mp4Writer<W> {
         let mut b = BoxBuf::new();
         write_ftyp(&mut b, opts.brand);
         let pad_pos = start + b.len() as u64;
-        b.leaf(if opts.brand == Brand::Mov { b"wide" } else { b"free" }, &[]);
+        b.leaf(
+            if opts.brand == Brand::Mov {
+                b"wide"
+            } else {
+                b"free"
+            },
+            &[],
+        );
         let mdat_pos = start + b.len() as u64;
         b.leaf(b"mdat", &[]);
         w.write_all(&b.buf)?;
         let pos = start + b.len() as u64;
-        Ok(Mp4Writer { w, opts, tracks: Vec::new(), pad_pos, mdat_pos, pos, last_track: None })
+        Ok(Mp4Writer {
+            w,
+            opts,
+            tracks: Vec::new(),
+            pad_pos,
+            mdat_pos,
+            pos,
+            last_track: None,
+        })
     }
 
     /// Add a track; returns its index (track ids are index + 1).
@@ -537,26 +604,44 @@ impl<W: Write + Seek> Mp4Writer<W> {
         let handler = handler_of(&cfg.entry);
         let mut t = Tables::new();
         t.const_size = pcm;
-        self.tracks.push(WTrack { id: self.tracks.len() as u32 + 1, handler, pcm_frame_bytes: pcm, t, cfg, tmcd_ref: None, tmcd_source: None });
+        self.tracks.push(WTrack {
+            id: self.tracks.len() as u32 + 1,
+            handler,
+            pcm_frame_bytes: pcm,
+            t,
+            cfg,
+            tmcd_ref: None,
+            tmcd_source: None,
+        });
         Ok(self.tracks.len() - 1)
     }
 
     /// Replace a track's sample entry before the file is finished (the `moov` is written last), for
     /// codecs whose configuration is only complete at the end, like the FLAC STREAMINFO in `dfLa`.
     pub fn set_sample_entry(&mut self, track: usize, entry: SampleEntry) -> Result<()> {
-        let t = self.tracks.get_mut(track).ok_or_else(|| Error::Invalid(format!("no track {track}")))?;
+        let t = self
+            .tracks
+            .get_mut(track)
+            .ok_or_else(|| Error::Invalid(format!("no track {track}")))?;
         t.cfg.entry = entry;
         Ok(())
     }
 
     /// Add a QuickTime timecode track referenced by `video_track`. Its single sample (the start
     /// frame number) is written at finish, spanning the video track's duration.
-    pub fn add_timecode_track(&mut self, video_track: usize, tc: TimecodeConfig, start_frame: u32) -> Result<usize> {
+    pub fn add_timecode_track(
+        &mut self,
+        video_track: usize,
+        tc: TimecodeConfig,
+        start_frame: u32,
+    ) -> Result<usize> {
         if video_track >= self.tracks.len() {
             return Err(Error::NoSuchTrack(video_track));
         }
         if tc.timescale == 0 || tc.frame_duration == 0 || tc.frames_per_second == 0 {
-            return Err(Error::Mux("timecode needs timescale, frame duration and fps".into()));
+            return Err(Error::Mux(
+                "timecode needs timescale, frame duration and fps".into(),
+            ));
         }
         let entry = SampleEntry {
             format: crate::bytes::FourCc(*b"tmcd"),
@@ -578,12 +663,16 @@ impl<W: Write + Seek> Mp4Writer<W> {
     pub fn write_sample(&mut self, track: usize, s: WriteSample) -> Result<()> {
         let tr = self.tracks.get(track).ok_or(Error::NoSuchTrack(track))?;
         if tr.tmcd_source.is_some() {
-            return Err(Error::Mux("timecode track samples are written automatically".into()));
+            return Err(Error::Mux(
+                "timecode track samples are written automatically".into(),
+            ));
         }
         let (count, dur) = match tr.pcm_frame_bytes {
             Some(fb) => {
                 if !s.data.len().is_multiple_of(fb as usize) {
-                    return Err(Error::Mux("PCM data is not a whole number of frames".into()));
+                    return Err(Error::Mux(
+                        "PCM data is not a whole number of frames".into(),
+                    ));
                 }
                 ((s.data.len() / fb as usize) as u32, 1u32)
             }
@@ -605,7 +694,15 @@ impl<W: Write + Seek> Mp4Writer<W> {
         let tr = &mut self.tracks[track];
         let t = &mut tr.t;
         Tables::push_run(&mut t.stts, count, dur);
-        Tables::push_run(&mut t.ctts, count, if tr.pcm_frame_bytes.is_some() { 0 } else { s.composition_offset });
+        Tables::push_run(
+            &mut t.ctts,
+            count,
+            if tr.pcm_frame_bytes.is_some() {
+                0
+            } else {
+                s.composition_offset
+            },
+        );
         if tr.pcm_frame_bytes.is_none() {
             t.sizes.push(s.data.len() as u32);
             if s.is_sync {
@@ -615,8 +712,14 @@ impl<W: Write + Seek> Mp4Writer<W> {
             }
         }
         t.sample_count += count as u64;
-        let ct = if tr.pcm_frame_bytes.is_some() { 0 } else { s.composition_offset as i64 };
-        t.comp_end = t.comp_end.max((t.media_duration as i64 + ct + count as i64 * dur as i64).max(0) as u64);
+        let ct = if tr.pcm_frame_bytes.is_some() {
+            0
+        } else {
+            s.composition_offset as i64
+        };
+        t.comp_end = t
+            .comp_end
+            .max((t.media_duration as i64 + ct + count as i64 * dur as i64).max(0) as u64);
         t.media_duration += count as u64 * dur as u64;
         match t.chunks.last_mut() {
             Some(c) if contiguous => c.1 += count,
@@ -628,7 +731,9 @@ impl<W: Write + Seek> Mp4Writer<W> {
     fn finish_mdat(&mut self) -> Result<()> {
         // Timecode samples.
         for i in 0..self.tracks.len() {
-            let Some((vi, start)) = self.tracks[i].tmcd_source else { continue };
+            let Some((vi, start)) = self.tracks[i].tmcd_source else {
+                continue;
+            };
             let v = &self.tracks[vi];
             let vd = v.t.media_duration;
             let vts = v.cfg.timescale;
@@ -637,7 +742,9 @@ impl<W: Write + Seek> Mp4Writer<W> {
                 CodecConfig::Timecode(tc) => tc.frame_duration,
                 _ => 1,
             };
-            let d = rescale(vd, vts, tts).max(tc_dur as u64).min(u32::MAX as u64) as u32;
+            let d = rescale(vd, vts, tts)
+                .max(tc_dur as u64)
+                .min(u32::MAX as u64) as u32;
             self.w.write_all(&start.to_be_bytes())?;
             let off = self.pos;
             self.pos += 4;
@@ -672,7 +779,12 @@ impl<W: Write + Seek> Mp4Writer<W> {
         let ts = self.opts.movie_timescale.max(1);
         let mut b = BoxBuf::new();
         let m = b.start(b"moov");
-        write_mvhd(&mut b, ts, movie_duration(&self.tracks, ts), self.tracks.len() as u32 + 1);
+        write_mvhd(
+            &mut b,
+            ts,
+            movie_duration(&self.tracks, ts),
+            self.tracks.len() as u32 + 1,
+        );
         for t in &self.tracks {
             write_trak(&mut b, t, ts, qt, shift, force_co64)?;
         }
@@ -746,19 +858,39 @@ pub struct FragmentedWriter<W: Write> {
 
 impl<W: Write> FragmentedWriter<W> {
     pub fn new(w: W, opts: WriterOptions) -> Self {
-        FragmentedWriter { w, opts, tracks: Vec::new(), pending: Vec::new(), next_dts: Vec::new(), seq: 0, init_written: false }
+        FragmentedWriter {
+            w,
+            opts,
+            tracks: Vec::new(),
+            pending: Vec::new(),
+            next_dts: Vec::new(),
+            seq: 0,
+            init_written: false,
+        }
     }
 
     /// Add a track (before the first fragment). PCM is not supported in fragments.
     pub fn add_track(&mut self, cfg: TrackConfig) -> Result<usize> {
         if self.init_written {
-            return Err(Error::Mux("tracks must be added before the first fragment".into()));
+            return Err(Error::Mux(
+                "tracks must be added before the first fragment".into(),
+            ));
         }
         if validate_track(&cfg)?.is_some() {
-            return Err(Error::Mux("PCM is not supported by the fragmented writer".into()));
+            return Err(Error::Mux(
+                "PCM is not supported by the fragmented writer".into(),
+            ));
         }
         let handler = handler_of(&cfg.entry);
-        self.tracks.push(WTrack { id: self.tracks.len() as u32 + 1, handler, pcm_frame_bytes: None, t: Tables::new(), cfg, tmcd_ref: None, tmcd_source: None });
+        self.tracks.push(WTrack {
+            id: self.tracks.len() as u32 + 1,
+            handler,
+            pcm_frame_bytes: None,
+            t: Tables::new(),
+            cfg,
+            tmcd_ref: None,
+            tmcd_source: None,
+        });
         self.pending.push(Vec::new());
         self.next_dts.push(0);
         Ok(self.tracks.len() - 1)
@@ -794,7 +926,10 @@ impl<W: Write> FragmentedWriter<W> {
 
     /// Buffer a sample for the next fragment.
     pub fn write_sample(&mut self, track: usize, s: WriteSample) -> Result<()> {
-        let p = self.pending.get_mut(track).ok_or(Error::NoSuchTrack(track))?;
+        let p = self
+            .pending
+            .get_mut(track)
+            .ok_or(Error::NoSuchTrack(track))?;
         if s.data.len() > u32::MAX as usize {
             return Err(Error::Mux("sample larger than 4 GiB".into()));
         }
@@ -847,7 +982,12 @@ impl<W: Write> FragmentedWriter<W> {
         }
         self.seq += 1;
         let probe = self.build_moof(&vec![0; self.tracks.len()]);
-        let data_len: u64 = self.pending.iter().flatten().map(|s| s.0.len() as u64).sum();
+        let data_len: u64 = self
+            .pending
+            .iter()
+            .flatten()
+            .map(|s| s.0.len() as u64)
+            .sum();
         let large = data_len + 8 > u32::MAX as u64;
         let hdr = if large { 16 } else { 8 };
         let mut offs = Vec::with_capacity(self.tracks.len());
@@ -890,7 +1030,11 @@ mod tests {
     use std::io::Cursor;
 
     fn avc_entry() -> SampleEntry {
-        SampleEntry::avc(AvcConfig::new(vec![vec![0x67, 0x42, 0, 0x1E]], vec![vec![0x68, 0xCE]], 4), 64, 48)
+        SampleEntry::avc(
+            AvcConfig::new(vec![vec![0x67, 0x42, 0, 0x1E]], vec![vec![0x68, 0xCE]], 4),
+            64,
+            48,
+        )
     }
 
     #[test]
@@ -903,17 +1047,50 @@ mod tests {
     #[test]
     fn simple_roundtrip_and_faststart() {
         for fast in [false, true] {
-            let mut w = Mp4Writer::new(Cursor::new(Vec::new()), WriterOptions::new(Brand::Mp4)).unwrap();
+            let mut w =
+                Mp4Writer::new(Cursor::new(Vec::new()), WriterOptions::new(Brand::Mp4)).unwrap();
             let v = w.add_track(TrackConfig::new(avc_entry(), 12800)).unwrap();
-            let pcm = PcmConfig { bits: 16, float: false, big_endian: false, signed: true, channels: 2, sample_rate: 48000.0 };
-            let a = w.add_track(TrackConfig::new(SampleEntry::pcm(pcm), 48000)).unwrap();
+            let pcm = PcmConfig {
+                bits: 16,
+                float: false,
+                big_endian: false,
+                signed: true,
+                channels: 2,
+                sample_rate: 48000.0,
+            };
+            let a = w
+                .add_track(TrackConfig::new(SampleEntry::pcm(pcm), 48000))
+                .unwrap();
             for i in 0..10u8 {
                 let data = vec![i; 100 + i as usize];
-                w.write_sample(v, WriteSample { data: &data, duration: 512, composition_offset: if i % 2 == 0 { 1024 } else { 0 }, is_sync: i % 5 == 0 })
-                    .unwrap();
-                w.write_sample(a, WriteSample { data: &[i; 400], duration: 0, composition_offset: 0, is_sync: true }).unwrap();
+                w.write_sample(
+                    v,
+                    WriteSample {
+                        data: &data,
+                        duration: 512,
+                        composition_offset: if i % 2 == 0 { 1024 } else { 0 },
+                        is_sync: i % 5 == 0,
+                    },
+                )
+                .unwrap();
+                w.write_sample(
+                    a,
+                    WriteSample {
+                        data: &[i; 400],
+                        duration: 0,
+                        composition_offset: 0,
+                        is_sync: true,
+                    },
+                )
+                .unwrap();
             }
-            let out = if fast { w.finish_faststart() } else { w.finish() }.unwrap().into_inner();
+            let out = if fast {
+                w.finish_faststart()
+            } else {
+                w.finish()
+            }
+            .unwrap()
+            .into_inner();
             let f = crate::open(out.as_slice()).unwrap();
             assert_eq!(f.tracks.len(), 2);
             let t = &f.tracks[0];
@@ -922,7 +1099,10 @@ mod tests {
                 assert_eq!(s.size as usize, 100 + i);
                 assert_eq!(s.dts, 512 * i as i64);
                 assert_eq!(s.is_sync, i % 5 == 0);
-                assert_eq!(f.read_sample(out.as_slice(), 0, i).unwrap(), vec![i as u8; 100 + i]);
+                assert_eq!(
+                    f.read_sample(out.as_slice(), 0, i).unwrap(),
+                    vec![i as u8; 100 + i]
+                );
             }
             let at = &f.tracks[1];
             assert!(at.pcm_chunked);
@@ -941,7 +1121,16 @@ mod tests {
         let mut w = FragmentedWriter::new(Vec::new(), WriterOptions::new(Brand::Mp4));
         let v = w.add_track(TrackConfig::new(avc_entry(), 1000)).unwrap();
         for i in 0..6u8 {
-            w.write_sample(v, WriteSample { data: &[i; 10], duration: 40, composition_offset: -(i as i32 % 2), is_sync: i % 3 == 0 }).unwrap();
+            w.write_sample(
+                v,
+                WriteSample {
+                    data: &[i; 10],
+                    duration: 40,
+                    composition_offset: -(i as i32 % 2),
+                    is_sync: i % 3 == 0,
+                },
+            )
+            .unwrap();
             if i % 3 == 2 {
                 w.flush_fragment().unwrap();
             }
@@ -956,7 +1145,10 @@ mod tests {
             assert_eq!(s.dts, 40 * i as i64);
             assert_eq!(s.pts, s.dts - (i as i64 % 2));
             assert_eq!(s.is_sync, i % 3 == 0);
-            assert_eq!(f.read_sample(out.as_slice(), 0, i).unwrap(), vec![i as u8; 10]);
+            assert_eq!(
+                f.read_sample(out.as_slice(), 0, i).unwrap(),
+                vec![i as u8; 10]
+            );
         }
         assert_eq!(t.sync_sample_before(5), 3);
     }

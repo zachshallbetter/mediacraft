@@ -8,7 +8,11 @@ const fn table8() -> [u8; 256] {
         let mut c = i as u8;
         let mut b = 0;
         while b < 8 {
-            c = if c & 0x80 != 0 { (c << 1) ^ 0x07 } else { c << 1 };
+            c = if c & 0x80 != 0 {
+                (c << 1) ^ 0x07
+            } else {
+                c << 1
+            };
             b += 1;
         }
         t[i] = c;
@@ -24,7 +28,11 @@ const fn table16() -> [u16; 256] {
         let mut c = (i as u16) << 8;
         let mut b = 0;
         while b < 8 {
-            c = if c & 0x8000 != 0 { (c << 1) ^ 0x8005 } else { c << 1 };
+            c = if c & 0x8000 != 0 {
+                (c << 1) ^ 0x8005
+            } else {
+                c << 1
+            };
             b += 1;
         }
         t[i] = c;
@@ -41,7 +49,9 @@ pub fn crc8(data: &[u8]) -> u8 {
 }
 
 pub fn crc16(data: &[u8]) -> u16 {
-    data.iter().fold(0u16, |c, &b| (c << 8) ^ T16[usize::from((c >> 8) as u8 ^ b)])
+    data.iter().fold(0u16, |c, &b| {
+        (c << 8) ^ T16[usize::from((c >> 8) as u8 ^ b)]
+    })
 }
 
 #[cfg(test)]

@@ -73,7 +73,14 @@ impl Decoder {
         if layout.is_empty() && asc.channel_config != 0 {
             return Err(Error::InvalidConfig("unsupported channel configuration"));
         }
-        let mut d = Decoder { asc, layout: Vec::new(), offsets: Vec::new(), channels: Vec::new(), noise_state: 0x2545_F491, sbr_seen: false };
+        let mut d = Decoder {
+            asc,
+            layout: Vec::new(),
+            offsets: Vec::new(),
+            channels: Vec::new(),
+            noise_state: 0x2545_F491,
+            sbr_seen: false,
+        };
         d.set_layout(layout);
         Ok(d)
     }
@@ -87,7 +94,13 @@ impl Decoder {
         }
         self.layout = layout;
         self.offsets = offsets;
-        self.channels = vec![ChannelState { overlap: vec![0.0; 1024], prev_shape: WindowShape::Sine }; n];
+        self.channels = vec![
+            ChannelState {
+                overlap: vec![0.0; 1024],
+                prev_shape: WindowShape::Sine
+            };
+            n
+        ];
     }
 
     pub fn config(&self) -> &AudioSpecificConfig {
@@ -139,7 +152,11 @@ impl Decoder {
             match id {
                 ID_SCE | ID_LFE => {
                     let tag = br.read_bits(4)? as u8;
-                    let ty = if id == ID_SCE { ElementType::Sce } else { ElementType::Lfe };
+                    let ty = if id == ID_SCE {
+                        ElementType::Sce
+                    } else {
+                        ElementType::Lfe
+                    };
                     let slot = self.find_slot(ty, tag, &used)?;
                     used[slot] = true;
                     let mut ics = self.decode_ics(&mut br, None)?;
@@ -171,9 +188,15 @@ impl Decoder {
                 }
                 ID_PCE => {
                     let pce = ProgramConfig::parse(&mut br)?;
-                    if allow_reconfig && !saw_element && self.asc.channel_config == 0 && self.asc.pce.as_ref() != Some(&pce) {
+                    if allow_reconfig
+                        && !saw_element
+                        && self.asc.channel_config == 0
+                        && self.asc.pce.as_ref() != Some(&pce)
+                    {
                         let layout = pce.layout();
-                        if !layout.is_empty() && layout.iter().map(|e| e.0.channels()).sum::<usize>() <= 64 {
+                        if !layout.is_empty()
+                            && layout.iter().map(|e| e.0.channels()).sum::<usize>() <= 64
+                        {
                             self.asc.pce = Some(pce);
                             self.set_layout(layout);
                             return self.decode_block(au, false);
@@ -199,7 +222,9 @@ impl Decoder {
             }
         }
         if nch == 0 && !saw_element {
-            return Err(Error::InvalidConfig("channel configuration 0 without a program config element"));
+            return Err(Error::InvalidConfig(
+                "channel configuration 0 without a program config element",
+            ));
         }
         let mut res = Vec::with_capacity(nch);
         for o in out {
@@ -209,18 +234,31 @@ impl Decoder {
     }
 
     fn find_slot(&self, ty: ElementType, tag: u8, used: &[bool]) -> Result<usize> {
-        let compatible = |t: ElementType| t == ty || (ty != ElementType::Cpe && t != ElementType::Cpe);
-        if let Some(i) = self.layout.iter().enumerate().position(|(i, &(t, g))| t == ty && g == tag && !used[i]) {
+        let compatible =
+            |t: ElementType| t == ty || (ty != ElementType::Cpe && t != ElementType::Cpe);
+        if let Some(i) = self
+            .layout
+            .iter()
+            .enumerate()
+            .position(|(i, &(t, g))| t == ty && g == tag && !used[i])
+        {
             return Ok(i);
         }
-        if let Some(i) = self.layout.iter().enumerate().position(|(i, &(t, _))| t == ty && !used[i]) {
+        if let Some(i) = self
+            .layout
+            .iter()
+            .enumerate()
+            .position(|(i, &(t, _))| t == ty && !used[i])
+        {
             return Ok(i);
         }
         self.layout
             .iter()
             .enumerate()
             .position(|(i, &(t, _))| compatible(t) && !used[i])
-            .ok_or(Error::Bitstream("unexpected channel element for the channel configuration"))
+            .ok_or(Error::Bitstream(
+                "unexpected channel element for the channel configuration",
+            ))
     }
 
     fn decode_cpe(&mut self, br: &mut BitReader, ch: usize) -> Result<[Vec<f32>; 2]> {
@@ -247,7 +285,11 @@ impl Decoder {
         }
         let mut l = self.decode_ics(br, info)?;
         let mut r = self.decode_ics(br, info)?;
-        let ms = if ms_mask_present > 0 { Some(&ms_used) } else { None };
+        let ms = if ms_mask_present > 0 {
+            Some(&ms_used)
+        } else {
+            None
+        };
         self.fill_noise(&mut l, None);
         self.fill_noise(&mut r, if common_window { Some((&l, ms)) } else { None });
         if common_window {
@@ -262,13 +304,18 @@ impl Decoder {
                         if ms_mask_present > 0 && ms_used[g][sfb] {
                             c = -c;
                         }
-                        let scale = c * (-0.25 * r.sf[g][sfb].clamp(-400, 400) as f64).exp2() as f32;
+                        let scale =
+                            c * (-0.25 * r.sf[g][sfb].clamp(-400, 400) as f64).exp2() as f32;
                         for w in w0..w0 + l.info.group_len[g] as usize {
                             for k in range.clone() {
                                 r.spec[w * 128 + k] = l.spec[w * 128 + k] * scale;
                             }
                         }
-                    } else if ms_mask_present > 0 && ms_used[g][sfb] && bl < NOISE_HCB && br_ < NOISE_HCB {
+                    } else if ms_mask_present > 0
+                        && ms_used[g][sfb]
+                        && bl < NOISE_HCB
+                        && br_ < NOISE_HCB
+                    {
                         for w in w0..w0 + l.info.group_len[g] as usize {
                             for k in range.clone() {
                                 let (m, s) = (l.spec[w * 128 + k], r.spec[w * 128 + k]);
@@ -280,7 +327,10 @@ impl Decoder {
                 }
             }
         }
-        Ok([self.finish_channel(ch, &mut l), self.finish_channel(ch + 1, &mut r)])
+        Ok([
+            self.finish_channel(ch, &mut l),
+            self.finish_channel(ch + 1, &mut r),
+        ])
     }
 
     fn decode_ics(&mut self, br: &mut BitReader, common: Option<IcsInfo>) -> Result<Ics> {
@@ -292,7 +342,13 @@ impl Decoder {
         };
         let swb = info.swb_offsets(sfi);
         let num_swb = swb.len() - 1;
-        let mut ics = Ics { info, band_type: [[0; 64]; 8], sf: [[0; 64]; 8], tns: None, spec: vec![0.0; 1024] };
+        let mut ics = Ics {
+            info,
+            band_type: [[0; 64]; 8],
+            sf: [[0; 64]; 8],
+            tns: None,
+            spec: vec![0.0; 1024],
+        };
 
         // section_data
         let (sect_bits, esc) = if info.is_short() { (3, 7) } else { (5, 31) };
@@ -442,7 +498,10 @@ impl Decoder {
     }
 
     fn next_random(&mut self) -> f32 {
-        self.noise_state = self.noise_state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        self.noise_state = self
+            .noise_state
+            .wrapping_mul(1_664_525)
+            .wrapping_add(1_013_904_223);
         (self.noise_state as i32) as f32
     }
 
@@ -472,8 +531,15 @@ impl Decoder {
                             ics.spec[k] = self.next_random();
                         }
                     }
-                    let energy: f64 = ics.spec[band.clone()].iter().map(|&v| v as f64 * v as f64).sum();
-                    let scale = if energy > 0.0 { (target / energy.sqrt()) as f32 } else { 0.0 };
+                    let energy: f64 = ics.spec[band.clone()]
+                        .iter()
+                        .map(|&v| v as f64 * v as f64)
+                        .sum();
+                    let scale = if energy > 0.0 {
+                        (target / energy.sqrt()) as f32
+                    } else {
+                        0.0
+                    };
                     for k in band {
                         ics.spec[k] *= scale;
                     }

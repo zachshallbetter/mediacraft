@@ -1,22 +1,22 @@
 //! H.264 / AVC Video Encoder Adapter
 //!
-//! Adapts the clean-room `filmcraft-h264enc` pure-Rust engine into MediaCraft's pipeline.
+//! Adapts the clean-room `craft-h264enc` pure-Rust engine into MediaCraft's pipeline.
 //! Provides progressive 8-bit 4:2:0 SDR encoding with length-prefixed MP4 samples,
 //! parameter set (SPS/PPS) extraction, and presentation timestamp preservation.
 
-use filmcraft_h264enc::{Encoder, EncoderConfig, PacketFormat, RateControl, YuvFrame};
+use craft_h264enc::{Encoder, EncoderConfig, PacketFormat, RateControl, YuvFrame};
 use mediacraft_protocol::stream::{MediaPacket, Rational, VideoFrame};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum H264AdapterError {
     #[error("H.264 encoder configuration error: {0}")]
-    Config(#[from] filmcraft_h264enc::Error),
+    Config(#[from] craft_h264enc::Error),
     #[error("invalid video dimensions: {0}x{1}")]
     InvalidDimensions(u32, u32),
 }
 
-/// H.264 Video Encoder Adapter wrapping pure-Rust `filmcraft-h264enc`.
+/// H.264 Video Encoder Adapter wrapping pure-Rust `craft-h264enc`.
 pub struct H264EncoderAdapter {
     encoder: Encoder,
     width: u32,

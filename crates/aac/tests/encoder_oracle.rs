@@ -13,7 +13,15 @@ struct Case {
 }
 
 fn mono(v: Vec<f32>, ch: usize) -> Vec<Vec<f32>> {
-    (0..ch).map(|c| if c == 0 { v.clone() } else { v.iter().map(|x| x * (0.8 - 0.1 * c as f32)).collect() }).collect()
+    (0..ch)
+        .map(|c| {
+            if c == 0 {
+                v.clone()
+            } else {
+                v.iter().map(|x| x * (0.8 - 0.1 * c as f32)).collect()
+            }
+        })
+        .collect()
 }
 
 fn sig_sweep(r: u32, n: usize, ch: usize) -> Vec<Vec<f32>> {
@@ -57,10 +65,17 @@ fn run(case: &Case, bitrate: u32, cfg_mod: impl Fn(&mut EncoderConfig)) -> Optio
         BitrateMode::Cbr(b) => format!("{b}"),
         BitrateMode::Vbr(q) => format!("q{q}"),
     };
-    let path = fixtures().join(format!("enc_{}_{}ch_{}_{}.aac", case.name, case.channels, case.rate, tag));
+    let path = fixtures().join(format!(
+        "enc_{}_{}ch_{}_{}.aac",
+        case.name, case.channels, case.rate, tag
+    ));
     std::fs::write(&path, &enc.adts).unwrap();
     let (dec, err) = ffmpeg_decode(&ff, &path, case.channels);
-    assert!(err.trim().is_empty(), "ffmpeg reported errors for {}: {err}", path.display());
+    assert!(
+        err.trim().is_empty(),
+        "ffmpeg reported errors for {}: {err}",
+        path.display()
+    );
     assert_eq!(dec[0].len(), enc.frames * 1024);
     assert!(dec[0].len() >= n + 1024, "decoded stream too short");
     // ffmpeg reorders channels to its native layouts: map each of our (AAC element order) decoded
@@ -74,7 +89,11 @@ fn run(case: &Case, bitrate: u32, cfg_mod: impl Fn(&mut EncoderConfig)) -> Optio
     let mut ours_vs_ff = 0f32;
     let mut counted = 0;
     for c in 0..case.channels {
-        let (j, err) = (0..case.channels).filter(|&j| !taken[j]).map(|j| (j, max_abs_diff(&ours[c], &dec[j]))).min_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
+        let (j, err) = (0..case.channels)
+            .filter(|&j| !taken[j])
+            .map(|j| (j, max_abs_diff(&ours[c], &dec[j])))
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap();
         taken[j] = true;
         ours_vs_ff = ours_vs_ff.max(err);
         let d = &dec[j][1024..1024 + n];
@@ -84,14 +103,21 @@ fn run(case: &Case, bitrate: u32, cfg_mod: impl Fn(&mut EncoderConfig)) -> Optio
         }
         snr_sum += snr(&input[c], d);
         let fc = enc.bandwidth as f32 * 0.97;
-        bw_sum += snr(&lowpass(&input[c], fc, case.rate as f32), &lowpass(d, fc, case.rate as f32));
+        bw_sum += snr(
+            &lowpass(&input[c], fc, case.rate as f32),
+            &lowpass(d, fc, case.rate as f32),
+        );
         seg_sum += seg_snr(&input[c], d);
         counted += 1;
     }
     let actual = enc.stats.bitrate(case.rate);
     Some(Row {
         label: format!("{:<7} {}ch {:>5}", case.name, case.channels, case.rate),
-        target: if matches!(cfg.mode, BitrateMode::Vbr(_)) { 0 } else { bitrate },
+        target: if matches!(cfg.mode, BitrateMode::Vbr(_)) {
+            0
+        } else {
+            bitrate
+        },
         actual,
         snr: snr_sum / counted as f64,
         bw_snr: bw_sum / counted as f64,
@@ -106,27 +132,66 @@ fn run(case: &Case, bitrate: u32, cfg_mod: impl Fn(&mut EncoderConfig)) -> Optio
 fn print(rows: &[Row]) {
     println!(
         "{:<22} {:>8} {:>8} {:>7} {:>6} {:>7} {:>7} {:>7} {:>6} {:>6} {:>9}",
-        "signal", "target", "actual", "dev%", "bw", "SNR", "bwSNR", "segSNR", "peak", "short", "us-vs-ff"
+        "signal",
+        "target",
+        "actual",
+        "dev%",
+        "bw",
+        "SNR",
+        "bwSNR",
+        "segSNR",
+        "peak",
+        "short",
+        "us-vs-ff"
     );
     for r in rows {
         let (target, dev) = if r.target == 0 {
             ("vbr".to_string(), "-".to_string())
         } else {
-            (r.target.to_string(), format!("{:+.2}", (r.actual / r.target as f64 - 1.0) * 100.0))
+            (
+                r.target.to_string(),
+                format!("{:+.2}", (r.actual / r.target as f64 - 1.0) * 100.0),
+            )
         };
         println!(
             "{:<22} {:>8} {:>8.0} {:>7} {:>6} {:>7.2} {:>7.2} {:>7.2} {:>6.3} {:>6} {:>9.2e}",
-            r.label, target, r.actual, dev, r.bw, r.snr, r.bw_snr, r.seg, r.peak, r.shorts, r.ours_vs_ff
+            r.label,
+            target,
+            r.actual,
+            dev,
+            r.bw,
+            r.snr,
+            r.bw_snr,
+            r.seg,
+            r.peak,
+            r.shorts,
+            r.ours_vs_ff
         );
     }
 }
 
 fn check(r: &Row, min_seg: f64) {
     let dev = (r.actual / r.target as f64 - 1.0).abs();
-    assert!(dev < 0.05, "{}: bitrate {} vs target {}", r.label, r.actual, r.target);
+    assert!(
+        dev < 0.05,
+        "{}: bitrate {} vs target {}",
+        r.label,
+        r.actual,
+        r.target
+    );
     assert!(r.peak < 1.0, "{}: clipping (peak {})", r.label, r.peak);
-    assert!(r.seg > min_seg, "{}: segmental SNR {} too low", r.label, r.seg);
-    assert!(r.ours_vs_ff < 1e-3, "{}: our decoder differs from ffmpeg by {}", r.label, r.ours_vs_ff);
+    assert!(
+        r.seg > min_seg,
+        "{}: segmental SNR {} too low",
+        r.label,
+        r.seg
+    );
+    assert!(
+        r.ours_vs_ff < 1e-3,
+        "{}: our decoder differs from ffmpeg by {}",
+        r.label,
+        r.ours_vs_ff
+    );
 }
 
 #[test]
@@ -136,11 +201,36 @@ fn stereo_matrix_44k_48k() {
         return;
     }
     let cases = [
-        Case { name: "sweep", rate: 44100, signal: sig_sweep, channels: 2 },
-        Case { name: "noise", rate: 44100, signal: sig_noise, channels: 2 },
-        Case { name: "speech", rate: 48000, signal: sig_speech, channels: 2 },
-        Case { name: "chords", rate: 44100, signal: sig_chords, channels: 2 },
-        Case { name: "clicks", rate: 48000, signal: sig_clicks, channels: 2 },
+        Case {
+            name: "sweep",
+            rate: 44100,
+            signal: sig_sweep,
+            channels: 2,
+        },
+        Case {
+            name: "noise",
+            rate: 44100,
+            signal: sig_noise,
+            channels: 2,
+        },
+        Case {
+            name: "speech",
+            rate: 48000,
+            signal: sig_speech,
+            channels: 2,
+        },
+        Case {
+            name: "chords",
+            rate: 44100,
+            signal: sig_chords,
+            channels: 2,
+        },
+        Case {
+            name: "clicks",
+            rate: 48000,
+            signal: sig_clicks,
+            channels: 2,
+        },
     ];
     let mut rows = Vec::new();
     for c in &cases {
@@ -172,11 +262,51 @@ fn mono_and_surround() {
     }
     let mut rows = Vec::new();
     for (c, br) in [
-        (Case { name: "speech", rate: 44100, signal: sig_speech, channels: 1 }, 64_000),
-        (Case { name: "chords", rate: 48000, signal: sig_chords, channels: 1 }, 96_000),
-        (Case { name: "clicks", rate: 44100, signal: sig_clicks, channels: 1 }, 128_000),
-        (Case { name: "chords", rate: 48000, signal: sig_chords, channels: 6 }, 320_000),
-        (Case { name: "noise", rate: 48000, signal: sig_noise, channels: 6 }, 384_000),
+        (
+            Case {
+                name: "speech",
+                rate: 44100,
+                signal: sig_speech,
+                channels: 1,
+            },
+            64_000,
+        ),
+        (
+            Case {
+                name: "chords",
+                rate: 48000,
+                signal: sig_chords,
+                channels: 1,
+            },
+            96_000,
+        ),
+        (
+            Case {
+                name: "clicks",
+                rate: 44100,
+                signal: sig_clicks,
+                channels: 1,
+            },
+            128_000,
+        ),
+        (
+            Case {
+                name: "chords",
+                rate: 48000,
+                signal: sig_chords,
+                channels: 6,
+            },
+            320_000,
+        ),
+        (
+            Case {
+                name: "noise",
+                rate: 48000,
+                signal: sig_noise,
+                channels: 6,
+            },
+            384_000,
+        ),
     ] {
         rows.push(run(&c, br, |_| {}).unwrap());
     }
@@ -191,7 +321,12 @@ fn kbd_windows_no_tns_no_ms() {
     if ffmpeg().is_none() {
         return;
     }
-    let c = Case { name: "kbd", rate: 44100, signal: sig_clicks, channels: 2 };
+    let c = Case {
+        name: "kbd",
+        rate: 44100,
+        signal: sig_clicks,
+        channels: 2,
+    };
     let r = run(&c, 128_000, |cfg| {
         cfg.window_shape = WindowShape::Kbd;
         cfg.tns = false;
@@ -220,7 +355,12 @@ fn sample_rates_8k_to_96k() {
         (88200, 256_000),
         (96000, 256_000),
     ] {
-        let c = Case { name: "chords", rate, signal: sig_chords, channels: 2 };
+        let c = Case {
+            name: "chords",
+            rate,
+            signal: sig_chords,
+            channels: 2,
+        };
         rows.push(run(&c, br, |_| {}).unwrap());
     }
     print(&rows);
@@ -235,8 +375,19 @@ fn channel_layouts_3_to_8() {
         return;
     }
     let mut rows = Vec::new();
-    for (ch, br) in [(3usize, 192_000u32), (4, 256_000), (5, 320_000), (7, 384_000), (8, 448_000)] {
-        let c = Case { name: "chords", rate: 48000, signal: sig_chords, channels: ch };
+    for (ch, br) in [
+        (3usize, 192_000u32),
+        (4, 256_000),
+        (5, 320_000),
+        (7, 384_000),
+        (8, 448_000),
+    ] {
+        let c = Case {
+            name: "chords",
+            rate: 48000,
+            signal: sig_chords,
+            channels: ch,
+        };
         rows.push(run(&c, br, |_| {}).unwrap());
     }
     print(&rows);
@@ -251,9 +402,17 @@ fn vbr_quality_scale() {
         return;
     }
     let mut rows = Vec::new();
-    for sig in [sig_chords as fn(u32, usize, usize) -> Vec<Vec<f32>>, sig_speech] {
+    for sig in [
+        sig_chords as fn(u32, usize, usize) -> Vec<Vec<f32>>,
+        sig_speech,
+    ] {
         for q in [1.0f32, 2.0, 3.0, 4.0, 5.0] {
-            let c = Case { name: "vbr", rate: 44100, signal: sig, channels: 2 };
+            let c = Case {
+                name: "vbr",
+                rate: 44100,
+                signal: sig,
+                channels: 2,
+            };
             let mut r = run(&c, 1, |cfg| cfg.mode = BitrateMode::Vbr(q)).unwrap();
             r.label = format!("vbr q{q} 2ch 44100");
             rows.push(r);
@@ -262,8 +421,14 @@ fn vbr_quality_scale() {
     print(&rows);
     for pair in rows.chunks(5) {
         for w in pair.windows(2) {
-            assert!(w[1].actual > w[0].actual, "VBR bitrate must grow with quality");
-            assert!(w[1].seg > w[0].seg - 0.5, "VBR quality must grow with quality");
+            assert!(
+                w[1].actual > w[0].actual,
+                "VBR bitrate must grow with quality"
+            );
+            assert!(
+                w[1].seg > w[0].seg - 0.5,
+                "VBR quality must grow with quality"
+            );
         }
         for r in pair {
             assert!(r.peak < 1.0 && r.ours_vs_ff < 1e-3);

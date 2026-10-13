@@ -14,7 +14,11 @@ use std::process::Command;
 use craft_opus::{Decoder, Mode, OpusHead, Packet};
 
 fn has_libopus(ff: &std::path::Path) -> bool {
-    Command::new(ff).args(["-hide_banner", "-encoders"]).output().map(|o| String::from_utf8_lossy(&o.stdout).contains("libopus")).unwrap_or(false)
+    Command::new(ff)
+        .args(["-hide_banner", "-encoders"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("libopus"))
+        .unwrap_or(false)
 }
 
 struct Case {
@@ -46,7 +50,13 @@ fn run(case: &Case, rate: u32) -> (f64, f64, Vec<Mode>) {
     let raw = dir.join(format!("{}.f32", case.name));
     let opus = dir.join(format!("{}.opus", case.name));
     let dec = dir.join(format!("{}.dec.f32", case.name));
-    std::fs::write(&raw, pcm.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()).unwrap();
+    std::fs::write(
+        &raw,
+        pcm.iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<u8>>(),
+    )
+    .unwrap();
     let layout = match case.channels {
         1 => "mono",
         2 => "stereo",
@@ -54,18 +64,49 @@ fn run(case: &Case, rate: u32) -> (f64, f64, Vec<Mode>) {
         _ => unreachable!(),
     };
     let mut cmd = Command::new(&ff);
-    cmd.args(["-hide_banner", "-loglevel", "error", "-y", "-f", "f32le", "-ar", "48000", "-ch_layout", layout, "-i"]).arg(&raw);
+    cmd.args([
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "f32le",
+        "-ar",
+        "48000",
+        "-ch_layout",
+        layout,
+        "-i",
+    ])
+    .arg(&raw);
     cmd.args(["-c:a", "libopus"]).args(case.args).arg(&opus);
-    assert!(cmd.status().unwrap().success(), "ffmpeg encode failed for {}", case.name);
+    assert!(
+        cmd.status().unwrap().success(),
+        "ffmpeg encode failed for {}",
+        case.name
+    );
     let st = Command::new(&ff)
-        .args(["-hide_banner", "-loglevel", "error", "-y", "-c:a", "libopus", "-i"])
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-c:a",
+            "libopus",
+            "-i",
+        ])
         .arg(&opus)
         .args(["-f", "f32le", "-ar", &rate.to_string()])
         .arg(&dec)
         .status()
         .unwrap();
     assert!(st.success());
-    let reference: Vec<f32> = std::fs::read(&dec).unwrap().as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect();
+    let reference: Vec<f32> = std::fs::read(&dec)
+        .unwrap()
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
+        .collect();
 
     let (packets, granule) = common::ogg_packets(&std::fs::read(&opus).unwrap());
     let mut d = Decoder::from_head(OpusHead::parse(&packets[0]).unwrap(), rate).unwrap();
@@ -85,25 +126,55 @@ fn run(case: &Case, rate: u32) -> (f64, f64, Vec<Mode>) {
         }
     }
     // End trimming from the final granule position.
-    let total = ((granule as usize).saturating_sub(d.head().pre_skip as usize)) * rate as usize / 48000;
+    let total =
+        ((granule as usize).saturating_sub(d.head().pre_skip as usize)) * rate as usize / 48000;
     for p in &mut planar {
-        assert!(p.len() >= total, "{}: decoded {} < granule length {}", case.name, p.len(), total);
+        assert!(
+            p.len() >= total,
+            "{}: decoded {} < granule length {}",
+            case.name,
+            p.len(),
+            total
+        );
         p.truncate(total);
     }
     // Our output is in Vorbis channel order; ffmpeg reorders 5.1 to FL FR FC LFE BL BR.
-    let order: Vec<usize> = if case.channels == 6 { vec![0, 2, 1, 5, 3, 4] } else { (0..case.channels).collect() };
-    let ours: Vec<f32> = (0..total).flat_map(|i| order.iter().map(|&c| planar[c][i]).collect::<Vec<_>>()).collect();
+    let order: Vec<usize> = if case.channels == 6 {
+        vec![0, 2, 1, 5, 3, 4]
+    } else {
+        (0..case.channels).collect()
+    };
+    let ours: Vec<f32> = (0..total)
+        .flat_map(|i| order.iter().map(|&c| planar[c][i]).collect::<Vec<_>>())
+        .collect();
     if std::env::var("DIAG").is_ok_and(|v| v == case.name) {
         let blk = 12000 * case.channels;
         for (b, (r, o)) in reference.chunks(blk).zip(ours.chunks(blk)).enumerate() {
             let er: f32 = r.iter().map(|v| v * v).sum();
             let eo: f32 = o.iter().map(|v| v * v).sum();
-            eprintln!("{:5.2}s ref {:9.3e} ours {:9.3e} snr {:6.1}", b as f32 * 0.25, er, eo, common::snr_db(r, o));
+            eprintln!(
+                "{:5.2}s ref {:9.3e} ours {:9.3e} snr {:6.1}",
+                b as f32 * 0.25,
+                er,
+                eo,
+                common::snr_db(r, o)
+            );
         }
     }
-    assert_eq!(ours.len(), reference.len(), "{}: length mismatch vs libopus (samples/ch {} vs {})", case.name, total, reference.len() / case.channels);
+    assert_eq!(
+        ours.len(),
+        reference.len(),
+        "{}: length mismatch vs libopus (samples/ch {} vs {})",
+        case.name,
+        total,
+        reference.len() / case.channels
+    );
     let snr = common::snr_db(&reference, &ours);
-    let q = if case.channels <= 2 { common::opus_quality(&reference, &ours, case.channels, rate) } else { f64::NAN };
+    let q = if case.channels <= 2 {
+        common::opus_quality(&reference, &ours, case.channels, rate)
+    } else {
+        f64::NAN
+    };
     let _ = std::fs::remove_file(&raw);
     let _ = std::fs::remove_file(&dec);
     let _ = std::fs::remove_file(&opus);
@@ -121,54 +192,144 @@ fn libopus_oracle() {
         return;
     }
     let cases = [
-        Case { name: "speech_mono_6k_voip", channels: 1, signal: common::speech, args: &["-b:a", "6k", "-application", "voip"], min_snr_celt: 0.0 },
+        Case {
+            name: "speech_mono_6k_voip",
+            channels: 1,
+            signal: common::speech,
+            args: &["-b:a", "6k", "-application", "voip"],
+            min_snr_celt: 0.0,
+        },
         Case {
             name: "speech_mono_12k_voip_60ms",
             channels: 1,
             signal: common::speech,
-            args: &["-b:a", "12k", "-application", "voip", "-frame_duration", "60"],
+            args: &[
+                "-b:a",
+                "12k",
+                "-application",
+                "voip",
+                "-frame_duration",
+                "60",
+            ],
             min_snr_celt: 0.0,
         },
         Case {
             name: "speech_mono_16k_voip_40ms",
             channels: 1,
             signal: common::speech,
-            args: &["-b:a", "16k", "-application", "voip", "-frame_duration", "40"],
+            args: &[
+                "-b:a",
+                "16k",
+                "-application",
+                "voip",
+                "-frame_duration",
+                "40",
+            ],
             min_snr_celt: 0.0,
         },
-        Case { name: "speech_stereo_24k_voip", channels: 2, signal: common::speech, args: &["-b:a", "24k", "-application", "voip"], min_snr_celt: 0.0 },
-        Case { name: "music_stereo_32k_audio", channels: 2, signal: common::music, args: &["-b:a", "32k", "-application", "audio"], min_snr_celt: 0.0 },
-        Case { name: "music_stereo_64k_audio_10ms", channels: 2, signal: common::music, args: &["-b:a", "64k", "-frame_duration", "10"], min_snr_celt: 0.0 },
+        Case {
+            name: "speech_stereo_24k_voip",
+            channels: 2,
+            signal: common::speech,
+            args: &["-b:a", "24k", "-application", "voip"],
+            min_snr_celt: 0.0,
+        },
+        Case {
+            name: "music_stereo_32k_audio",
+            channels: 2,
+            signal: common::music,
+            args: &["-b:a", "32k", "-application", "audio"],
+            min_snr_celt: 0.0,
+        },
+        Case {
+            name: "music_stereo_64k_audio_10ms",
+            channels: 2,
+            signal: common::music,
+            args: &["-b:a", "64k", "-frame_duration", "10"],
+            min_snr_celt: 0.0,
+        },
         Case {
             name: "music_stereo_96k_lowdelay_2_5ms",
             channels: 2,
             signal: common::music,
-            args: &["-b:a", "96k", "-application", "lowdelay", "-frame_duration", "2.5"],
+            args: &[
+                "-b:a",
+                "96k",
+                "-application",
+                "lowdelay",
+                "-frame_duration",
+                "2.5",
+            ],
             min_snr_celt: 50.0,
         },
         Case {
             name: "sweep_stereo_128k_lowdelay_5ms",
             channels: 2,
             signal: sweep_sig,
-            args: &["-b:a", "128k", "-application", "lowdelay", "-frame_duration", "5"],
+            args: &[
+                "-b:a",
+                "128k",
+                "-application",
+                "lowdelay",
+                "-frame_duration",
+                "5",
+            ],
             min_snr_celt: 50.0,
         },
-        Case { name: "music_stereo_160k_cbr", channels: 2, signal: common::music, args: &["-b:a", "160k", "-vbr", "off"], min_snr_celt: 50.0 },
-        Case { name: "music_mono_256k_20ms", channels: 1, signal: common::music, args: &["-b:a", "256k"], min_snr_celt: 50.0 },
-        Case { name: "sweep_stereo_510k", channels: 2, signal: sweep_sig, args: &["-b:a", "510k"], min_snr_celt: 50.0 },
+        Case {
+            name: "music_stereo_160k_cbr",
+            channels: 2,
+            signal: common::music,
+            args: &["-b:a", "160k", "-vbr", "off"],
+            min_snr_celt: 50.0,
+        },
+        Case {
+            name: "music_mono_256k_20ms",
+            channels: 1,
+            signal: common::music,
+            args: &["-b:a", "256k"],
+            min_snr_celt: 50.0,
+        },
+        Case {
+            name: "sweep_stereo_510k",
+            channels: 2,
+            signal: sweep_sig,
+            args: &["-b:a", "510k"],
+            min_snr_celt: 50.0,
+        },
         Case {
             name: "music_stereo_48k_constrained",
             channels: 2,
             signal: common::music,
-            args: &["-b:a", "48k", "-vbr", "constrained", "-frame_duration", "40"],
+            args: &[
+                "-b:a",
+                "48k",
+                "-vbr",
+                "constrained",
+                "-frame_duration",
+                "40",
+            ],
             min_snr_celt: 0.0,
         },
-        Case { name: "music_51_256k", channels: 6, signal: common::music, args: &["-b:a", "256k", "-mapping_family", "1"], min_snr_celt: 0.0 },
+        Case {
+            name: "music_51_256k",
+            channels: 6,
+            signal: common::music,
+            args: &["-b:a", "256k", "-mapping_family", "1"],
+            min_snr_celt: 0.0,
+        },
         Case {
             name: "speech_51_96k",
             channels: 6,
             signal: common::speech,
-            args: &["-b:a", "96k", "-mapping_family", "1", "-application", "lowdelay"],
+            args: &[
+                "-b:a",
+                "96k",
+                "-mapping_family",
+                "1",
+                "-application",
+                "lowdelay",
+            ],
             min_snr_celt: 50.0,
         },
     ];
@@ -176,8 +337,17 @@ fn libopus_oracle() {
     for case in &cases {
         let (snr, q, modes) = run(case, 48000);
         let celt_only = modes.iter().all(|m| *m == Mode::CeltOnly);
-        let ok = if celt_only { snr >= case.min_snr_celt.max(50.0) } else { snr >= 10.0 && (q.is_nan() || q >= 0.0) };
-        eprintln!("{:36} modes {:?}: snr {snr:6.1} dB quality {q:6.1} {}", case.name, modes, if ok { "ok" } else { "FAIL" });
+        let ok = if celt_only {
+            snr >= case.min_snr_celt.max(50.0)
+        } else {
+            snr >= 10.0 && (q.is_nan() || q >= 0.0)
+        };
+        eprintln!(
+            "{:36} modes {:?}: snr {snr:6.1} dB quality {q:6.1} {}",
+            case.name,
+            modes,
+            if ok { "ok" } else { "FAIL" }
+        );
         if !ok {
             failures.push(case.name);
         }
@@ -196,15 +366,32 @@ fn libopus_oracle_output_rates() {
         return;
     }
     let cases = [
-        Case { name: "rates_music_stereo_64k", channels: 2, signal: common::music, args: &["-b:a", "64k"], min_snr_celt: 0.0 },
-        Case { name: "rates_speech_mono_16k", channels: 1, signal: common::speech, args: &["-b:a", "16k", "-application", "voip"], min_snr_celt: 0.0 },
+        Case {
+            name: "rates_music_stereo_64k",
+            channels: 2,
+            signal: common::music,
+            args: &["-b:a", "64k"],
+            min_snr_celt: 0.0,
+        },
+        Case {
+            name: "rates_speech_mono_16k",
+            channels: 1,
+            signal: common::speech,
+            args: &["-b:a", "16k", "-application", "voip"],
+            min_snr_celt: 0.0,
+        },
     ];
     let mut failures = Vec::new();
     for case in &cases {
         for rate in [8000u32, 12000, 16000, 24000] {
             let (snr, q, modes) = run(case, rate);
             let ok = q >= 0.0;
-            eprintln!("{:28} @{rate:5} modes {:?}: snr {snr:6.1} dB quality {q:6.1} {}", case.name, modes, if ok { "ok" } else { "FAIL" });
+            eprintln!(
+                "{:28} @{rate:5} modes {:?}: snr {snr:6.1} dB quality {q:6.1} {}",
+                case.name,
+                modes,
+                if ok { "ok" } else { "FAIL" }
+            );
             if !ok {
                 failures.push(format!("{}@{rate}", case.name));
             }

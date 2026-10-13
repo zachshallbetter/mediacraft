@@ -111,7 +111,10 @@ impl Default for Decoder {
 pub fn default_threads() -> usize {
     #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
     {
-        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(16)
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(16)
     }
     #[cfg(not(all(feature = "threads", not(target_arch = "wasm32"))))]
     {
@@ -130,7 +133,11 @@ impl Decoder {
         crate::cavlc::init_tables();
         #[cfg(feature = "threads")]
         let pool = if threads > 1 && cfg!(not(target_arch = "wasm32")) {
-            rayon::ThreadPoolBuilder::new().num_threads(threads).thread_name(|i| format!("h264-{i}")).build().ok()
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .thread_name(|i| format!("h264-{i}"))
+                .build()
+                .ok()
         } else {
             None
         };
@@ -246,7 +253,9 @@ impl Decoder {
             if !o.frame.is_published(o.frame.mb_h() - 1) && self.out_queue.len() <= max_queue {
                 break;
             }
-            let Some(o) = self.out_queue.pop_front() else { break };
+            let Some(o) = self.out_queue.pop_front() else {
+                break;
+            };
             pics.push(make_picture(&o));
         }
         Ok(pics)
@@ -267,7 +276,11 @@ impl Decoder {
 
     /// Statistics accumulated so far (macroblock counts include finished pictures only).
     pub fn stats(&self) -> DecodeStats {
-        self.shared.stats.lock().map(|s| s.clone()).unwrap_or_default()
+        self.shared
+            .stats
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default()
     }
 
     fn stat(&self, f: impl FnOnce(&mut DecodeStats)) {
@@ -295,7 +308,11 @@ impl Decoder {
             }
             nal_type::PPS => {
                 let rbsp = unescape_rbsp(&nal[1..]);
-                let spss: Vec<Option<Sps>> = self.spss.iter().map(|s| s.as_ref().map(|s| (**s).clone())).collect();
+                let spss: Vec<Option<Sps>> = self
+                    .spss
+                    .iter()
+                    .map(|s| s.as_ref().map(|s| (**s).clone()))
+                    .collect();
                 let pps = Pps::parse(&rbsp, &spss)?;
                 let id = pps.id as usize;
                 self.ppss[id] = Some(Arc::new(pps));
@@ -316,7 +333,8 @@ impl Decoder {
             return ls.clone();
         }
         let ls: Arc<LevelScale> = Arc::from(LevelScale::new(&pps.scaling));
-        self.ls_cache.retain(|(p, _)| self.ppss.iter().flatten().any(|q| Arc::ptr_eq(p, q)));
+        self.ls_cache
+            .retain(|(p, _)| self.ppss.iter().flatten().any(|q| Arc::ptr_eq(p, q)));
         self.ls_cache.push((pps.clone(), ls.clone()));
         ls
     }
@@ -327,8 +345,12 @@ impl Decoder {
         let spss = &self.spss;
         let mut found: Option<(Arc<Pps>, Arc<Sps>)> = None;
         let (sh, _, _) = SliceHeader::parse(&rbsp, hdr, |id| {
-            let pps = ppss[id as usize].as_ref().ok_or_else(|| Error::MissingParameterSet(format!("PPS {id}")))?;
-            let sps = spss[pps.sps_id as usize].as_ref().ok_or_else(|| Error::MissingParameterSet(format!("SPS {}", pps.sps_id)))?;
+            let pps = ppss[id as usize]
+                .as_ref()
+                .ok_or_else(|| Error::MissingParameterSet(format!("PPS {id}")))?;
+            let sps = spss[pps.sps_id as usize]
+                .as_ref()
+                .ok_or_else(|| Error::MissingParameterSet(format!("SPS {}", pps.sps_id)))?;
             found = Some((pps.clone(), sps.clone()));
             Ok((&**pps, &**sps))
         })?;
@@ -350,7 +372,11 @@ impl Decoder {
         }
         let new_pic = match &self.pending {
             None => true,
-            Some(p) => is_new_picture(&p.first, &sh, &sps) || sh.first_mb_in_slice == 0 || !Arc::ptr_eq(&p.sps, &sps),
+            Some(p) => {
+                is_new_picture(&p.first, &sh, &sps)
+                    || sh.first_mb_in_slice == 0
+                    || !Arc::ptr_eq(&p.sps, &sps)
+            }
         };
         if new_pic {
             self.submit_pending();
@@ -363,24 +389,39 @@ impl Decoder {
         let Some(pending) = self.pending.as_mut() else {
             return invalid("slice without a started picture");
         };
-        let refs = self
-            .dpb
-            .build_ref_lists(&sh, pending.poc.frame(), sps.max_frame_num(), |e| RefPic { frame: e.frame.clone(), long_term: e.mark == RefMark::Long })?;
+        let refs =
+            self.dpb
+                .build_ref_lists(&sh, pending.poc.frame(), sps.max_frame_num(), |e| RefPic {
+                    frame: e.frame.clone(),
+                    long_term: e.mark == RefMark::Long,
+                })?;
         if !sh.slice_type.is_intra() {
-            ensure!(!refs[0].is_empty(), "no reference pictures available for inter slice");
+            ensure!(
+                !refs[0].is_empty(),
+                "no reference pictures available for inter slice"
+            );
             if sh.slice_type.is_b() {
                 ensure!(!refs[1].is_empty(), "empty RefPicList1 in B slice");
             }
         }
-        let weighted = (pps.weighted_pred && sh.slice_type.is_p()) || (pps.weighted_bipred_idc != 0 && sh.slice_type.is_b());
+        let weighted = (pps.weighted_pred && sh.slice_type.is_p())
+            || (pps.weighted_bipred_idc != 0 && sh.slice_type.is_b());
         let temporal = sh.slice_type.is_b() && !sh.direct_spatial_mv_pred;
         let (cabac, st, mmcos, lt) = (
             pps.entropy_coding_mode,
             sh.slice_type,
             sh.mmcos.len() as u64,
-            sh.long_term_reference as u64 + sh.mmcos.iter().filter(|m| m.op == 3 || m.op == 6).count() as u64,
+            sh.long_term_reference as u64
+                + sh.mmcos.iter().filter(|m| m.op == 3 || m.op == 6).count() as u64,
         );
-        pending.slices.push(SliceJob { sh, pps, sps, rbsp, refs, ls });
+        pending.slices.push(SliceJob {
+            sh,
+            pps,
+            sps,
+            rbsp,
+            refs,
+            ls,
+        });
         self.stat(|s| {
             if cabac {
                 s.slices_cabac += 1;
@@ -404,7 +445,11 @@ impl Decoder {
         // Activate SPS; a resolution change flushes the DPB.
         let changed = match &self.active_sps {
             None => true,
-            Some(a) => a.width() != sps.width() || a.height() != sps.height() || a.max_dpb_frames() != sps.max_dpb_frames(),
+            Some(a) => {
+                a.width() != sps.width()
+                    || a.height() != sps.height()
+                    || a.max_dpb_frames() != sps.max_dpb_frames()
+            }
         };
         if changed && self.active_sps.is_some() {
             let mut outs = Vec::new();
@@ -424,13 +469,21 @@ impl Decoder {
             self.prev_ref_frame_num = 0;
         } else {
             let max = sps.max_frame_num();
-            if sh.frame_num != self.prev_ref_frame_num && sh.frame_num != (self.prev_ref_frame_num + 1) % max {
+            if sh.frame_num != self.prev_ref_frame_num
+                && sh.frame_num != (self.prev_ref_frame_num + 1) % max
+            {
                 // frame_num gap (8.2.5.2): insert "non-existing" frames. Their samples are never used by
                 // conforming streams; copy the latest decoded frame for concealment.
                 let meta = Arc::new(output_meta(sps, pts, false));
                 let next_id = &mut self.next_id;
                 let poc_state = &mut self.poc_state;
-                let last = self.dpb.entries.iter().filter(|e| !e.non_existing).max_by_key(|e| e.frame.id).map(|e| e.frame.clone());
+                let last = self
+                    .dpb
+                    .entries
+                    .iter()
+                    .filter(|e| !e.non_existing)
+                    .max_by_key(|e| e.frame.id)
+                    .map(|e| e.frame.clone());
                 let mut make = |_fnum: u32| {
                     let id = *next_id;
                     *next_id += 1;
@@ -445,11 +498,26 @@ impl Decoder {
                         }
                         _ => Planes::gray(mb_w * 16, mb_h * 16),
                     };
-                    (Arc::new(Frame::from_planes(id, 0, &planes)), 0, meta.clone())
+                    (
+                        Arc::new(Frame::from_planes(id, 0, &planes)),
+                        0,
+                        meta.clone(),
+                    )
                 };
                 let mut upd = |fnum: u32| poc_state.update_gap_frame(fnum, sps);
-                self.shared.stats.lock().map(|mut s| s.frame_num_gaps += 1).ok();
-                self.dpb.fill_frame_num_gap(self.prev_ref_frame_num, sh.frame_num, max, sps.max_num_ref_frames as usize, &mut make, &mut upd);
+                self.shared
+                    .stats
+                    .lock()
+                    .map(|mut s| s.frame_num_gaps += 1)
+                    .ok();
+                self.dpb.fill_frame_num_gap(
+                    self.prev_ref_frame_num,
+                    sh.frame_num,
+                    max,
+                    sps.max_num_ref_frames as usize,
+                    &mut make,
+                    &mut upd,
+                );
                 self.prev_ref_frame_num = (sh.frame_num + max - 1) % max;
             }
         }
@@ -459,24 +527,55 @@ impl Decoder {
         let id = self.next_id;
         self.next_id += 1;
         let frame = Arc::new(Frame::new(id, frame_poc, mb_w, mb_h));
-        self.pending = Some(PendingPic { frame, sps: sps.clone(), first: sh.clone(), poc, pts, key: sh.idr, slices: Vec::new() });
+        self.pending = Some(PendingPic {
+            frame,
+            sps: sps.clone(),
+            first: sh.clone(),
+            poc,
+            pts,
+            key: sh.idr,
+            slices: Vec::new(),
+        });
         Ok(())
     }
 
     /// Start decoding the pending picture and do its reference marking / DPB insertion.
     fn submit_pending(&mut self) {
         let Some(p) = self.pending.take() else { return };
-        let PendingPic { frame, sps, first, poc, pts, key, slices } = p;
+        let PendingPic {
+            frame,
+            sps,
+            first,
+            poc,
+            pts,
+            key,
+            slices,
+        } = p;
         let draft = self.draft && first.nal_ref_idc == 0;
         self.dispatch(frame.clone(), slices, draft);
         self.poc_state.update(&first, &poc);
         if first.nal_ref_idc != 0 {
-            self.prev_ref_frame_num = if first.has_mmco5() { 0 } else { first.frame_num };
+            self.prev_ref_frame_num = if first.has_mmco5() {
+                0
+            } else {
+                first.frame_num
+            };
         }
-        let meta = Arc::new(OutputMeta { draft, ..output_meta(&sps, pts, key) });
+        let meta = Arc::new(OutputMeta {
+            draft,
+            ..output_meta(&sps, pts, key)
+        });
         let mut outs = Vec::new();
         let fpoc = frame.poc;
-        self.dpb.store_picture(&first, frame, fpoc, sps.max_frame_num(), sps.max_num_ref_frames as usize, meta, &mut outs);
+        self.dpb.store_picture(
+            &first,
+            frame,
+            fpoc,
+            sps.max_frame_num(),
+            sps.max_num_ref_frames as usize,
+            meta,
+            &mut outs,
+        );
         self.emit(outs);
     }
 
@@ -531,11 +630,16 @@ fn run_job(frame: FrameRef, slices: Vec<SliceJob>, shared: &Shared, draft: bool)
             let blank = vec![MbState::default(); frame.mb_w * frame.mb_h()];
             for r in 0..frame.mb_h() {
                 if !frame.is_published(r) {
-                    frame.publish(r, Frame::make_row(&fallback, r, &blank, &|_, _, _| u32::MAX));
+                    frame.publish(
+                        r,
+                        Frame::make_row(&fallback, r, &blank, &|_, _, _| u32::MAX),
+                    );
                 }
             }
             pic = PicState::new(frame.clone());
-            Some(Error::Invalid("internal error while decoding a picture".into()))
+            Some(Error::Invalid(
+                "internal error while decoding a picture".into(),
+            ))
         }
     };
     if let Ok(mut s) = shared.stats.lock() {

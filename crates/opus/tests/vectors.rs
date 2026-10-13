@@ -36,11 +36,22 @@ fn read_bit(path: &PathBuf) -> Vec<(Vec<u8>, u32)> {
 }
 
 fn read_pcm(path: &PathBuf) -> Vec<f32> {
-    std::fs::read(path).unwrap().as_chunks::<2>().0.iter().map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect()
+    std::fs::read(path)
+        .unwrap()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+        .collect()
 }
 
 /// Decodes a vector; returns (interleaved output, index of first range mismatch).
-fn decode_vector(packets: &[(Vec<u8>, u32)], rate: u32, channels: usize, no_inv: bool) -> (Vec<f32>, Option<usize>) {
+fn decode_vector(
+    packets: &[(Vec<u8>, u32)],
+    rate: u32,
+    channels: usize,
+    no_inv: bool,
+) -> (Vec<f32>, Option<usize>) {
     let mut dec = StreamDecoder::new(rate, channels).unwrap();
     if no_inv {
         dec.set_phase_inversion_disabled(true);
@@ -48,7 +59,11 @@ fn decode_vector(packets: &[(Vec<u8>, u32)], rate: u32, channels: usize, no_inv:
     let mut out = Vec::new();
     let mut mismatch = None;
     for (i, (pkt, rng)) in packets.iter().enumerate() {
-        let r = if pkt.is_empty() { dec.decode_interleaved(None, &mut out) } else { dec.decode_interleaved(Some(pkt), &mut out) };
+        let r = if pkt.is_empty() {
+            dec.decode_interleaved(None, &mut out)
+        } else {
+            dec.decode_interleaved(Some(pkt), &mut out)
+        };
         if r.is_err() {
             mismatch.get_or_insert(i);
             continue;
@@ -75,7 +90,12 @@ fn rfc8251_test_vectors() {
             let mut reference = read_pcm(&dir.join(format!("{name}{suffix}.dec")));
             if channels == 1 {
                 // Mono output is compared against the downmix of the phase-inversion-free reference.
-                reference = reference.as_chunks::<2>().0.iter().map(|c| 0.5 * (c[0] + c[1])).collect();
+                reference = reference
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| 0.5 * (c[0] + c[1]))
+                    .collect();
             }
             let q = common::opus_quality(&reference, &out, channels, 48000);
             let snr = common::snr_db(&reference, &out);
@@ -109,7 +129,8 @@ fn quality_metric_calibration() {
     };
     let reference = read_pcm(&dir.join("testvector01.dec"));
     let reference = &reference[..reference.len().min(48000 * 2 * 20)];
-    let p: f64 = reference.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / reference.len() as f64;
+    let p: f64 =
+        reference.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / reference.len() as f64;
     for (snr, lo, hi) in [(48.0f64, -15.0, 15.0), (70.0, 60.0, 101.0)] {
         let amp = (p / 10f64.powf(snr / 10.0) * 3.0).sqrt();
         let mut seed = 1u32;
@@ -133,7 +154,10 @@ fn vector_diag() {
     let Some(dir) = vectors_dir() else {
         return;
     };
-    let v: usize = std::env::var("VEC").ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+    let v: usize = std::env::var("VEC")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2);
     let name = format!("testvector{v:02}");
     let packets = read_bit(&dir.join(format!("{name}.bit")));
     let mut dec = StreamDecoder::new(48000, 2).unwrap();
@@ -147,7 +171,16 @@ fn vector_diag() {
         } else {
             let p = craft_opus::Packet::parse(pkt).unwrap();
             dec.decode_interleaved(Some(pkt), &mut out).unwrap();
-            lines.push((start, format!("{:?} {:?} st{} n{}", p.toc.mode, p.toc.bandwidth, p.toc.stereo as u8, p.frames.len())));
+            lines.push((
+                start,
+                format!(
+                    "{:?} {:?} st{} n{}",
+                    p.toc.mode,
+                    p.toc.bandwidth,
+                    p.toc.stereo as u8,
+                    p.frames.len()
+                ),
+            ));
         }
     }
     let reference = read_pcm(&dir.join(format!("{name}.dec")));
@@ -155,8 +188,17 @@ fn vector_diag() {
     for s in 0..reference.len() / sec {
         let r = &reference[s * sec..(s + 1) * sec];
         let o = &out[s * sec..(s + 1) * sec];
-        let mut kinds: Vec<&String> = lines.iter().filter(|(st, _)| *st >= s * 48000 && *st < (s + 1) * 48000).map(|(_, c)| c).collect();
+        let mut kinds: Vec<&String> = lines
+            .iter()
+            .filter(|(st, _)| *st >= s * 48000 && *st < (s + 1) * 48000)
+            .map(|(_, c)| c)
+            .collect();
         kinds.dedup();
-        eprintln!("{s:3}s snr {:6.1} q {:6.1} {:?}", common::snr_db(r, o), common::opus_quality(r, o, 2, 48000), kinds);
+        eprintln!(
+            "{s:3}s snr {:6.1} q {:6.1} {:?}",
+            common::snr_db(r, o),
+            common::opus_quality(r, o, 2, 48000),
+            kinds
+        );
     }
 }

@@ -7,7 +7,7 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use filmcraft_isobmff::{CodecConfig, TrackKind, open as isobmff_open};
+use craft_isobmff::{CodecConfig, TrackKind, open as isobmff_open};
 use mediacraft_protocol::stream::{MediaPacket, Rational};
 use thiserror::Error;
 
@@ -19,7 +19,7 @@ pub enum RemuxError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("ISO BMFF error: {0}")]
-    Iso(#[from] filmcraft_isobmff::Error),
+    Iso(#[from] craft_isobmff::Error),
     #[error("Multiplexer error: {0}")]
     Mux(#[from] Mp4MuxError),
     #[error("No compatible video or audio tracks found for stream-copy")]

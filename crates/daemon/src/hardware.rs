@@ -2,7 +2,7 @@
 //!
 //! Inspects host runtime environment to discover hardware acceleration capabilities:
 //! - macOS: VideoToolbox hardware encoders for H.264, HEVC, and ProRes on Apple Silicon / Intel.
-//! - Non-macOS / Fallback: Clean-room pure-Rust software execution engines (`filmcraft-h264enc`, etc.).
+//! - Non-macOS / Fallback: Clean-room pure-Rust software execution engines (`craft-h264enc`, etc.).
 //!
 //! Receipts and telemetry report the exact active backend used (`Hardware` vs `Software`).
 
@@ -79,9 +79,7 @@ impl HardwareCapabilities {
                 has_h264_hw: false,
                 has_hevc_hw: false,
                 has_prores_hw: false,
-                preferred_backend: ExecutionBackend::Software(
-                    "filmcraft software engine".to_string(),
-                ),
+                preferred_backend: ExecutionBackend::Software("craft software engine".to_string()),
             }
         }
     }

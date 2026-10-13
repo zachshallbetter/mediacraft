@@ -34,14 +34,20 @@ impl BandModel {
     fn new(sample_rate: u32, offsets: &'static [u16], m: usize) -> BandModel {
         let nb = offsets.len() - 1;
         let hz_per_line = sample_rate as f64 / (2.0 * m as f64);
-        let centre: Vec<f64> = (0..nb).map(|b| bark((offsets[b] as f64 + offsets[b + 1] as f64) * 0.5 * hz_per_line)).collect();
+        let centre: Vec<f64> = (0..nb)
+            .map(|b| bark((offsets[b] as f64 + offsets[b + 1] as f64) * 0.5 * hz_per_line))
+            .collect();
         let spread = (0..nb)
             .map(|i| {
                 (0..nb)
                     .map(|j| {
                         let dz = centre[i] - centre[j] + 0.474;
                         let db = 15.81 + 7.5 * dz - 17.5 * (1.0 + dz * dz).sqrt();
-                        if db < -60.0 { 0.0 } else { 10f64.powf(db / 10.0) as f32 }
+                        if db < -60.0 {
+                            0.0
+                        } else {
+                            10f64.powf(db / 10.0) as f32
+                        }
                     })
                     .collect()
             })
@@ -71,7 +77,12 @@ impl BandModel {
                 }
             })
             .collect();
-        BandModel { offsets, spread, ath, tonal_span }
+        BandModel {
+            offsets,
+            spread,
+            ath,
+            tonal_span,
+        }
     }
 
     pub fn num_bands(&self) -> usize {
@@ -96,14 +107,25 @@ pub struct PsyResult {
 
 impl Psy {
     pub fn new(sample_rate: u32, sf_index: u8) -> Psy {
-        Psy { long: BandModel::new(sample_rate, swb_offsets_long(sf_index), 1024), short: BandModel::new(sample_rate, swb_offsets_short(sf_index), 128) }
+        Psy {
+            long: BandModel::new(sample_rate, swb_offsets_long(sf_index), 1024),
+            short: BandModel::new(sample_rate, swb_offsets_short(sf_index), 128),
+        }
     }
 
     /// Analyse a spectrum: 1024 lines (long) or 8×128 (short).
     pub fn analyse(&self, spec: &[f32], short: bool) -> PsyResult {
-        let (model, nwin, wlen) = if short { (&self.short, 8, 128) } else { (&self.long, 1, 1024) };
+        let (model, nwin, wlen) = if short {
+            (&self.short, 8, 128)
+        } else {
+            (&self.long, 1, 1024)
+        };
         let nb = model.num_bands();
-        let mut res = PsyResult { en: Vec::with_capacity(nwin), thr: Vec::with_capacity(nwin), pe: 0.0 };
+        let mut res = PsyResult {
+            en: Vec::with_capacity(nwin),
+            thr: Vec::with_capacity(nwin),
+            pe: 0.0,
+        };
         let mut psd = vec![0f32; nb];
         let mut tonality = vec![0f32; nb];
         for w in 0..nwin {
@@ -156,7 +178,9 @@ mod tests {
     #[test]
     fn tone_is_masked_less_than_noise() {
         let psy = Psy::new(44100, 4);
-        let tone: Vec<f32> = (0..1024).map(|k| if k == 100 { 1e6 } else { 0.0 }).collect();
+        let tone: Vec<f32> = (0..1024)
+            .map(|k| if k == 100 { 1e6 } else { 0.0 })
+            .collect();
         let mut seed = 1u32;
         let noise: Vec<f32> = (0..1024)
             .map(|_| {

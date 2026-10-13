@@ -3,8 +3,8 @@
 //! Provides progressive demuxing of MP4/MOV containers and frame-accurate decoding
 //! of H.264 bitstreams into uncompressed `VideoFrame` buffers.
 
-use filmcraft_h264::Decoder as H264Decoder;
-use filmcraft_isobmff::{CodecConfig, TrackKind, open as isobmff_open};
+use craft_h264::Decoder as H264Decoder;
+use craft_isobmff::{CodecConfig, TrackKind, open as isobmff_open};
 use mediacraft_protocol::stream::{Rational, VideoFrame};
 use std::fs::File;
 use std::path::Path;
@@ -15,9 +15,9 @@ pub enum VideoDemuxError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("ISO BMFF demuxer error: {0}")]
-    Iso(#[from] filmcraft_isobmff::Error),
+    Iso(#[from] craft_isobmff::Error),
     #[error("H.264 decoder error: {0}")]
-    H264(#[from] filmcraft_h264::Error),
+    H264(#[from] craft_h264::Error),
     #[error("no video track found in container")]
     NoVideoTrack,
     #[error("unsupported video codec in track: {0}")]

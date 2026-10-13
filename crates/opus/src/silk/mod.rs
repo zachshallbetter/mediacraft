@@ -139,8 +139,18 @@ impl Channel {
         }
     }
 
-    fn decode_indices(&mut self, dec: &mut RangeDecoder, frame_index: usize, decode_lbrr: bool, cond: Cond) {
-        let ix = if decode_lbrr || self.vad_flags[frame_index] { dec.icdf(&TYPE_ACTIVE, 8) + 2 } else { dec.icdf(&TYPE_INACTIVE, 8) };
+    fn decode_indices(
+        &mut self,
+        dec: &mut RangeDecoder,
+        frame_index: usize,
+        decode_lbrr: bool,
+        cond: Cond,
+    ) {
+        let ix = if decode_lbrr || self.vad_flags[frame_index] {
+            dec.icdf(&TYPE_ACTIVE, 8) + 2
+        } else {
+            dec.icdf(&TYPE_INACTIVE, 8)
+        };
         let ind = &mut self.indices;
         ind.signal_type = ix >> 1;
         ind.quant_offset_type = ix & 1;
@@ -158,7 +168,11 @@ impl Channel {
         let i1 = dec.icdf(NLSF_STAGE1[s1], 8);
         ind.nlsf[0] = i1 as i32;
         for i in 0..self.lpc_order {
-            let cb = if wb { 8 + NLSF_SEL_WB[i1][i] as usize } else { NLSF_SEL_NBMB[i1][i] as usize };
+            let cb = if wb {
+                8 + NLSF_SEL_WB[i1][i] as usize
+            } else {
+                NLSF_SEL_NBMB[i1][i] as usize
+            };
             let mut v = dec.icdf(NLSF_STAGE2[cb], 8) as i32;
             if v == 0 {
                 v -= dec.icdf(&NLSF_EXT, 8) as i32;
@@ -167,7 +181,11 @@ impl Channel {
             }
             ind.nlsf[i + 1] = v - 4;
         }
-        ind.nlsf_interp_q2 = if self.nb_subfr == 4 { dec.icdf(&NLSF_INTERP, 8) as i32 } else { 4 };
+        ind.nlsf_interp_q2 = if self.nb_subfr == 4 {
+            dec.icdf(&NLSF_INTERP, 8) as i32
+        } else {
+            4
+        };
         if ind.signal_type == 2 {
             let mut absolute = true;
             if cond == Cond::Conditionally && self.ec_prev_signal_type == 2 {
@@ -198,13 +216,23 @@ impl Channel {
             for k in 0..self.nb_subfr {
                 ind.ltp_index[k] = dec.icdf(LTP_FILTER[ind.per_index], 8);
             }
-            ind.ltp_scale_index = if cond == Cond::Independently { dec.icdf(&LTP_SCALE, 8) } else { 0 };
+            ind.ltp_scale_index = if cond == Cond::Independently {
+                dec.icdf(&LTP_SCALE, 8)
+            } else {
+                0
+            };
         }
         self.ec_prev_signal_type = ind.signal_type;
         ind.seed = dec.icdf(&UNIFORM4, 8) as i32;
     }
 
-    fn decode_frame(&mut self, dec: Option<&mut RangeDecoder>, out: &mut [i16], lost: LostFlag, cond: Cond) {
+    fn decode_frame(
+        &mut self,
+        dec: Option<&mut RangeDecoder>,
+        out: &mut [i16],
+        lost: LostFlag,
+        cond: Cond,
+    ) {
         let l = self.frame_length;
         let decode = match (lost, &dec) {
             (LostFlag::Normal, Some(_)) => true,
@@ -214,12 +242,22 @@ impl Channel {
         if decode && let Some(dec) = dec {
             self.decode_indices(dec, self.n_frames_decoded, lost == LostFlag::Lbrr, cond);
             let mut pulses = [0i32; MAX_FRAME + 16];
-            decode_pulses(dec, &mut pulses, self.indices.signal_type, self.indices.quant_offset_type, l);
+            decode_pulses(
+                dec,
+                &mut pulses,
+                self.indices.signal_type,
+                self.indices.quant_offset_type,
+                l,
+            );
             let ctrl = self.decode_parameters(cond);
             self.decode_core(&ctrl, &pulses, out);
             self.plc_lpc_q12 = ctrl.pred_coef_q12[1];
             self.plc_gain_q16 = ctrl.gains_q16[self.nb_subfr - 1];
-            self.plc_pitch = if self.indices.signal_type == 2 { ctrl.pitch_l[self.nb_subfr - 1] } else { 0 };
+            self.plc_pitch = if self.indices.signal_type == 2 {
+                ctrl.pitch_l[self.nb_subfr - 1]
+            } else {
+                0
+            };
             self.loss_cnt = 0;
             self.prev_signal_type = self.indices.signal_type;
             self.first_frame_after_reset = false;
@@ -265,7 +303,8 @@ impl Channel {
         if self.indices.nlsf_interp_q2 < 4 {
             let mut n0 = [0i32; MAX_LPC_ORDER];
             for i in 0..order {
-                n0[i] = self.prev_nlsf_q15[i] + ((self.indices.nlsf_interp_q2 * (nlsf[i] - self.prev_nlsf_q15[i])) >> 2);
+                n0[i] = self.prev_nlsf_q15[i]
+                    + ((self.indices.nlsf_interp_q2 * (nlsf[i] - self.prev_nlsf_q15[i])) >> 2);
             }
             ctrl.pred_coef_q12[0] = nlsf2a(&n0[..order]);
         } else {
@@ -364,18 +403,25 @@ impl Channel {
             if signal_type == 2 {
                 let lag_u = lag as usize;
                 if k == 0 || (k == 2 && interp) {
-                    let start_idx = ltp_mem as isize - lag as isize - order as isize - (LTP_ORDER / 2) as isize;
+                    let start_idx =
+                        ltp_mem as isize - lag as isize - order as isize - (LTP_ORDER / 2) as isize;
                     let start_idx = start_idx.max(0) as usize;
                     if k == 2 {
                         self.out_buf[ltp_mem..ltp_mem + 2 * sub].copy_from_slice(&xq[..2 * sub]);
                     }
                     let src_off = start_idx + k * sub;
-                    lpc_analysis_filter(&mut s_ltp[start_idx..ltp_mem], &self.out_buf[src_off..src_off + ltp_mem - start_idx], a_q12, order);
+                    lpc_analysis_filter(
+                        &mut s_ltp[start_idx..ltp_mem],
+                        &self.out_buf[src_off..src_off + ltp_mem - start_idx],
+                        a_q12,
+                        order,
+                    );
                     if k == 0 {
                         inv_gain_q31 = smulwb(inv_gain_q31, ctrl.ltp_scale_q14) << 2;
                     }
                     for i in 0..(lag_u + LTP_ORDER / 2).min(ltp_mem) {
-                        s_ltp_q15[ltp_buf_idx - i - 1] = smulwb(inv_gain_q31, s_ltp[ltp_mem - i - 1] as i32);
+                        s_ltp_q15[ltp_buf_idx - i - 1] =
+                            smulwb(inv_gain_q31, s_ltp[ltp_mem - i - 1] as i32);
                     }
                 } else if gain_adj_q16 != 1 << 16 {
                     for i in 0..(lag_u + LTP_ORDER / 2).min(ltp_buf_idx) {
@@ -386,7 +432,13 @@ impl Channel {
                 let base = ltp_buf_idx as isize - lag as isize + (LTP_ORDER / 2) as isize;
                 for i in 0..sub {
                     let p = base + i as isize;
-                    let g = |o: isize| -> i32 { if p - o >= 0 { s_ltp_q15[(p - o) as usize] } else { 0 } };
+                    let g = |o: isize| -> i32 {
+                        if p - o >= 0 {
+                            s_ltp_q15[(p - o) as usize]
+                        } else {
+                            0
+                        }
+                    };
                     let mut pred = 2i32;
                     pred = smlawb(pred, g(0), b_q14[0]);
                     pred = smlawb(pred, g(1), b_q14[1]);
@@ -448,7 +500,10 @@ impl Channel {
             }
             let rms = (e / (mem - order).max(1) as f32).sqrt() * fade;
             for _ in 0..l {
-                self.plc_rand = self.plc_rand.wrapping_mul(196_314_165).wrapping_add(907_633_515);
+                self.plc_rand = self
+                    .plc_rand
+                    .wrapping_mul(196_314_165)
+                    .wrapping_add(907_633_515);
                 let mut v = ((self.plc_rand as i32) >> 16) as f32 / 32768.0 * rms * 1.7;
                 for j in 0..order {
                     v += a[j] * y[y.len() - 1 - j];
@@ -488,7 +543,11 @@ fn log2lin(in_log_q7: i32) -> i32 {
     }
     let out = 1i32 << (in_log_q7 >> 7);
     let frac = in_log_q7 & 0x7F;
-    if in_log_q7 < 2048 { out + ((out * smlawb(frac, frac * (128 - frac), -174)) >> 7) } else { out + (out >> 7) * smlawb(frac, frac * (128 - frac), -174) }
+    if in_log_q7 < 2048 {
+        out + ((out * smlawb(frac, frac * (128 - frac), -174)) >> 7)
+    } else {
+        out + (out >> 7) * smlawb(frac, frac * (128 - frac), -174)
+    }
 }
 
 fn lpc_analysis_filter(out: &mut [i16], input: &[i16], b: &[i32], d: usize) {
@@ -506,7 +565,13 @@ fn lpc_analysis_filter(out: &mut [i16], input: &[i16], b: &[i32], d: usize) {
     }
 }
 
-fn decode_pulses(dec: &mut RangeDecoder, pulses: &mut [i32], signal_type: usize, quant_offset_type: usize, frame_length: usize) {
+fn decode_pulses(
+    dec: &mut RangeDecoder,
+    pulses: &mut [i32],
+    signal_type: usize,
+    quant_offset_type: usize,
+    frame_length: usize,
+) {
     let rate_level = dec.icdf(RATE_LEVEL[signal_type >> 1], 8);
     let mut iter = frame_length >> 4;
     if iter * 16 < frame_length {
@@ -518,7 +583,11 @@ fn decode_pulses(dec: &mut RangeDecoder, pulses: &mut [i32], signal_type: usize,
         let mut s = dec.icdf(PULSE_COUNT[rate_level], 8) as i32;
         while s == 17 {
             n_lshifts[i] += 1;
-            let tab = if n_lshifts[i] == 10 { PULSE_COUNT[10] } else { PULSE_COUNT[9] };
+            let tab = if n_lshifts[i] == 10 {
+                PULSE_COUNT[10]
+            } else {
+                PULSE_COUNT[9]
+            };
             s = dec.icdf(tab, 8) as i32;
         }
         sum_pulses[i] = s;
@@ -612,7 +681,14 @@ fn stereo_decode_pred(dec: &mut RangeDecoder) -> [i32; 2] {
     pred
 }
 
-fn stereo_ms_to_lr(st: &mut Stereo, x1: &mut [i16], x2: &mut [i16], pred_q13: [i32; 2], fs_khz: usize, len: usize) {
+fn stereo_ms_to_lr(
+    st: &mut Stereo,
+    x1: &mut [i16],
+    x2: &mut [i16],
+    pred_q13: [i32; 2],
+    fs_khz: usize,
+    len: usize,
+) {
     x1[..2].copy_from_slice(&st.s_mid);
     x2[..2].copy_from_slice(&st.s_side);
     st.s_mid.copy_from_slice(&x1[len..len + 2]);
@@ -620,8 +696,14 @@ fn stereo_ms_to_lr(st: &mut Stereo, x1: &mut [i16], x2: &mut [i16], pred_q13: [i
     let mut p0 = st.pred_prev_q13[0];
     let mut p1 = st.pred_prev_q13[1];
     let denom_q16 = (1 << 16) / (8 * fs_khz as i32);
-    let d0 = rshift_round((pred_q13[0] - st.pred_prev_q13[0]) as i16 as i32 * denom_q16 as i16 as i32, 16);
-    let d1 = rshift_round((pred_q13[1] - st.pred_prev_q13[1]) as i16 as i32 * denom_q16 as i16 as i32, 16);
+    let d0 = rshift_round(
+        (pred_q13[0] - st.pred_prev_q13[0]) as i16 as i32 * denom_q16 as i16 as i32,
+        16,
+    );
+    let d1 = rshift_round(
+        (pred_q13[1] - st.pred_prev_q13[1]) as i16 as i32 * denom_q16 as i16 as i32,
+        16,
+    );
     let interp = 8 * fs_khz;
     for n in 0..len {
         if n < interp {
@@ -688,7 +770,14 @@ impl SilkDecoder {
     }
 
     /// Decodes one SILK frame (10 or 20 ms) into interleaved `out` at the API rate.
-    pub fn decode(&mut self, mut dec: Option<&mut RangeDecoder>, lost: LostFlag, new_packet: bool, payload_ms: usize, out: &mut [f32]) -> Result<usize> {
+    pub fn decode(
+        &mut self,
+        mut dec: Option<&mut RangeDecoder>,
+        lost: LostFlag,
+        new_packet: bool,
+        payload_ms: usize,
+        out: &mut [f32],
+    ) -> Result<usize> {
         let nci = self.channels_internal;
         if new_packet {
             for c in self.ch.iter_mut() {
@@ -698,7 +787,9 @@ impl SilkDecoder {
         if nci > self.channels_internal_prev && self.channels_internal_prev != 0 {
             self.ch[1] = Channel::new();
         }
-        let stereo_to_mono = nci == 1 && self.channels_internal_prev == 2 && self.internal_rate == 1000 * self.ch[0].fs_khz as u32;
+        let stereo_to_mono = nci == 1
+            && self.channels_internal_prev == 2
+            && self.internal_rate == 1000 * self.ch[0].fs_khz as u32;
         if self.ch[0].n_frames_decoded == 0 {
             for c in self.ch.iter_mut().take(nci) {
                 let (nfpp, nb) = match payload_ms {
@@ -722,7 +813,9 @@ impl SilkDecoder {
         self.channels_internal_prev = nci;
 
         if lost != LostFlag::Lost && self.ch[0].n_frames_decoded == 0 {
-            let d = dec.as_deref_mut().ok_or(Error::InvalidPacket("missing SILK data"))?;
+            let d = dec
+                .as_deref_mut()
+                .ok_or(Error::InvalidPacket("missing SILK data"))?;
             for c in self.ch.iter_mut().take(nci) {
                 for i in 0..c.n_frames_per_packet {
                     c.vad_flags[i] = d.bit_logp(1);
@@ -753,11 +846,21 @@ impl SilkDecoder {
                                     d.icdf(&MID_ONLY, 8);
                                 }
                             }
-                            let cond = if i > 0 && self.ch[n].lbrr_flags[i - 1] { Cond::Conditionally } else { Cond::Independently };
+                            let cond = if i > 0 && self.ch[n].lbrr_flags[i - 1] {
+                                Cond::Conditionally
+                            } else {
+                                Cond::Independently
+                            };
                             let c = &mut self.ch[n];
                             c.decode_indices(d, i, true, cond);
                             let mut pulses = [0i32; MAX_FRAME + 16];
-                            decode_pulses(d, &mut pulses, c.indices.signal_type, c.indices.quant_offset_type, c.frame_length);
+                            decode_pulses(
+                                d,
+                                &mut pulses,
+                                c.indices.signal_type,
+                                c.indices.quant_offset_type,
+                                c.frame_length,
+                            );
                         }
                     }
                 }
@@ -766,12 +869,18 @@ impl SilkDecoder {
         // Stereo prediction.
         if nci == 2 {
             let fi = self.ch[0].n_frames_decoded;
-            let coded = lost == LostFlag::Normal || (lost == LostFlag::Lbrr && self.ch[0].lbrr_flags[fi]);
+            let coded =
+                lost == LostFlag::Normal || (lost == LostFlag::Lbrr && self.ch[0].lbrr_flags[fi]);
             match dec.as_deref_mut() {
                 Some(d) if coded => {
                     self.ms_pred = stereo_decode_pred(d);
-                    let side_inactive = (lost == LostFlag::Normal && !self.ch[1].vad_flags[fi]) || (lost == LostFlag::Lbrr && !self.ch[1].lbrr_flags[fi]);
-                    self.decode_only_middle = if side_inactive { d.icdf(&MID_ONLY, 8) == 1 } else { false };
+                    let side_inactive = (lost == LostFlag::Normal && !self.ch[1].vad_flags[fi])
+                        || (lost == LostFlag::Lbrr && !self.ch[1].lbrr_flags[fi]);
+                    self.decode_only_middle = if side_inactive {
+                        d.icdf(&MID_ONLY, 8) == 1
+                    } else {
+                        false
+                    };
                 }
                 _ => {
                     self.ms_pred = self.stereo.pred_prev_q13;
@@ -792,7 +901,10 @@ impl SilkDecoder {
         let has_side = if lost == LostFlag::Normal {
             !self.decode_only_middle
         } else {
-            !self.prev_decode_only_middle || (nci == 2 && lost == LostFlag::Lbrr && self.ch[1].lbrr_flags[self.ch[1].n_frames_decoded])
+            !self.prev_decode_only_middle
+                || (nci == 2
+                    && lost == LostFlag::Lbrr
+                    && self.ch[1].lbrr_flags[self.ch[1].n_frames_decoded])
         };
         for n in 0..nci {
             if n == 0 || has_side {
@@ -800,7 +912,11 @@ impl SilkDecoder {
                 let cond = if frame_index <= 0 {
                     Cond::Independently
                 } else if lost == LostFlag::Lbrr {
-                    if self.ch[n].lbrr_flags[frame_index as usize - 1] { Cond::Conditionally } else { Cond::Independently }
+                    if self.ch[n].lbrr_flags[frame_index as usize - 1] {
+                        Cond::Conditionally
+                    } else {
+                        Cond::Independently
+                    }
                 } else if n > 0 && self.prev_decode_only_middle {
                     Cond::IndependentlyNoLtpScaling
                 } else {
@@ -815,7 +931,14 @@ impl SilkDecoder {
         }
         if self.api_channels == 2 && nci == 2 {
             let (a, b) = buf.split_at_mut(1);
-            stereo_ms_to_lr(&mut self.stereo, &mut a[0], &mut b[0], self.ms_pred, self.ch[0].fs_khz, l);
+            stereo_ms_to_lr(
+                &mut self.stereo,
+                &mut a[0],
+                &mut b[0],
+                self.ms_pred,
+                self.ch[0].fs_khz,
+                l,
+            );
         } else {
             buf[0][..2].copy_from_slice(&self.stereo.s_mid);
             self.stereo.s_mid.copy_from_slice(&buf[0][l..l + 2]);

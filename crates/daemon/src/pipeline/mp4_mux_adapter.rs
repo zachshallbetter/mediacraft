@@ -3,7 +3,7 @@
 //! Provides simultaneous multiplexing of H.264 video tracks and AAC audio tracks into
 //! progressive ISO Base Media File Format containers (`.mp4`, `.mov`) with Faststart layout.
 
-use filmcraft_isobmff::{
+use craft_isobmff::{
     AacConfig, AvcConfig, Brand, CodecConfig, Edit, FourCc, Mp4Writer, SampleEntry, TrackConfig,
     WriteSample, WriterOptions,
 };
@@ -14,7 +14,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum Mp4MuxError {
     #[error("ISO BMFF muxer error: {0}")]
-    Iso(#[from] filmcraft_isobmff::Error),
+    Iso(#[from] craft_isobmff::Error),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("invalid track index: {0}")]

@@ -3,7 +3,7 @@
 //! Provides mathematically verified, pure-Rust audio and video quality analysis:
 //! - Video: Peak Signal-to-Noise Ratio (PSNR) and Structural Similarity Index (SSIM).
 //! - Audio: ITU-R BS.1770-4 / EBU R128 integrated loudness (LUFS) and true peak (dBTP)
-//!   via `filmcraft-audio-dsp`.
+//!   via `craft-audio-dsp`.
 //!
 //! Production paths MUST NEVER use synthetic, simulated, or placeholder metrics.
 
@@ -178,13 +178,13 @@ pub fn calculate_ssim(
 pub fn measure_audio_loudness(
     channels: &[Vec<f32>],
     sample_rate: u32,
-) -> Result<filmcraft_audio_dsp::loudness::LoudnessSummary, QualityError> {
+) -> Result<craft_audio_dsp::loudness::LoudnessSummary, QualityError> {
     if channels.is_empty() || channels.iter().any(|c| c.is_empty()) {
         return Err(QualityError::EmptyData);
     }
 
     let channel_slices: Vec<&[f32]> = channels.iter().map(|c| c.as_slice()).collect();
-    Ok(filmcraft_audio_dsp::loudness::measure(
+    Ok(craft_audio_dsp::loudness::measure(
         &channel_slices,
         sample_rate as f64,
     ))

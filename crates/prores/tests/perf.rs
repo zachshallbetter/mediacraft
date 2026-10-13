@@ -30,7 +30,10 @@ fn busy_1080p(chroma: ChromaFormat) -> Frame {
 }
 
 fn fps(frame: &[u8], threads: bool, secs: f64) -> f64 {
-    let opts = DecodeOptions { bit_depth: None, threads };
+    let opts = DecodeOptions {
+        bit_depth: None,
+        threads,
+    };
     // Reuse the output planes across frames, as a player would.
     let mut out = decode_frame_with(frame, &opts).unwrap();
     let t = Instant::now();
@@ -52,17 +55,32 @@ fn decode_1080p_fps() {
         let mut enc = Encoder::new(p, 1920, 1080);
         let t = Instant::now();
         let coded = enc.encode(&src).unwrap();
-        println!("encode {p:?} 1080p: {:.1} ms, {} bytes", t.elapsed().as_secs_f64() * 1e3, coded.len());
+        println!(
+            "encode {p:?} 1080p: {:.1} ms, {} bytes",
+            t.elapsed().as_secs_f64() * 1e3,
+            coded.len()
+        );
         streams.push((format!("ours {p:?} (nominal rate)"), coded));
     }
     if let Some(ff) = common::ffmpeg() {
-        let spec = common::Spec::new("perf_ks_hq_mandel_1080", "mandelbrot=s=1920x1080:r=25,format=yuv422p10le", 1, &["-c:v", "prores_ks", "-profile:v", "3"]);
+        let spec = common::Spec::new(
+            "perf_ks_hq_mandel_1080",
+            "mandelbrot=s=1920x1080:r=25,format=yuv422p10le",
+            1,
+            &["-c:v", "prores_ks", "-profile:v", "3"],
+        );
         let mov = common::make(&ff, &spec);
-        streams.push(("prores_ks HQ mandelbrot".into(), common::packets(&ff, &mov).remove(0)));
+        streams.push((
+            "prores_ks HQ mandelbrot".into(),
+            common::packets(&ff, &mov).remove(0),
+        ));
     }
     for (name, s) in &streams {
         let mt = fps(s, true, 2.0);
         let st = fps(s, false, 2.0);
-        println!("{name:<32} {:>8} bytes: {mt:7.1} fps threaded, {st:6.1} fps single-threaded", s.len());
+        println!(
+            "{name:<32} {:>8} bytes: {mt:7.1} fps threaded, {st:6.1} fps single-threaded",
+            s.len()
+        );
     }
 }

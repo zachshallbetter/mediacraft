@@ -49,7 +49,9 @@ fn random_garbage_never_panics() {
 #[test]
 fn multistream_garbage_never_panics() {
     let mut h = b"OpusHead".to_vec();
-    h.extend([1, 6, 0x38, 0x01, 0x80, 0xBB, 0, 0, 0, 0, 1, 4, 2, 0, 4, 1, 2, 3, 5]);
+    h.extend([
+        1, 6, 0x38, 0x01, 0x80, 0xBB, 0, 0, 0, 0, 1, 4, 2, 0, 4, 1, 2, 3, 5,
+    ]);
     let mut dec = Decoder::new(&h).unwrap();
     let mut rng = Rng(42);
     for _ in 0..2000 {
@@ -114,7 +116,8 @@ fn corrupted_real_packets() {
                 _ => {}
             }
             out.clear();
-            let _ = dec.decode_interleaved(if pkt.is_empty() { None } else { Some(&pkt) }, &mut out);
+            let _ =
+                dec.decode_interleaved(if pkt.is_empty() { None } else { Some(&pkt) }, &mut out);
             check_finite(&out);
         }
     }
