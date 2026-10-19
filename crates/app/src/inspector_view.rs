@@ -3,6 +3,8 @@
 use egui::{Color32, CornerRadius, Pos2, Rect, RichText, Stroke, Vec2};
 use mediacraft_catalog::{DerivativeGraph, MediaAsset, MediaKind};
 
+use crate::mockup_art::{WorkstationTextures, paint_asset_thumbnail_with_textures};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewMode {
     Source,
@@ -50,6 +52,7 @@ pub fn render_inspector_panel(
     state: &mut InspectorState,
     asset: Option<&MediaAsset>,
     graph: &DerivativeGraph,
+    textures: Option<&WorkstationTextures>,
 ) {
     let Some(asset) = asset else {
         ui.vertical_centered(|ui| {
@@ -153,6 +156,7 @@ pub fn render_inspector_panel(
         state.scrub_pos,
         state.preview_mode,
         state.split_pos,
+        textures,
     );
 
     // Timecode burn-in in corner
@@ -1282,8 +1286,37 @@ fn draw_raster_simulation(
     rect: Rect,
     asset: &MediaAsset,
     is_compressed: bool,
+    textures: Option<&WorkstationTextures>,
 ) {
     let corner = CornerRadius::same(3);
+
+    if let Some(texs) = textures {
+        if let Some(tex) = texs.get_preview_texture(&asset.filename) {
+            let uv = crate::mockup_art::calculate_cover_uv(tex.size(), rect);
+            painter.image(tex.id(), rect, uv, Color32::WHITE);
+            if is_compressed {
+                painter.rect_filled(rect, corner, Color32::from_black_alpha(45));
+            }
+            painter.rect_stroke(
+                rect,
+                corner,
+                Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 25)),
+                egui::StrokeKind::Inside,
+            );
+            return;
+        } else if paint_asset_thumbnail_with_textures(
+            painter,
+            texs,
+            rect,
+            &asset.id,
+            &asset.filename,
+        ) {
+            if is_compressed {
+                painter.rect_filled(rect, corner, Color32::from_black_alpha(45));
+            }
+            return;
+        }
+    }
     match asset.kind {
         MediaKind::Video => {
             if asset.filename.contains("A001") {
@@ -1377,14 +1410,15 @@ fn draw_player_frame(
     _scrub: f32,
     mode: PreviewMode,
     split_pos: f32,
+    textures: Option<&WorkstationTextures>,
 ) {
     match mode {
         PreviewMode::Source => {
-            draw_raster_simulation(painter, rect, asset, false);
+            draw_raster_simulation(painter, rect, asset, false, textures);
             draw_overlay_badge(painter, rect, "SOURCE: 10-bit Master", true);
         }
         PreviewMode::Output => {
-            draw_raster_simulation(painter, rect, asset, true);
+            draw_raster_simulation(painter, rect, asset, true, textures);
             draw_overlay_badge(painter, rect, "OUTPUT: Encoded H.264 Proxy", false);
         }
         PreviewMode::ComparisonSplit => {
@@ -1393,7 +1427,7 @@ fn draw_player_frame(
             let right_rect = Rect::from_min_max(Pos2::new(split_x, rect.min.y), rect.max);
 
             // Draw full master plate first
-            draw_raster_simulation(painter, rect, asset, false);
+            draw_raster_simulation(painter, rect, asset, false, textures);
 
             // Overwrite right side with compressed simulation
             painter.rect_filled(

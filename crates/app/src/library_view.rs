@@ -7,6 +7,8 @@ use mediacraft_catalog::relink::{RelinkCandidate, RelinkEngine, RelinkMatchConfi
 use mediacraft_catalog::stacks::{AssetStack, StackVersionKind};
 use mediacraft_catalog::{MediaAsset, MediaKind, SmartCollection};
 
+use crate::mockup_art::{WorkstationTextures, paint_asset_thumbnail_with_textures};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Grid,
@@ -102,6 +104,7 @@ pub struct LibraryViewContext<'a> {
     pub assets: &'a [&'a MediaAsset],
     pub selected_asset_id: &'a mut Option<String>,
     pub stacks: &'a [AssetStack],
+    pub textures: Option<&'a WorkstationTextures>,
 }
 
 pub fn render_library_view(
@@ -466,6 +469,7 @@ pub fn render_library_view(
                     &mut state.selected_ids,
                     selected_asset_id,
                     stacks,
+                    ctx.textures,
                 ),
                 ViewMode::List => render_list_view(
                     ui,
@@ -993,6 +997,7 @@ fn render_grid_cards(
     selected_ids: &mut HashSet<String>,
     selected_asset_id: &mut Option<String>,
     stacks: &[AssetStack],
+    textures: Option<&WorkstationTextures>,
 ) -> Option<String> {
     let mut relink_requested = None;
     let available_width = ui.available_width().max(300.0);
@@ -1059,13 +1064,15 @@ fn render_grid_cards(
                         egui::StrokeKind::Inside,
                     );
 
-                    // 1. Thumbnail Area (top 62% of card)
-                    let thumb_rect = Rect::from_min_max(
+                    // 1. Thumbnail Area (strict 16:9 widescreen)
+                    let thumb_w = card_width - 6.0;
+                    let thumb_h = thumb_w * (9.0 / 16.0);
+                    let thumb_rect = Rect::from_min_size(
                         Pos2::new(rect.min.x + 3.0, rect.min.y + 3.0),
-                        Pos2::new(rect.max.x - 3.0, rect.min.y + card_height * 0.62),
+                        Vec2::new(thumb_w, thumb_h),
                     );
 
-                    draw_rich_mock_thumbnail(&painter, thumb_rect, asset);
+                    draw_rich_mock_thumbnail(&painter, textures, thumb_rect, asset);
 
                     // Multi-select Checkbox in top-left
                     let check_rect = Rect::from_min_size(
@@ -1480,7 +1487,18 @@ fn render_details_view(
     relink_requested
 }
 
-fn draw_rich_mock_thumbnail(painter: &egui::Painter, rect: Rect, asset: &MediaAsset) {
+fn draw_rich_mock_thumbnail(
+    painter: &egui::Painter,
+    textures: Option<&WorkstationTextures>,
+    rect: Rect,
+    asset: &MediaAsset,
+) {
+    if let Some(texs) = textures
+        && paint_asset_thumbnail_with_textures(painter, texs, rect, &asset.id, &asset.filename)
+    {
+        return;
+    }
+
     let corner = CornerRadius::same(3);
 
     // Procedural visual gradients simulating real media frames

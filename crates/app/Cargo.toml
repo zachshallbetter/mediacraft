@@ -29,6 +29,11 @@ egui = { workspace = true }
 eframe = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = { version = "0.21", default-features = false }
 
 [dev-dependencies]
 proptest = { workspace = true }
+

@@ -3,12 +3,15 @@ mod automate_view;
 pub mod craft_theme;
 mod inspector_view;
 mod library_view;
+mod mac_menu;
+mod mockup_art;
 mod process_view;
 mod queue_drawer;
 mod queue_view;
 pub mod receipts;
 pub mod settings;
 mod sidebar_nav;
+mod workstation_view;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -18,7 +21,6 @@ use egui::{Color32, CornerRadius, FontId, Pos2, Rect, RichText, Stroke, Vec2};
 
 use craft_ui::docking::{DockArea, DockStyle, Layout, Node, Permissions};
 use craft_ui::layout::{SplitAxis, SplitSize};
-use craft_ui::theme::WidgetPalette;
 
 use mediacraft_catalog::{MediaAsset, MediaCatalog};
 use mediacraft_daemon::QueueEngine;
@@ -38,9 +40,11 @@ use process_view::{ProcessViewState, render_process_panel};
 use queue_drawer::{QueueDrawerState, render_queue_drawer};
 use queue_view::{QueueViewState, render_queue_workspace};
 use sidebar_nav::{SidebarNavState, render_sidebar_nav};
+use workstation_view::{WorkstationState, render_workstation};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceMode {
+    Workstation,
     Browse,
     Inspect,
     Collections,
@@ -82,6 +86,7 @@ pub struct MediaCraftApp {
 
     // Sub-view states
     workspace_mode: WorkspaceMode,
+    workstation_state: WorkstationState,
     library_state: LibraryViewState,
     inspector_state: InspectorState,
     process_state: ProcessViewState,
@@ -114,12 +119,15 @@ pub struct MediaCraftApp {
     show_quit_confirm: bool,
     quit_confirmed: bool,
 
+    mac_menu: Option<mac_menu::MacMenu>,
+
     last_tick: Instant,
 }
 
 impl MediaCraftApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let _ = craft_quit::install_app_menu(&cc.egui_ctx, "MediaCraft");
+        craft_theme::apply_global_theme(&cc.egui_ctx);
+        let mac_menu = mac_menu::MacMenu::install(&cc.egui_ctx);
         let app_icon = cc.egui_ctx.load_texture(
             "mediacraft_app_icon",
             app_icon::app_icon_image(),
@@ -398,8 +406,10 @@ impl MediaCraftApp {
             WorkspaceMode::Inspect
         } else if std::env::args().any(|a| a == "--collections") {
             WorkspaceMode::Collections
-        } else {
+        } else if std::env::args().any(|a| a == "--browse") {
             WorkspaceMode::Browse
+        } else {
+            WorkspaceMode::Workstation
         };
 
         if std::env::args().any(|a| a == "--empty-queue") {
@@ -488,6 +498,7 @@ impl MediaCraftApp {
             search_query: String::new(),
             collection_manager: mediacraft_catalog::CollectionManager::with_defaults(),
             workspace_mode: initial_workspace,
+            workstation_state: WorkstationState::default(),
             library_state,
             inspector_state,
             process_state: ProcessViewState::default(),
@@ -507,6 +518,7 @@ impl MediaCraftApp {
             preferences_tab: initial_preferences_tab,
             show_quit_confirm: false,
             quit_confirmed: false,
+            mac_menu,
             last_tick: Instant::now(),
         }
     }
@@ -516,21 +528,7 @@ impl MediaCraftApp {
     }
 
     fn apply_craft_theme(&self, ui: &mut egui::Ui) {
-        let palette = WidgetPalette {
-            noninteractive: Color32::from_rgb(18, 21, 26),
-            inactive: Color32::from_rgb(28, 33, 40),
-            hovered: Color32::from_rgb(45, 54, 66),
-            active: Color32::from_rgb(60, 72, 88),
-            open: Color32::from_rgb(28, 33, 40),
-        };
-        palette.apply_to(
-            &mut ui.visuals_mut().widgets,
-            CornerRadius::same(3),
-            Stroke::new(1.0, Color32::from_rgb(48, 56, 68)),
-        );
-
-        let visuals = ui.visuals_mut();
-        visuals.override_text_color = Some(Color32::from_rgb(235, 242, 250));
+        craft_theme::apply_global_theme(ui.ctx());
     }
 
     fn handle_library_action(&mut self, action: Option<library_view::LibraryAction>) {
@@ -1233,7 +1231,7 @@ impl MediaCraftApp {
                             changed = true;
                         }
                         ui.label(
-                            RichText::new("Ensures frame-accurate audio-video synchronization across QuickTime, Premiere, and web engines.")
+                            RichText::new("Ensures frame-accurate audio-video synchronization across FilmCraft, professional NLEs, and web engines.")
                                 .size(9.5)
                                 .color(Color32::GRAY),
                         );
@@ -1328,10 +1326,171 @@ impl MediaCraftApp {
             self.preferences_open = false;
         }
     }
+
+    fn show_quit_modal(&mut self, ctx: &egui::Context) {
+        if self.show_quit_confirm {
+            egui::Window::new("Transcoding in Progress")
+                .fixed_size(Vec2::new(440.0, 160.0))
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("⚠️ Active Encoding Jobs in Queue")
+                                .strong()
+                                .size(13.0)
+                                .color(Color32::from_rgb(255, 190, 70)),
+                        );
+                        ui.add_space(6.0);
+                        ui.label(
+                            "Exiting MediaCraft now will cancel actively running transcodes. Do you wish to cancel all active jobs and quit?",
+                        );
+                        ui.add_space(14.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space((ui.available_width() - 220.0) * 0.5);
+                            let btn_style = craft_theme::craft_icon_button_style();
+                            let danger_style = craft_theme::craft_danger_button_style();
+                            if craft_ui::buttons::IconButton::new(
+                                "Cancel",
+                                Vec2::new(90.0, 26.0),
+                                &btn_style,
+                            )
+                            .show(ui, |ui, rect, tint| {
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "Cancel",
+                                    egui::FontId::proportional(11.0),
+                                    tint,
+                                );
+                            })
+                            .clicked()
+                            {
+                                self.show_quit_confirm = false;
+                            }
+                            ui.add_space(8.0);
+                            if craft_ui::buttons::IconButton::new(
+                                "Quit Anyway",
+                                Vec2::new(110.0, 26.0),
+                                &danger_style,
+                            )
+                            .show(ui, |ui, rect, tint| {
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "Quit Anyway",
+                                    egui::FontId::proportional(11.0),
+                                    tint,
+                                );
+                            })
+                            .clicked()
+                            {
+                                self.quit_confirmed = true;
+                                self.show_quit_confirm = false;
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                        });
+                    });
+                });
+        }
+    }
+
+    fn handle_mac_menu_commands(&mut self, ctx: &egui::Context) {
+        let Some(ref menu) = self.mac_menu else {
+            return;
+        };
+        while let Some(cmd) = menu.try_recv() {
+            match cmd {
+                mac_menu::MacMenuCommand::About => {
+                    self.preferences_open = true;
+                    self.preferences_tab = 0;
+                }
+                mac_menu::MacMenuCommand::Preferences => {
+                    self.preferences_open = true;
+                }
+                mac_menu::MacMenuCommand::AddMedia => {
+                    self.workspace_mode = WorkspaceMode::Workstation;
+                }
+                mac_menu::MacMenuCommand::AddWatchFolder => {
+                    self.workspace_mode = WorkspaceMode::Automations;
+                }
+                mac_menu::MacMenuCommand::ExportSettings => {
+                    if self.editing_preset.is_none() {
+                        self.editing_preset = self.presets.first().cloned();
+                        self.editing_tab = 0;
+                    }
+                }
+                mac_menu::MacMenuCommand::CloseWindow => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                mac_menu::MacMenuCommand::StartQueue => {
+                    self.workstation_state.is_queue_running = true;
+                    self.engine_lock()
+                        .resume_queue(mediacraft_protocol::PauseReason::UserRequested);
+                }
+                mac_menu::MacMenuCommand::PauseQueue => {
+                    self.workstation_state.is_queue_running = false;
+                    self.engine_lock()
+                        .pause_queue(mediacraft_protocol::PauseReason::UserRequested);
+                }
+                mac_menu::MacMenuCommand::StopQueue => {
+                    self.workstation_state.is_queue_running = false;
+                    self.engine_lock()
+                        .pause_queue(mediacraft_protocol::PauseReason::UserRequested);
+                }
+                mac_menu::MacMenuCommand::ResetQueueStatus => {
+                    self.workstation_state.is_queue_running = false;
+                }
+                mac_menu::MacMenuCommand::ClearCompletedJobs => {
+                    self.engine_lock().clear_completed();
+                }
+                mac_menu::MacMenuCommand::NewPreset => {
+                    self.workspace_mode = WorkspaceMode::Presets;
+                    self.preset_state.active_tab = preset_view::PresetWorkspaceTab::Editor;
+                }
+                mac_menu::MacMenuCommand::ImportPresets
+                | mac_menu::MacMenuCommand::ExportPresets => {
+                    self.workspace_mode = WorkspaceMode::Presets;
+                }
+                mac_menu::MacMenuCommand::ViewWorkstation => {
+                    self.workspace_mode = WorkspaceMode::Workstation;
+                }
+                mac_menu::MacMenuCommand::ViewBrowser => {
+                    self.workspace_mode = WorkspaceMode::Browse;
+                }
+                mac_menu::MacMenuCommand::ViewInspector => {
+                    self.workspace_mode = WorkspaceMode::Inspect;
+                }
+                mac_menu::MacMenuCommand::ViewProcess => {
+                    self.workspace_mode = WorkspaceMode::Process;
+                }
+                mac_menu::MacMenuCommand::ViewQueue => {
+                    self.workspace_mode = WorkspaceMode::Queue;
+                }
+                mac_menu::MacMenuCommand::ViewAutomations => {
+                    self.workspace_mode = WorkspaceMode::Automations;
+                }
+                mac_menu::MacMenuCommand::ViewDeliveries => {
+                    self.workspace_mode = WorkspaceMode::Deliver;
+                }
+                mac_menu::MacMenuCommand::ViewPresets => {
+                    self.workspace_mode = WorkspaceMode::Presets;
+                }
+                mac_menu::MacMenuCommand::HelpDocs | mac_menu::MacMenuCommand::HelpShortcuts => {
+                    self.preferences_open = true;
+                    self.preferences_tab = 3;
+                }
+                mac_menu::MacMenuCommand::Unknown(_) => {}
+            }
+        }
+    }
 }
 
 impl eframe::App for MediaCraftApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_mac_menu_commands(ctx);
         self.advance_simulation();
         self.settings_store.tick(Instant::now());
 
@@ -1353,6 +1512,7 @@ impl eframe::App for MediaCraftApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.workstation_state.textures.ensure_loaded(ui.ctx());
         self.apply_craft_theme(ui);
 
         // Global hotkey: Cmd+M opens Export Settings
@@ -1369,6 +1529,21 @@ impl eframe::App for MediaCraftApp {
             .input(|i| (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::Comma))
         {
             self.preferences_open = !self.preferences_open;
+        }
+
+        if self.workspace_mode == WorkspaceMode::Workstation {
+            render_workstation(ui, &mut self.workstation_state, &mut self.preferences_open);
+            if self.workstation_state.active_workspace == "Encoding Queue" {
+                self.workspace_mode = WorkspaceMode::Queue;
+                self.workstation_state.active_workspace = "Default Workspace".to_string();
+            } else if self.workstation_state.active_workspace == "Media Browser" {
+                self.workspace_mode = WorkspaceMode::Browse;
+                self.workstation_state.active_workspace = "Default Workspace".to_string();
+            }
+            self.show_export_settings_modal(ui.ctx());
+            self.show_preferences_modal(ui.ctx());
+            self.show_quit_modal(ui.ctx());
+            return;
         }
 
         // 1. Top Application Bar
@@ -1394,6 +1569,7 @@ impl eframe::App for MediaCraftApp {
 
             // Workspace Mode Switcher via craft-ui Tab strip
             let tabs = [
+                ("🖥 Workstation", WorkspaceMode::Workstation),
                 ("⊞ Browse", WorkspaceMode::Browse),
                 ("🔍 Inspect", WorkspaceMode::Inspect),
                 ("📁 Collections", WorkspaceMode::Collections),
@@ -1408,9 +1584,9 @@ impl eframe::App for MediaCraftApp {
                 .position(|(_, m)| *m == self.workspace_mode)
                 .unwrap_or(0);
             let tab_fit = craft_ui::tabs::fit(
-                &[82.0, 84.0, 104.0, 84.0, 82.0, 112.0, 86.0, 88.0],
+                &[96.0, 82.0, 84.0, 104.0, 84.0, 82.0, 112.0, 86.0, 88.0],
                 active_idx,
-                ui.available_width().min(760.0),
+                ui.available_width().min(860.0),
                 50.0,
                 20.0,
             );
@@ -1530,6 +1706,7 @@ impl eframe::App for MediaCraftApp {
         ui.separator();
 
         match self.workspace_mode {
+            WorkspaceMode::Workstation => {}
             WorkspaceMode::Queue => {
                 render_queue_workspace(
                     ui,
@@ -1567,6 +1744,7 @@ impl eframe::App for MediaCraftApp {
                     &mut self.inspector_state,
                     selected_asset,
                     self.catalog.graph(),
+                    Some(&self.workstation_state.textures),
                 );
 
                 ui.separator();
@@ -1626,6 +1804,7 @@ impl eframe::App for MediaCraftApp {
                             assets: &filtered_assets,
                             selected_asset_id: &mut self.selected_asset_id,
                             stacks: self.catalog.stacks(),
+                            textures: Some(&self.workstation_state.textures),
                         },
                     );
                 });
@@ -1647,6 +1826,7 @@ impl eframe::App for MediaCraftApp {
                         &mut self.inspector_state,
                         selected_asset,
                         self.catalog.graph(),
+                        Some(&self.workstation_state.textures),
                     );
                     render_process_panel(
                         &mut columns[1],
@@ -1754,6 +1934,7 @@ impl eframe::App for MediaCraftApp {
                                     assets: &filtered_assets,
                                     selected_asset_id: &mut self.selected_asset_id,
                                     stacks: self.catalog.stacks(),
+                                    textures: Some(&self.workstation_state.textures),
                                 },
                             );
                         }
@@ -1763,6 +1944,7 @@ impl eframe::App for MediaCraftApp {
                                 &mut self.inspector_state,
                                 selected_asset,
                                 self.catalog.graph(),
+                                Some(&self.workstation_state.textures),
                             );
                         }
                         Panel::ProcessSidebar => {
@@ -1807,73 +1989,7 @@ impl eframe::App for MediaCraftApp {
         self.show_preferences_modal(ui.ctx());
 
         // 6. Safe Quit Confirmation Dialog (via craft-quit)
-        if self.show_quit_confirm {
-            egui::Window::new("Transcoding in Progress")
-                .fixed_size(Vec2::new(440.0, 160.0))
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-                .show(ui.ctx(), |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(8.0);
-                        ui.label(
-                            RichText::new("⚠️ Active Encoding Jobs in Queue")
-                                .strong()
-                                .size(13.0)
-                                .color(Color32::from_rgb(255, 190, 70)),
-                        );
-                        ui.add_space(6.0);
-                        ui.label(
-                            "Exiting MediaCraft now will cancel actively running transcodes. Do you wish to cancel all active jobs and quit?",
-                        );
-                        ui.add_space(14.0);
-                        ui.horizontal(|ui| {
-                            ui.add_space((ui.available_width() - 220.0) * 0.5);
-                            let btn_style = craft_theme::craft_icon_button_style();
-                            let danger_style = craft_theme::craft_danger_button_style();
-                            if craft_ui::buttons::IconButton::new(
-                                "Cancel",
-                                Vec2::new(90.0, 26.0),
-                                &btn_style,
-                            )
-                            .show(ui, |ui, rect, tint| {
-                                ui.painter().text(
-                                    rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    "Cancel",
-                                    egui::FontId::proportional(11.0),
-                                    tint,
-                                );
-                            })
-                            .clicked()
-                            {
-                                self.show_quit_confirm = false;
-                            }
-                            ui.add_space(8.0);
-                            if craft_ui::buttons::IconButton::new(
-                                "Quit Anyway",
-                                Vec2::new(110.0, 26.0),
-                                &danger_style,
-                            )
-                            .show(ui, |ui, rect, tint| {
-                                ui.painter().text(
-                                    rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    "Quit Anyway",
-                                    egui::FontId::proportional(11.0),
-                                    tint,
-                                );
-                            })
-                            .clicked()
-                            {
-                                self.quit_confirmed = true;
-                                self.show_quit_confirm = false;
-                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
-                        });
-                    });
-                });
-        }
+        self.show_quit_modal(ui.ctx());
     }
 }
 
@@ -1886,12 +2002,27 @@ impl Drop for MediaCraftApp {
 }
 
 fn main() -> Result<(), eframe::Error> {
+    #[allow(unused_mut)]
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size(Vec2::new(1440.0, 900.0))
+        .with_min_inner_size(Vec2::new(960.0, 600.0))
+        .with_title("MediaCraft")
+        .with_icon(app_icon::window_icon());
+
+    #[cfg(target_os = "macos")]
+    {
+        viewport = viewport
+            .with_fullsize_content_view(true)
+            .with_titlebar_shown(false)
+            .with_title_shown(false);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        viewport = viewport.with_decorations(false);
+    }
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size(Vec2::new(1400.0, 840.0))
-            .with_min_inner_size(Vec2::new(960.0, 600.0))
-            .with_title("MediaCraft — Universal Media Workspace & Encoding Pipeline")
-            .with_icon(app_icon::window_icon()),
+        viewport,
         ..Default::default()
     };
 

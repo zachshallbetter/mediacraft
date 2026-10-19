@@ -83,7 +83,7 @@ filmcraft-opus      = { path = "../craft-compat/filmcraft/crates/opus" }
 filmcraft-hevc      = { path = "../craft-compat/filmcraft/crates/hevc" }
 ```
 
-This reflects the exact structural issue documented in the ecosystem architecture: `effectcraft` depends on 16 `filmcraft` crates, and now `mediacraft` depends on 10 `filmcraft` crates. This creates a brittle dependency hub where any change inside Premiere Pro timeline or audio engine code risks breaking After Effects and MediaCraft simultaneously.
+This reflects the exact structural issue documented in the ecosystem architecture: `effectcraft` depends on 16 `filmcraft` crates, and now `mediacraft` depends on 10 `filmcraft` crates. This creates a brittle dependency hub where any change inside FilmCraft timeline or audio engine code risks breaking EffectCraft and MediaCraft simultaneously.
 
 **Strategic Imperative**: The codecs and containers must be extracted into canonical shared libraries (`craft-libs`), turning FilmCraft, EffectCraft, and MediaCraft into peer consumers of shared primitives.
 
