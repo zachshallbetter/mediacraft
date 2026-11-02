@@ -34,9 +34,9 @@ pub fn render_sidebar_nav(
         .id_salt("sidebar_nav_scroll")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            // 1. Sources / Favorites
+            // 1. Favorites
             ui.label(
-                RichText::new("SOURCES")
+                RichText::new("FAVORITES")
                     .size(10.5)
                     .color(Color32::from_rgb(130, 145, 165))
                     .strong(),
@@ -45,7 +45,7 @@ pub fn render_sidebar_nav(
 
             render_nav_item(
                 ui,
-                "🗃 All Media",
+                "All Media",
                 state.selected_custom_collection_id.is_none()
                     && state.selected_collection == SmartCollection::AllMedia
                     && state.selected_kind_filter.is_none(),
@@ -58,9 +58,8 @@ pub fn render_sidebar_nav(
                 },
             );
 
-            render_nav_item(ui, "⭐ Favorites", false, None, || {});
-            render_nav_item(ui, "🕒 Recents", false, None, || {});
-            render_nav_item(ui, "🗑 Trash", false, None, || {});
+            render_nav_item(ui, "Favorites", false, None, || {});
+            render_nav_item(ui, "Recent", false, None, || {});
 
             ui.add_space(8.0);
             ui.separator();
@@ -80,19 +79,16 @@ pub fn render_sidebar_nav(
             ui.add_space(2.0);
 
             for loc in [
-                ("💻 Macintosh HD", "Macintosh HD"),
-                ("📁 Projects", "Projects"),
-                ("📥 Downloads", "Downloads"),
-                ("📷 Photography", "Photography"),
-                ("🎬 Video", "Video"),
-                ("🎵 Audio", "Audio"),
-                ("🎨 Graphics", "Graphics"),
-                ("🌐 Shared", "Shared"),
-                ("🖧 Network", "Network"),
+                ("Macintosh HD", "Macintosh HD"),
+                ("Projects", "Projects"),
+                ("Media RAID", "Media RAID"),
+                ("Archive", "Archive"),
             ] {
                 let is_selected = state.selected_location == loc.1;
                 render_nav_item(ui, loc.0, is_selected, None, || {
                     state.selected_location = loc.1.to_string();
+                    state.selected_custom_collection_id = None;
+                    state.selected_kind_filter = None;
                 });
             }
 
@@ -246,7 +242,7 @@ fn render_nav_item(
     };
 
     let bg_color = if is_selected {
-        Color32::from_rgb(28, 55, 95)
+        Color32::from_rgb(16, 55, 58)
     } else {
         Color32::TRANSPARENT
     };
@@ -272,7 +268,7 @@ fn render_nav_item(
             painter.rect_stroke(
                 rect,
                 CornerRadius::same(4),
-                Stroke::new(1.0, Color32::from_rgb(60, 130, 220)),
+                Stroke::new(1.0, Color32::from_rgb(27, 211, 207)),
                 egui::StrokeKind::Inside,
             );
         }

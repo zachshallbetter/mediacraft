@@ -4,51 +4,15 @@
 //! technical delivery contract certificates, quality analysis metrics,
 //! and destination distribution targets.
 
-use std::path::PathBuf;
-
 use egui::{Color32, CornerRadius, FontId, Pos2, Rect, RichText, Stroke, Vec2};
 use mediacraft_protocol::ValidationSeverity;
+use std::path::PathBuf;
 
-/// Available tabs within the Deliver workspace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeliverTab {
-    Outputs,
-    Validation,
-    QualityAnalysis,
-    Destinations,
-}
-
-/// State for the Deliver workspace.
-pub struct DeliverViewState {
-    pub active_tab: DeliverTab,
-    pub selected_deliverable_idx: usize,
-    pub search_query: String,
-    pub selected_destination_idx: usize,
-    pub status_notification: Option<String>,
-    pub show_export_report_modal: bool,
-    pub export_report_format_html: bool,
-}
-
-impl Default for DeliverViewState {
-    fn default() -> Self {
-        Self {
-            active_tab: DeliverTab::Outputs,
-            selected_deliverable_idx: 0,
-            search_query: String::new(),
-            selected_destination_idx: 0,
-            status_notification: None,
-            show_export_report_modal: false,
-            export_report_format_html: true,
-        }
-    }
-}
-
-/// Model of a completed deliverable package ready for distribution or archiving.
 #[derive(Debug, Clone)]
 pub struct DeliverablePackage {
     pub id: String,
     pub name: String,
-    pub path: PathBuf,
+    pub path: std::path::PathBuf,
     pub format: String,
     pub resolution: String,
     pub duration: String,
@@ -65,81 +29,52 @@ pub struct DeliverablePackage {
 
 impl DeliverablePackage {
     pub fn formatted_size(&self) -> String {
-        let b = self.size_bytes;
-        if b >= 1_000_000_000 {
-            format!("{:.2} GB", b as f64 / 1_000_000_000.0)
+        if self.size_bytes >= 1_000_000_000 {
+            format!("{:.2} GB", self.size_bytes as f64 / 1_000_000_000.0)
         } else {
-            format!("{:.1} MB", b as f64 / 1_000_000.0)
+            format!("{:.1} MB", self.size_bytes as f64 / 1_000_000.0)
         }
     }
 }
 
-/// Standard mock corpus of verified deliverables.
-pub fn default_deliverables() -> Vec<DeliverablePackage> {
-    vec![
-        DeliverablePackage {
-            id: "deliv_001".to_string(),
-            name: "Summer_Campaign_Master_UHD.mov".to_string(),
-            path: PathBuf::from("/Users/zachshallbetter/Deliveries/Summer_Campaign_Master_UHD.mov"),
-            format: "ProRes 422 HQ (QuickTime)".to_string(),
-            resolution: "3840×2160 (16:9)".to_string(),
-            duration: "00:00:30:00".to_string(),
-            size_bytes: 3_200_000_000,
-            profile_name: "Broadcast Master Specification (EBU R128)".to_string(),
-            validation_status: ValidationSeverity::Accept,
-            sha256_receipt: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                .to_string(),
-            vmaf_score: 98.4,
-            psnr_db: 48.2,
-            ssim_score: 0.992,
-            audio_true_peak_dbtp: -1.2,
-            audio_lufs: -24.0,
-        },
-        DeliverablePackage {
-            id: "deliv_002".to_string(),
-            name: "Summer_Campaign_Web_1080p.mp4".to_string(),
-            path: PathBuf::from("/Users/zachshallbetter/Deliveries/Summer_Campaign_Web_1080p.mp4"),
-            format: "H.264 / AAC (MP4 FastStart)".to_string(),
-            resolution: "1920×1080 (16:9)".to_string(),
-            duration: "00:00:30:00".to_string(),
-            size_bytes: 42_000_000,
-            profile_name: "Web Delivery (YouTube / Vimeo 1080p)".to_string(),
-            validation_status: ValidationSeverity::Accept,
-            sha256_receipt: "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
-                .to_string(),
-            vmaf_score: 95.8,
-            psnr_db: 44.1,
-            ssim_score: 0.985,
-            audio_true_peak_dbtp: -1.0,
-            audio_lufs: -14.1,
-        },
-        DeliverablePackage {
-            id: "deliv_003".to_string(),
-            name: "Summer_Campaign_Social_Vertical.mp4".to_string(),
-            path: PathBuf::from(
-                "/Users/zachshallbetter/Deliveries/Summer_Campaign_Social_Vertical.mp4",
-            ),
-            format: "HEVC / AAC (MP4)".to_string(),
-            resolution: "1080×1920 (9:16)".to_string(),
-            duration: "00:00:15:00".to_string(),
-            size_bytes: 18_500_000,
-            profile_name: "Social Reel / Story Master".to_string(),
-            validation_status: ValidationSeverity::Warn,
-            sha256_receipt: "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
-                .to_string(),
-            vmaf_score: 93.1,
-            psnr_db: 41.8,
-            ssim_score: 0.974,
-            audio_true_peak_dbtp: -0.8,
-            audio_lufs: -13.8,
-        },
-    ]
+/// Available tabs within the Deliver workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeliverTab {
+    Outputs,
+    Validation,
+    QualityAnalysis,
+    Destinations,
+}
+
+/// State for the Deliver workspace.
+pub struct DeliverViewState {
+    pub active_tab: DeliverTab,
+    pub selected_deliverable_idx: usize,
+    pub packages: Vec<DeliverablePackage>,
+    pub search_query: String,
+    pub selected_destination_idx: usize,
+    pub status_notification: Option<String>,
+    pub show_export_report_modal: bool,
+    pub export_report_format_html: bool,
+}
+
+impl Default for DeliverViewState {
+    fn default() -> Self {
+        Self {
+            active_tab: DeliverTab::Outputs,
+            selected_deliverable_idx: 0,
+            packages: Vec::new(),
+            search_query: String::new(),
+            selected_destination_idx: 0,
+            status_notification: None,
+            show_export_report_modal: false,
+            export_report_format_html: true,
+        }
+    }
 }
 
 /// Renders the Deliver workspace.
 pub fn render_deliver_workspace(ui: &mut egui::Ui, state: &mut DeliverViewState) {
-    let deliverables = default_deliverables();
-
     // 0. Status notification
     let mut dismiss = false;
     if let Some(msg) = &state.status_notification {
@@ -158,6 +93,15 @@ pub fn render_deliver_workspace(ui: &mut egui::Ui, state: &mut DeliverViewState)
     }
     if dismiss {
         state.status_notification = None;
+    }
+
+    if state.packages.is_empty() {
+        ui.vertical_centered(|ui| {
+            ui.add_space(40.0);
+            ui.heading("No completed outputs yet");
+            ui.label("Completed queue outputs will appear here.");
+        });
+        return;
     }
 
     // 1. Deliver Workspace Sub-Header & Navigation Tabs
@@ -216,15 +160,16 @@ pub fn render_deliver_workspace(ui: &mut egui::Ui, state: &mut DeliverViewState)
     ui.separator();
 
     // 2. Main Workspace Body: Dual-Pane Master Detail
+    let packages = state.packages.clone();
     ui.columns(2, |columns| {
         // Left Column: Deliverables List & Selection
-        render_deliverables_list(&mut columns[0], state, &deliverables);
+        render_deliverables_list(&mut columns[0], state, &packages);
 
         // Right Column: Detail Inspector depending on active DeliverTab
-        render_deliver_detail(&mut columns[1], state, &deliverables);
+        render_deliver_detail(&mut columns[1], state, &packages);
     });
 
-    render_export_report_modal(ui, state, &deliverables);
+    render_export_report_modal(ui, state);
 }
 
 fn render_deliverables_list(
@@ -707,16 +652,12 @@ fn render_destinations_view(
     }
 }
 
-fn render_export_report_modal(
-    ui: &mut egui::Ui,
-    state: &mut DeliverViewState,
-    deliverables: &[DeliverablePackage],
-) {
+fn render_export_report_modal(ui: &mut egui::Ui, state: &mut DeliverViewState) {
     if !state.show_export_report_modal {
         return;
     }
 
-    let pkg = match deliverables.get(state.selected_deliverable_idx) {
+    let pkg = match state.packages.get(state.selected_deliverable_idx) {
         Some(p) => p.clone(),
         None => return,
     };

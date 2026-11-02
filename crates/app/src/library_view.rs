@@ -7,7 +7,7 @@ use mediacraft_catalog::relink::{RelinkCandidate, RelinkEngine, RelinkMatchConfi
 use mediacraft_catalog::stacks::{AssetStack, StackVersionKind};
 use mediacraft_catalog::{MediaAsset, MediaKind, SmartCollection};
 
-use crate::mockup_art::{WorkstationTextures, paint_asset_thumbnail_with_textures};
+use crate::media_preview::{MediaPreviewCache, paint_asset_preview};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -81,14 +81,14 @@ impl Default for LibraryViewState {
             rename_start_index: 1,
             rollback_journal: RollbackJournal::new(),
             scan_dialog_open: false,
-            scan_path_input: "/Users/zachshallbetter/Movies".to_string(),
+            scan_path_input: String::new(),
             status_notification: None,
             relink_modal_open: false,
             relink_target_asset_id: None,
-            relink_search_dir: "/Users/zachshallbetter/Projects/Media".to_string(),
+            relink_search_dir: String::new(),
             relink_candidates: Vec::new(),
             contact_sheet_modal_open: false,
-            contact_sheet_project: "Summer Campaign 2026".to_string(),
+            contact_sheet_project: String::new(),
             contact_sheet_columns: 4,
         }
     }
@@ -104,7 +104,7 @@ pub struct LibraryViewContext<'a> {
     pub assets: &'a [&'a MediaAsset],
     pub selected_asset_id: &'a mut Option<String>,
     pub stacks: &'a [AssetStack],
-    pub textures: Option<&'a WorkstationTextures>,
+    pub previews: &'a mut MediaPreviewCache,
 }
 
 pub fn render_library_view(
@@ -145,12 +145,12 @@ pub fn render_library_view(
     // 1. Breadcrumb & Navigation Bar
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new("📁 Macintosh HD › Users › zachshallbetter › Projects ›")
+            RichText::new(format!("📁 {} ›", ctx.collection_label))
                 .size(12.0)
                 .color(Color32::from_rgb(140, 160, 185)),
         );
         ui.label(
-            RichText::new("Media")
+            RichText::new(ctx.collection_label)
                 .size(12.0)
                 .strong()
                 .color(Color32::from_rgb(220, 235, 255)),
@@ -453,9 +453,13 @@ pub fn render_library_view(
                 ui.vertical_centered(|ui| {
                     ui.add_space(40.0);
                     ui.label(
-                        RichText::new("No media assets found matching the active filters.")
-                            .size(14.0)
-                            .color(Color32::GRAY),
+                        RichText::new(if total_assets == 0 {
+                            "Your library is empty. Ingest a folder to browse your media."
+                        } else {
+                            "No media assets found matching the active filters."
+                        })
+                        .size(14.0)
+                        .color(Color32::GRAY),
                     );
                 });
                 return;
@@ -469,7 +473,7 @@ pub fn render_library_view(
                     &mut state.selected_ids,
                     selected_asset_id,
                     stacks,
-                    ctx.textures,
+                    ctx.previews,
                 ),
                 ViewMode::List => render_list_view(
                     ui,
@@ -665,19 +669,24 @@ pub fn render_library_view(
                     );
                 });
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Presets:").size(10.5).color(Color32::GRAY));
-                    if ui.small_button("🎬 ~/Movies").clicked() {
-                        state.scan_path_input = "/Users/zachshallbetter/Movies".to_string();
-                    }
-                    if ui.small_button("📥 ~/Downloads").clicked() {
-                        state.scan_path_input = "/Users/zachshallbetter/Downloads".to_string();
-                    }
-                    if ui.small_button("📁 Workspace").clicked() {
-                        state.scan_path_input =
-                            "/Users/zachshallbetter/Projects/ArtCraft".to_string();
-                    }
-                });
+                if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("Quick locations:")
+                                .size(10.5)
+                                .color(Color32::GRAY),
+                        );
+                        for (label, folder) in [
+                            ("Movies", "Movies"),
+                            ("Downloads", "Downloads"),
+                            ("Pictures", "Pictures"),
+                        ] {
+                            if ui.small_button(label).clicked() {
+                                state.scan_path_input = home.join(folder).display().to_string();
+                            }
+                        }
+                    });
+                }
                 ui.add_space(14.0);
                 ui.separator();
                 ui.horizontal(|ui| {
@@ -685,7 +694,14 @@ pub fn render_library_view(
                         state.scan_dialog_open = false;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(RichText::new("Scan & Ingest").strong()).clicked() {
+                        let has_path = !state.scan_path_input.trim().is_empty();
+                        if ui
+                            .add_enabled(
+                                has_path,
+                                egui::Button::new(RichText::new("Scan & Ingest").strong()),
+                            )
+                            .clicked()
+                        {
                             action = Some(LibraryAction::ScanDirectory(PathBuf::from(
                                 &state.scan_path_input,
                             )));
@@ -750,63 +766,14 @@ pub fn render_library_view(
                             egui::TextEdit::singleline(&mut state.relink_search_dir)
                                 .desired_width(340.0),
                         );
-                        if ui.button("🔍 Scan for Matches").clicked() {
+                        if ui.button("🔍 Scan for Matches").clicked()
+                            && !state.relink_search_dir.trim().is_empty()
+                        {
                             let engine = RelinkEngine::new();
-                            let mut found = engine
+                            state.relink_candidates = engine
                                 .find_candidates_in_dir(asset, Path::new(&state.relink_search_dir));
-                            if found.is_empty() {
-                                found.push(RelinkCandidate {
-                                    asset_id: asset.id.clone(),
-                                    original_path: asset.path.clone(),
-                                    candidate_path: PathBuf::from(
-                                        "/Users/zachshallbetter/Movies/Archive",
-                                    )
-                                    .join(&asset.filename),
-                                    candidate_size_bytes: asset.file_size_bytes,
-                                    confidence: RelinkMatchConfidence::ContentHashExact,
-                                });
-                                found.push(RelinkCandidate {
-                                    asset_id: asset.id.clone(),
-                                    original_path: asset.path.clone(),
-                                    candidate_path: PathBuf::from(
-                                        "/Volumes/Studio_RAID_01/Production",
-                                    )
-                                    .join(&asset.filename),
-                                    candidate_size_bytes: asset.file_size_bytes,
-                                    confidence: RelinkMatchConfidence::NameAndSize,
-                                });
-                            }
-                            state.relink_candidates = found;
                         }
                     });
-
-                    // Auto-populate if candidate list is empty
-                    if state.relink_candidates.is_empty() {
-                        let engine = RelinkEngine::new();
-                        let mut found = engine
-                            .find_candidates_in_dir(asset, Path::new(&state.relink_search_dir));
-                        if found.is_empty() {
-                            found.push(RelinkCandidate {
-                                asset_id: asset.id.clone(),
-                                original_path: asset.path.clone(),
-                                candidate_path: PathBuf::from(
-                                    "/Users/zachshallbetter/Movies/Archive",
-                                )
-                                .join(&asset.filename),
-                                candidate_size_bytes: asset.file_size_bytes,
-                                confidence: RelinkMatchConfidence::ContentHashExact,
-                            });
-                            found.push(RelinkCandidate {
-                                asset_id: asset.id.clone(),
-                                original_path: asset.path.clone(),
-                                candidate_path: PathBuf::from("/Volumes/Studio_RAID_01/Production")
-                                    .join(&asset.filename),
-                                candidate_size_bytes: asset.file_size_bytes,
-                                confidence: RelinkMatchConfidence::NameAndSize,
-                            });
-                        }
-                        state.relink_candidates = found;
-                    }
 
                     ui.add_space(8.0);
                     ui.label(
@@ -822,6 +789,13 @@ pub fn render_library_view(
                         .id_salt("relink_candidates_scroll")
                         .max_height(180.0)
                         .show(ui, |ui| {
+                            if state.relink_candidates.is_empty() {
+                                ui.label(
+                                    RichText::new("No matching files found. Choose a search directory and scan.")
+                                        .size(10.5)
+                                        .color(Color32::GRAY),
+                                );
+                            }
                             for cand in &state.relink_candidates {
                                 ui.group(|ui| {
                                     ui.horizontal(|ui| {
@@ -997,7 +971,7 @@ fn render_grid_cards(
     selected_ids: &mut HashSet<String>,
     selected_asset_id: &mut Option<String>,
     stacks: &[AssetStack],
-    textures: Option<&WorkstationTextures>,
+    previews: &mut MediaPreviewCache,
 ) -> Option<String> {
     let mut relink_requested = None;
     let available_width = ui.available_width().max(300.0);
@@ -1072,7 +1046,15 @@ fn render_grid_cards(
                         Vec2::new(thumb_w, thumb_h),
                     );
 
-                    draw_rich_mock_thumbnail(&painter, textures, thumb_rect, asset);
+                    if ui.is_rect_visible(thumb_rect) {
+                        draw_asset_thumbnail(ui, previews, thumb_rect, asset);
+                    } else {
+                        painter.rect_filled(
+                            thumb_rect,
+                            CornerRadius::same(3),
+                            Color32::from_rgb(19, 23, 29),
+                        );
+                    }
 
                     // Multi-select Checkbox in top-left
                     let check_rect = Rect::from_min_size(
@@ -1472,10 +1454,15 @@ fn render_details_view(
             });
 
             if let Some(ref v) = asset.video {
+                let frame_rate = if v.fps > 0.0 {
+                    format!("{:.2} fps", v.fps)
+                } else {
+                    "frame rate unknown".to_string()
+                };
                 ui.label(
                     RichText::new(format!(
-                        "Video: {} • {}x{} @ {:.2} fps • {}",
-                        v.codec, v.width, v.height, v.fps, v.color_space
+                        "Video: {} • {}x{} • {} • {}",
+                        v.codec, v.width, v.height, frame_rate, v.color_space
                     ))
                     .size(10.5)
                     .color(Color32::from_rgb(160, 185, 215)),
@@ -1487,201 +1474,14 @@ fn render_details_view(
     relink_requested
 }
 
-fn draw_rich_mock_thumbnail(
-    painter: &egui::Painter,
-    textures: Option<&WorkstationTextures>,
+fn draw_asset_thumbnail(
+    ui: &mut egui::Ui,
+    previews: &mut MediaPreviewCache,
     rect: Rect,
     asset: &MediaAsset,
 ) {
-    if let Some(texs) = textures
-        && paint_asset_thumbnail_with_textures(painter, texs, rect, &asset.id, &asset.filename)
-    {
-        return;
-    }
-
-    let corner = CornerRadius::same(3);
-
-    // Procedural visual gradients simulating real media frames
-    match asset.kind {
-        MediaKind::Video => {
-            if asset.filename.contains("A001") || asset.filename.contains("Mountain") {
-                // Alpine mountain sunset gradient
-                painter.rect_filled(rect, corner, Color32::from_rgb(45, 75, 115));
-                let peak1 = [
-                    Pos2::new(rect.min.x, rect.max.y),
-                    Pos2::new(
-                        rect.min.x + rect.width() * 0.45,
-                        rect.min.y + rect.height() * 0.35,
-                    ),
-                    Pos2::new(rect.max.x, rect.max.y),
-                ];
-                painter.add(egui::epaint::PathShape::convex_polygon(
-                    peak1.to_vec(),
-                    Color32::from_rgb(85, 110, 140),
-                    Stroke::NONE,
-                ));
-            } else if asset.filename.contains("Color_Bars") {
-                // SMPTE 75% Color Bars
-                let bar_w = rect.width() / 7.0;
-                let colors = [
-                    Color32::from_rgb(190, 190, 190), // Gray
-                    Color32::from_rgb(190, 190, 0),   // Yellow
-                    Color32::from_rgb(0, 190, 190),   // Cyan
-                    Color32::from_rgb(0, 190, 0),     // Green
-                    Color32::from_rgb(190, 0, 190),   // Magenta
-                    Color32::from_rgb(190, 0, 0),     // Red
-                    Color32::from_rgb(0, 0, 190),     // Blue
-                ];
-                for (i, &col) in colors.iter().enumerate() {
-                    let bx = rect.min.x + (i as f32) * bar_w;
-                    let b_rect = Rect::from_min_max(
-                        Pos2::new(bx, rect.min.y),
-                        Pos2::new(bx + bar_w, rect.max.y),
-                    );
-                    painter.rect_filled(b_rect, CornerRadius::ZERO, col);
-                }
-            } else if asset.filename.contains("Motion") || asset.filename.contains("Graphics") {
-                // Neon glow geometric pattern
-                painter.rect_filled(rect, corner, Color32::from_rgb(15, 12, 35));
-                let center = rect.center();
-                painter.circle_stroke(
-                    center,
-                    rect.height() * 0.28,
-                    Stroke::new(2.5, Color32::from_rgb(0, 230, 255)),
-                );
-                painter.circle_stroke(
-                    center,
-                    rect.height() * 0.18,
-                    Stroke::new(2.0, Color32::from_rgb(255, 60, 180)),
-                );
-            } else if asset.filename.contains("Surf") {
-                // Deep ocean cyan wave
-                painter.rect_filled(rect, corner, Color32::from_rgb(10, 60, 95));
-                painter.circle_filled(
-                    Pos2::new(
-                        rect.min.x + rect.width() * 0.7,
-                        rect.min.y + rect.height() * 0.3,
-                    ),
-                    rect.height() * 0.35,
-                    Color32::from_rgb(0, 180, 210),
-                );
-            } else if asset.filename.contains("Car") {
-                // Red automotive paint studio tone
-                painter.rect_filled(rect, corner, Color32::from_rgb(50, 15, 20));
-                let wedge = [
-                    Pos2::new(rect.min.x + rect.width() * 0.1, rect.max.y),
-                    Pos2::new(
-                        rect.min.x + rect.width() * 0.6,
-                        rect.min.y + rect.height() * 0.4,
-                    ),
-                    Pos2::new(rect.max.x, rect.max.y),
-                ];
-                painter.add(egui::epaint::PathShape::convex_polygon(
-                    wedge.to_vec(),
-                    Color32::from_rgb(210, 30, 45),
-                    Stroke::NONE,
-                ));
-            } else {
-                // Cinematic neutral warm tone
-                painter.rect_filled(rect, corner, Color32::from_rgb(35, 42, 50));
-                painter.circle_filled(
-                    rect.center(),
-                    rect.height() * 0.25,
-                    Color32::from_rgb(65, 80, 95),
-                );
-            }
-        }
-        MediaKind::Audio => {
-            // Audio Waveform Visualizer simulation
-            painter.rect_filled(rect, corner, Color32::from_rgb(18, 25, 32));
-            let bars = 18;
-            let bar_w = rect.width() / (bars as f32 * 1.5);
-            for i in 0..bars {
-                let h_factor = ((i as f32 * 0.7).sin().abs() * 0.6 + 0.2).clamp(0.1, 0.85);
-                let bx = rect.min.x + (i as f32) * bar_w * 1.4 + 4.0;
-                let bar_h = rect.height() * h_factor;
-                let by = rect.center().y - bar_h * 0.5;
-                let b_rect = Rect::from_min_size(Pos2::new(bx, by), Vec2::new(bar_w, bar_h));
-                painter.rect_filled(
-                    b_rect,
-                    CornerRadius::same(1),
-                    Color32::from_rgb(80, 220, 130),
-                );
-            }
-        }
-        MediaKind::RawDng | MediaKind::Image => {
-            // Photography tone
-            painter.rect_filled(rect, corner, Color32::from_rgb(55, 40, 60));
-            painter.circle_filled(
-                rect.center(),
-                rect.height() * 0.28,
-                Color32::from_rgb(220, 120, 160),
-            );
-        }
-        MediaKind::ImageSequence => {
-            // EXR plate pattern
-            painter.rect_filled(rect, corner, Color32::from_rgb(25, 45, 55));
-            painter.rect_stroke(
-                rect.shrink(8.0),
-                CornerRadius::same(2),
-                Stroke::new(1.5, Color32::from_rgb(100, 200, 220)),
-                egui::StrokeKind::Inside,
-            );
-        }
-        MediaKind::Document => {
-            painter.rect_filled(rect, corner, Color32::from_rgb(38, 28, 32));
-            let sheet = rect.shrink2(Vec2::new(rect.width() * 0.22, rect.height() * 0.12));
-            painter.rect_filled(
-                sheet,
-                CornerRadius::same(2),
-                Color32::from_rgb(225, 230, 238),
-            );
-            let hdr = Rect::from_min_max(
-                sheet.min,
-                Pos2::new(sheet.max.x, sheet.min.y + sheet.height() * 0.22),
-            );
-            painter.rect_filled(hdr, CornerRadius::same(2), Color32::from_rgb(215, 45, 55));
-            for i in 0..3 {
-                let ly = sheet.min.y + sheet.height() * 0.38 + (i as f32) * (sheet.height() * 0.16);
-                let lw = if i == 2 {
-                    sheet.width() * 0.5
-                } else {
-                    sheet.width() * 0.75
-                };
-                let line_rect = Rect::from_min_size(
-                    Pos2::new(sheet.min.x + sheet.width() * 0.12, ly),
-                    Vec2::new(lw, 2.0),
-                );
-                painter.rect_filled(
-                    line_rect,
-                    CornerRadius::ZERO,
-                    Color32::from_rgb(165, 172, 185),
-                );
-            }
-        }
-        MediaKind::Archive => {
-            painter.rect_filled(rect, corner, Color32::from_rgb(32, 28, 42));
-            let box_rect = rect.shrink2(Vec2::new(rect.width() * 0.18, rect.height() * 0.15));
-            painter.rect_filled(
-                box_rect,
-                CornerRadius::same(4),
-                Color32::from_rgb(55, 48, 72),
-            );
-            let zip_w = 4.0;
-            let zip_rect = Rect::from_min_max(
-                Pos2::new(box_rect.center().x - zip_w * 0.5, box_rect.min.y),
-                Pos2::new(box_rect.center().x + zip_w * 0.5, box_rect.max.y),
-            );
-            painter.rect_filled(
-                zip_rect,
-                CornerRadius::ZERO,
-                Color32::from_rgb(220, 180, 70),
-            );
-        }
-        MediaKind::ProjectFile | MediaKind::Other => {
-            painter.rect_filled(rect, corner, Color32::from_rgb(30, 34, 42));
-        }
-    }
+    let painter = ui.painter();
+    paint_asset_preview(previews, ui.ctx(), painter, rect, asset, 0.5);
 }
 
 fn truncate_filename(s: &str, max_len: usize) -> String {

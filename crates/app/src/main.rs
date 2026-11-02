@@ -4,16 +4,17 @@ pub mod craft_theme;
 mod inspector_view;
 mod library_view;
 mod mac_menu;
-mod mockup_art;
+mod media_preview;
 mod process_view;
 mod queue_drawer;
 mod queue_view;
 pub mod receipts;
 pub mod settings;
 mod sidebar_nav;
-mod workstation_view;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
@@ -26,7 +27,7 @@ use mediacraft_catalog::{MediaAsset, MediaCatalog};
 use mediacraft_daemon::QueueEngine;
 use mediacraft_daemon::ipc::IpcServer;
 use mediacraft_protocol::{
-    AudioCodec, ContainerFormat, DeliveryContract, EncodingPreset, JobState, VideoCodec,
+    AudioCodec, ContainerFormat, DeliveryContract, EncodingPreset, VideoCodec,
 };
 
 use automate_view::{AutomateViewState, render_automate_workspace};
@@ -40,11 +41,9 @@ use process_view::{ProcessViewState, render_process_panel};
 use queue_drawer::{QueueDrawerState, render_queue_drawer};
 use queue_view::{QueueViewState, render_queue_workspace};
 use sidebar_nav::{SidebarNavState, render_sidebar_nav};
-use workstation_view::{WorkstationState, render_workstation};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceMode {
-    Workstation,
     Browse,
     Inspect,
     Collections,
@@ -58,19 +57,15 @@ pub enum WorkspaceMode {
 /// Docking panels in the primary workspace layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Panel {
-    Sidebar,
     LibraryGrid,
     Inspector,
-    ProcessSidebar,
 }
 
 impl Panel {
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Sidebar => "Navigator & Collections",
             Self::LibraryGrid => "Media Library",
             Self::Inspector => "Preview & Inspector",
-            Self::ProcessSidebar => "Process & Output",
         }
     }
 }
@@ -80,13 +75,20 @@ pub struct MediaCraftApp {
     ipc_server: Option<IpcServer>,
     watch_folder_engine: mediacraft_daemon::watch_folder::WatchFolderEngine,
     catalog: MediaCatalog,
+    scan_result_rx: Option<
+        Receiver<(
+            PathBuf,
+            Vec<MediaAsset>,
+            mediacraft_catalog::scanner::ScanReport,
+        )>,
+    >,
     selected_asset_id: Option<String>,
     search_query: String,
     collection_manager: mediacraft_catalog::CollectionManager,
 
     // Sub-view states
     workspace_mode: WorkspaceMode,
-    workstation_state: WorkstationState,
+    previews: media_preview::MediaPreviewCache,
     library_state: LibraryViewState,
     inspector_state: InspectorState,
     process_state: ProcessViewState,
@@ -134,100 +136,26 @@ impl MediaCraftApp {
             egui::TextureOptions::LINEAR,
         );
         let settings_store = settings::open_settings();
-        let mut engine = QueueEngine::new(2);
-
-        // Preload active sample transcode jobs
-        let p_proxy = EncodingPreset {
-            id: "editing-proxy-1080p".to_string(),
-            name: "Editing Proxy (H.264 1080p)".to_string(),
-            container: ContainerFormat::Mp4,
-            video_codec: VideoCodec::H264,
-            width: Some(1920),
-            height: Some(1080),
-            frame_rate_num: Some(60000),
-            frame_rate_den: Some(1001),
-            video_bitrate_kbps: Some(5_000),
-            audio_codec: AudioCodec::AacLc,
-            audio_sample_rate: Some(48_000),
-            audio_channels: Some(2),
-            audio_bitrate_kbps: Some(192),
-            audio_priming_samples: 1024,
-            faststart: true,
-            contract: Some(DeliveryContract::default()),
-        };
-
-        let p_web = EncodingPreset {
-            id: "web-delivery-1080p".to_string(),
-            name: "Web Delivery (H.264 1080p Full HD)".to_string(),
-            container: ContainerFormat::Mp4,
-            video_codec: VideoCodec::H264,
-            width: Some(1920),
-            height: Some(1080),
-            frame_rate_num: Some(30000),
-            frame_rate_den: Some(1001),
-            video_bitrate_kbps: Some(8_000),
-            audio_codec: AudioCodec::AacLc,
-            audio_sample_rate: Some(48_000),
-            audio_channels: Some(2),
-            audio_bitrate_kbps: Some(320),
-            audio_priming_samples: 1024,
-            faststart: true,
-            contract: Some(DeliveryContract::default()),
-        };
-
-        let j1 = engine.add_job(
-            PathBuf::from("/Users/zachshallbetter/Projects/Media/A001_C001.mov"),
-            PathBuf::from("/Users/zachshallbetter/Downloads/A001_C001_proxy.mp4"),
-            p_proxy.clone(),
-            5,
-        );
-        let _ = engine.update_progress(j1, 0.58, 1420, 2400, 59.94);
-
-        let j2 = engine.add_job(
-            PathBuf::from("/Users/zachshallbetter/Projects/Media/Interview_B_Roll.mp4"),
-            PathBuf::from("/Users/zachshallbetter/Downloads/Interview_B_Roll_web.mp4"),
-            p_web.clone(),
-            4,
-        );
-        let _ = engine.update_progress(j2, 0.12, 108, 900, 29.97);
+        let engine = QueueEngine::new(2);
 
         let engine_arc = Arc::new(Mutex::new(engine));
         let ipc_server = IpcServer::new("/tmp/mediacraft.sock", Arc::clone(&engine_arc));
         let _ = ipc_server.start();
 
-        // Load Standard Creative Asset Catalog & Mock Corpus
-        let catalog = MediaCatalog::with_standard_mock_corpus();
+        let catalog = MediaCatalog::new();
 
-        // Docking Layout: Sidebar (Left 230px), Center Grid, Inspector/Process (Right 420px)
-        let center_and_right = Node::Split {
+        // Keep the browse workspace focused on the media grid and its inspector.
+        let root_node = Node::Split {
             axis: SplitAxis::Horizontal,
             size: SplitSize::FixedSecond(420.0),
             first: Box::new(Node::Tabs {
                 panels: vec![Panel::LibraryGrid],
                 active: 0,
             }),
-            second: Box::new(Node::Split {
-                axis: SplitAxis::Vertical,
-                size: SplitSize::Ratio(0.55),
-                first: Box::new(Node::Tabs {
-                    panels: vec![Panel::Inspector],
-                    active: 0,
-                }),
-                second: Box::new(Node::Tabs {
-                    panels: vec![Panel::ProcessSidebar],
-                    active: 0,
-                }),
-            }),
-        };
-
-        let root_node = Node::Split {
-            axis: SplitAxis::Horizontal,
-            size: SplitSize::FixedFirst(230.0),
-            first: Box::new(Node::Tabs {
-                panels: vec![Panel::Sidebar],
+            second: Box::new(Node::Tabs {
+                panels: vec![Panel::Inspector],
                 active: 0,
             }),
-            second: Box::new(center_and_right),
         };
 
         let layout = Layout {
@@ -406,10 +334,8 @@ impl MediaCraftApp {
             WorkspaceMode::Inspect
         } else if std::env::args().any(|a| a == "--collections") {
             WorkspaceMode::Collections
-        } else if std::env::args().any(|a| a == "--browse") {
-            WorkspaceMode::Browse
         } else {
-            WorkspaceMode::Workstation
+            WorkspaceMode::Browse
         };
 
         if std::env::args().any(|a| a == "--empty-queue") {
@@ -474,15 +400,12 @@ impl MediaCraftApp {
 
         let mut library_state = LibraryViewState::default();
         if std::env::args().any(|a| a == "--batch-rename") {
-            library_state.selected_ids.insert("A001_C001".to_string());
-            library_state.selected_ids.insert("Drone_001".to_string());
             library_state.batch_rename_open = true;
         }
         if std::env::args().any(|a| a == "--ingest-modal") {
             library_state.scan_dialog_open = true;
         }
         if std::env::args().any(|a| a == "--relink-modal") {
-            library_state.relink_target_asset_id = Some("Offline_Take_04".to_string());
             library_state.relink_modal_open = true;
         }
         if std::env::args().any(|a| a == "--contact-sheet-modal") {
@@ -494,11 +417,12 @@ impl MediaCraftApp {
             ipc_server: Some(ipc_server),
             watch_folder_engine,
             catalog,
-            selected_asset_id: Some("A001_C001".to_string()),
+            scan_result_rx: None,
+            selected_asset_id: None,
             search_query: String::new(),
             collection_manager: mediacraft_catalog::CollectionManager::with_defaults(),
             workspace_mode: initial_workspace,
-            workstation_state: WorkstationState::default(),
+            previews: media_preview::MediaPreviewCache::default(),
             library_state,
             inspector_state,
             process_state: ProcessViewState::default(),
@@ -539,14 +463,34 @@ impl MediaCraftApp {
 
         match action {
             library_view::LibraryAction::ScanDirectory(path) => {
-                let count = self
-                    .catalog
-                    .scan_and_merge(&path, &mediacraft_catalog::scanner::ScanOptions::default());
-                self.library_state.status_notification = Some(format!(
-                    "Ingest complete: scanned {} asset(s) from {}",
-                    count,
-                    path.display()
-                ));
+                if self.scan_result_rx.is_some() {
+                    self.library_state.status_notification =
+                        Some("A folder scan is already running.".to_string());
+                    return;
+                }
+
+                let (result_tx, result_rx) = mpsc::sync_channel(1);
+                let scan_path = path.clone();
+                let worker = std::thread::Builder::new()
+                    .name("mediacraft-folder-scan".to_string())
+                    .spawn(move || {
+                        let (assets, report) = mediacraft_catalog::scanner::scan_path_with_report(
+                            &scan_path,
+                            &mediacraft_catalog::scanner::ScanOptions::default(),
+                        );
+                        let _ = result_tx.send((scan_path, assets, report));
+                    });
+                match worker {
+                    Ok(_) => {
+                        self.scan_result_rx = Some(result_rx);
+                        self.library_state.status_notification =
+                            Some(format!("Scanning {}…", path.display()));
+                    }
+                    Err(error) => {
+                        self.library_state.status_notification =
+                            Some(format!("Could not start folder scan: {error}"));
+                    }
+                }
             }
             library_view::LibraryAction::BatchRename {
                 pattern,
@@ -689,6 +633,25 @@ impl MediaCraftApp {
         let now = Instant::now();
         let dt = (now - self.last_tick).as_secs_f32();
         self.last_tick = now;
+        self.poll_folder_scan();
+
+        if self.inspector_state.is_playing {
+            let duration = self
+                .selected_asset_id
+                .as_deref()
+                .and_then(|id| self.catalog.get_by_id(id))
+                .filter(|asset| asset.kind == mediacraft_catalog::MediaKind::Video)
+                .and_then(|asset| asset.duration_secs)
+                .filter(|duration| *duration > 0.0);
+            if let Some(duration) = duration {
+                self.inspector_state.scrub_pos += dt / duration;
+                if self.inspector_state.scrub_pos >= 1.0 {
+                    self.inspector_state.scrub_pos = 0.0;
+                }
+            } else {
+                self.inspector_state.is_playing = false;
+            }
+        }
 
         // Poll engine progress
         let engine_arc = Arc::clone(&self.engine);
@@ -700,28 +663,59 @@ impl MediaCraftApp {
                 .watch_folder_engine
                 .scan_and_enqueue(&mut eng, &self.presets);
         }
+    }
 
-        let running_jobs = eng
-            .list_jobs()
-            .into_iter()
-            .filter(|j| matches!(j.state, JobState::Running { .. }))
-            .collect::<Vec<_>>();
+    fn poll_folder_scan(&mut self) {
+        let result = match self.scan_result_rx.as_ref() {
+            Some(receiver) => match receiver.try_recv() {
+                Ok(result) => Some(Ok(result)),
+                Err(TryRecvError::Empty) => return,
+                Err(TryRecvError::Disconnected) => Some(Err(())),
+            },
+            None => return,
+        };
+        self.scan_result_rx = None;
 
-        for job in running_jobs {
-            if let JobState::Running {
-                progress_pct,
-                current_frame,
-                ..
-            } = job.state
-            {
-                let new_pct = (progress_pct + dt * 0.05).min(1.0);
-                let new_frame = current_frame.saturating_add(2);
-                if new_pct >= 1.0 {
-                    let _ = eng.execute_job_to_completion(job.id);
-                } else {
-                    let _ = eng.update_progress(job.id, new_pct, new_frame, 2400, 59.94);
+        match result {
+            Some(Ok((path, mut assets, report))) => {
+                assets.sort_by(|left, right| {
+                    left.filename
+                        .to_ascii_lowercase()
+                        .cmp(&right.filename.to_ascii_lowercase())
+                        .then_with(|| left.path.cmp(&right.path))
+                });
+                let mut indexed_paths: HashSet<PathBuf> = self
+                    .catalog
+                    .all_assets()
+                    .iter()
+                    .map(|asset| asset.path.clone())
+                    .collect();
+                let mut added = 0;
+                for asset in assets {
+                    if indexed_paths.insert(asset.path.clone()) {
+                        self.catalog.add_asset(asset);
+                        added += 1;
+                    }
                 }
+                if self.selected_asset_id.is_none() {
+                    self.selected_asset_id = self
+                        .catalog
+                        .all_assets()
+                        .first()
+                        .map(|asset| asset.id.clone());
+                }
+                self.library_state.status_notification = Some(format!(
+                    "Ingested {added} file(s) from {} • {} unsupported • {} scan errors",
+                    path.display(),
+                    report.skipped_unsupported,
+                    report.errors.len()
+                ));
             }
+            Some(Err(())) => {
+                self.library_state.status_notification =
+                    Some("Folder scan stopped before it could return results.".to_string());
+            }
+            None => {}
         }
     }
 
@@ -734,6 +728,10 @@ impl MediaCraftApp {
         let mut close_modal = false;
         let mut save_modal = false;
         let mut enqueue_modal = false;
+        let selected_asset = self
+            .selected_asset_id
+            .as_deref()
+            .and_then(|id| self.catalog.get_by_id(id));
 
         egui::Window::new(format!("Export Settings — {}", preset.name))
             .fixed_size(Vec2::new(760.0, 520.0))
@@ -748,61 +746,70 @@ impl MediaCraftApp {
                         let (rect, _) =
                             ui.allocate_exact_size(Vec2::new(320.0, 180.0), egui::Sense::hover());
                         let painter = ui.painter_at(rect);
-                        painter.rect_filled(
-                            rect,
-                            CornerRadius::same(3),
-                            Color32::from_rgb(15, 18, 22),
-                        );
-
-                        // 16:9 Test Pattern
-                        let bar_w = rect.width() / 7.0;
-                        let colors = [
-                            Color32::from_rgb(190, 190, 190),
-                            Color32::from_rgb(190, 190, 0),
-                            Color32::from_rgb(0, 190, 190),
-                            Color32::from_rgb(0, 190, 0),
-                            Color32::from_rgb(190, 0, 190),
-                            Color32::from_rgb(190, 0, 0),
-                            Color32::from_rgb(0, 0, 190),
-                        ];
-                        for (i, &col) in colors.iter().enumerate() {
-                            let bx = rect.min.x + (i as f32) * bar_w;
+                        if let Some(asset) = selected_asset {
+                            media_preview::paint_asset_preview(
+                                &mut self.previews,
+                                ui.ctx(),
+                                &painter,
+                                rect,
+                                asset,
+                                0.5,
+                            );
+                        } else {
                             painter.rect_filled(
-                                Rect::from_min_max(
-                                    Pos2::new(bx, rect.min.y),
-                                    Pos2::new(bx + bar_w, rect.max.y),
-                                ),
-                                CornerRadius::ZERO,
-                                col,
+                                rect,
+                                CornerRadius::same(3),
+                                Color32::from_rgb(15, 18, 22),
+                            );
+                            painter.text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "Select a source file in Browse",
+                                FontId::proportional(11.0),
+                                Color32::GRAY,
                             );
                         }
 
                         ui.add_space(4.0);
-                        ui.label(
-                            RichText::new("01:00:14:08")
-                                .size(11.0)
-                                .monospace()
-                                .color(Color32::from_rgb(90, 230, 130)),
-                        );
-                        ui.group(|ui| {
+                        if let Some(asset) = selected_asset {
+                            ui.label(RichText::new(&asset.filename).strong().size(11.0));
                             ui.label(
-                                RichText::new(
-                                    "Source Range: Entire Sequence (00:00:00:00 - 00:02:45:12)",
-                                )
-                                .size(10.5),
+                                RichText::new(format!(
+                                    "{} • {} • {}",
+                                    asset.kind.label(),
+                                    asset.formatted_duration(),
+                                    asset.formatted_size()
+                                ))
+                                .size(10.0)
+                                .color(Color32::GRAY),
                             );
+                            if let Some(video) = &asset.video {
+                                ui.label(format!(
+                                    "{} × {} • {}",
+                                    video.width,
+                                    video.height,
+                                    if video.fps > 0.0 {
+                                        format!("{:.3} fps", video.fps)
+                                    } else {
+                                        "frame rate unknown".to_string()
+                                    }
+                                ));
+                            }
+                        }
+                        if let (Some(duration), Some(bitrate)) = (
+                            selected_asset.and_then(|asset| asset.duration_secs),
+                            preset.video_bitrate_kbps,
+                        ) {
+                            let estimated_mb =
+                                duration as f64 * (bitrate as f64 * 1000.0) / 8.0 / 1_000_000.0;
                             ui.label(
-                                RichText::new("Source: 3840x2160, 23.976 fps, 48 kHz 6-ch")
-                                    .size(10.0)
-                                    .color(Color32::GRAY),
-                            );
-                        });
-                        ui.label(
-                            RichText::new("Estimated File Size: 937.6 MB")
-                                .size(11.0)
-                                .strong()
+                                RichText::new(format!(
+                                    "Estimated video size: {estimated_mb:.1} MB"
+                                ))
+                                .size(10.5)
                                 .color(Color32::from_rgb(80, 220, 120)),
-                        );
+                            );
+                        }
                     });
 
                     ui.separator();
@@ -952,24 +959,26 @@ impl MediaCraftApp {
                         }
 
                         ui.add_space(6.0);
-                        if craft_ui::buttons::IconButton::new(
-                            "Queue",
-                            Vec2::new(75.0, 24.0),
-                            &accent_style,
-                        )
-                        .show(ui, |ui, rect, tint| {
-                            ui.painter().text(
-                                rect.center(),
-                                egui::Align2::CENTER_CENTER,
+                        ui.add_enabled_ui(selected_asset.is_some(), |ui| {
+                            if craft_ui::buttons::IconButton::new(
                                 "Queue",
-                                egui::FontId::proportional(11.0),
-                                tint,
-                            );
-                        })
-                        .clicked()
-                        {
-                            enqueue_modal = true;
-                        }
+                                Vec2::new(75.0, 24.0),
+                                &accent_style,
+                            )
+                            .show(ui, |ui, rect, tint| {
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "Queue",
+                                    egui::FontId::proportional(11.0),
+                                    tint,
+                                );
+                            })
+                            .clicked()
+                            {
+                                enqueue_modal = true;
+                            }
+                        });
 
                         ui.add_space(6.0);
                         if craft_ui::buttons::IconButton::new(
@@ -995,15 +1004,50 @@ impl MediaCraftApp {
             });
 
         if enqueue_modal {
-            let _ = self.engine_lock().add_job(
-                PathBuf::from("/Users/zachshallbetter/Projects/Media/A001_C001.mov"),
-                PathBuf::from(format!(
-                    "/Users/zachshallbetter/Downloads/A001_C001_{}.mp4",
-                    preset.name
-                )),
-                preset.clone(),
-                5,
-            );
+            if let Some(asset) = selected_asset {
+                if !asset.path.is_file() {
+                    self.library_state.status_notification =
+                        Some("Source file is offline; reconnect it before queueing.".to_string());
+                    self.editing_preset = Some(preset);
+                    return;
+                }
+
+                let output_dir = self.settings_store.get().default_output_folder.as_str();
+                let output_dir = if output_dir.is_empty() {
+                    asset
+                        .path
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new("."))
+                } else {
+                    std::path::Path::new(output_dir)
+                };
+                let extension = match preset.container {
+                    ContainerFormat::Mp4 => "mp4",
+                    ContainerFormat::Mov => "mov",
+                    ContainerFormat::M4a => "m4a",
+                    ContainerFormat::Wav => "wav",
+                    ContainerFormat::Mxf => "mxf",
+                };
+                let stem = asset
+                    .path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("output");
+                let output = output_dir.join(format!("{stem}_{}.{}", preset.id, extension));
+
+                if output.exists() {
+                    self.library_state.status_notification = Some(format!(
+                        "Output already exists; choose another output folder: {}",
+                        output.display()
+                    ));
+                    self.editing_preset = Some(preset);
+                    return;
+                }
+
+                self.engine_lock()
+                    .add_job(asset.path.clone(), output, preset.clone(), 5);
+                self.drawer_state.is_expanded = true;
+            }
             self.editing_preset = None;
         } else if save_modal || close_modal {
             self.editing_preset = None;
@@ -1411,7 +1455,8 @@ impl MediaCraftApp {
                     self.preferences_open = true;
                 }
                 mac_menu::MacMenuCommand::AddMedia => {
-                    self.workspace_mode = WorkspaceMode::Workstation;
+                    self.workspace_mode = WorkspaceMode::Browse;
+                    self.library_state.scan_dialog_open = true;
                 }
                 mac_menu::MacMenuCommand::AddWatchFolder => {
                     self.workspace_mode = WorkspaceMode::Automations;
@@ -1426,23 +1471,18 @@ impl MediaCraftApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
                 mac_menu::MacMenuCommand::StartQueue => {
-                    self.workstation_state.is_queue_running = true;
                     self.engine_lock()
                         .resume_queue(mediacraft_protocol::PauseReason::UserRequested);
                 }
                 mac_menu::MacMenuCommand::PauseQueue => {
-                    self.workstation_state.is_queue_running = false;
                     self.engine_lock()
                         .pause_queue(mediacraft_protocol::PauseReason::UserRequested);
                 }
                 mac_menu::MacMenuCommand::StopQueue => {
-                    self.workstation_state.is_queue_running = false;
                     self.engine_lock()
                         .pause_queue(mediacraft_protocol::PauseReason::UserRequested);
                 }
-                mac_menu::MacMenuCommand::ResetQueueStatus => {
-                    self.workstation_state.is_queue_running = false;
-                }
+                mac_menu::MacMenuCommand::ResetQueueStatus => {}
                 mac_menu::MacMenuCommand::ClearCompletedJobs => {
                     self.engine_lock().clear_completed();
                 }
@@ -1455,7 +1495,7 @@ impl MediaCraftApp {
                     self.workspace_mode = WorkspaceMode::Presets;
                 }
                 mac_menu::MacMenuCommand::ViewWorkstation => {
-                    self.workspace_mode = WorkspaceMode::Workstation;
+                    self.workspace_mode = WorkspaceMode::Browse;
                 }
                 mac_menu::MacMenuCommand::ViewBrowser => {
                     self.workspace_mode = WorkspaceMode::Browse;
@@ -1512,7 +1552,6 @@ impl eframe::App for MediaCraftApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.workstation_state.textures.ensure_loaded(ui.ctx());
         self.apply_craft_theme(ui);
 
         // Global hotkey: Cmd+M opens Export Settings
@@ -1531,182 +1570,178 @@ impl eframe::App for MediaCraftApp {
             self.preferences_open = !self.preferences_open;
         }
 
-        if self.workspace_mode == WorkspaceMode::Workstation {
-            render_workstation(ui, &mut self.workstation_state, &mut self.preferences_open);
-            if self.workstation_state.active_workspace == "Encoding Queue" {
-                self.workspace_mode = WorkspaceMode::Queue;
-                self.workstation_state.active_workspace = "Default Workspace".to_string();
-            } else if self.workstation_state.active_workspace == "Media Browser" {
-                self.workspace_mode = WorkspaceMode::Browse;
-                self.workstation_state.active_workspace = "Default Workspace".to_string();
-            }
-            self.show_export_settings_modal(ui.ctx());
-            self.show_preferences_modal(ui.ctx());
-            self.show_quit_modal(ui.ctx());
-            return;
-        }
+        // Compact application chrome: identity, current collection, global search and actions.
+        egui::containers::panel::Panel::top("mediacraft_top_bar")
+            .exact_size(48.0)
+            .frame(egui::Frame::NONE.fill(Color32::from_rgb(17, 20, 23)))
+            .show(ui, |ui| {
+                ui.horizontal_centered(|ui| {
+                    #[cfg(target_os = "macos")]
+                    ui.add_space(72.0);
 
-        // 1. Top Application Bar
-        ui.horizontal(|ui| {
-            // Product Icon (mediacraft-icon.png embedded asset)
-            let icon_size = Vec2::new(26.0, 26.0);
-            let (icon_rect, _) = ui.allocate_exact_size(icon_size, egui::Sense::hover());
-            ui.painter().image(
-                self.app_icon.id(),
-                icon_rect,
-                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
-                Color32::WHITE,
-            );
-            ui.add_space(4.0);
-            ui.heading(
-                RichText::new("MediaCraft")
-                    .size(17.0)
-                    .color(Color32::from_rgb(240, 245, 255))
-                    .strong(),
-            );
-
-            ui.add_space(12.0);
-
-            // Workspace Mode Switcher via craft-ui Tab strip
-            let tabs = [
-                ("🖥 Workstation", WorkspaceMode::Workstation),
-                ("⊞ Browse", WorkspaceMode::Browse),
-                ("🔍 Inspect", WorkspaceMode::Inspect),
-                ("📁 Collections", WorkspaceMode::Collections),
-                ("⚡ Process", WorkspaceMode::Process),
-                ("📋 Queue", WorkspaceMode::Queue),
-                ("⚙ Automations", WorkspaceMode::Automations),
-                ("📦 Deliver", WorkspaceMode::Deliver),
-                ("🎛 Presets", WorkspaceMode::Presets),
-            ];
-            let active_idx = tabs
-                .iter()
-                .position(|(_, m)| *m == self.workspace_mode)
-                .unwrap_or(0);
-            let tab_fit = craft_ui::tabs::fit(
-                &[96.0, 82.0, 84.0, 104.0, 84.0, 82.0, 112.0, 86.0, 88.0],
-                active_idx,
-                ui.available_width().min(860.0),
-                50.0,
-                20.0,
-            );
-            for (idx, width) in tab_fit.shown {
-                if let Some((label, mode)) = tabs.get(idx) {
-                    let is_selected = active_idx == idx;
-                    let (rect, _) =
-                        ui.allocate_exact_size(Vec2::new(width, 24.0), egui::Sense::hover());
-                    let tab_widget = craft_ui::tabs::Tab::new(
-                        ui.id().with(("workspace_nav_tab", idx)),
-                        label,
-                        is_selected,
+                    // Product Icon (mediacraft-icon.png embedded asset)
+                    let icon_size = Vec2::new(30.0, 30.0);
+                    let (icon_rect, _) = ui.allocate_exact_size(icon_size, egui::Sense::hover());
+                    ui.painter().image(
+                        self.app_icon.id(),
+                        icon_rect,
+                        Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
+                        Color32::WHITE,
                     );
-                    let response = tab_widget.show_at(ui, rect, |ui, resp| {
-                        let text_color = if is_selected {
-                            Color32::from_rgb(90, 195, 255)
-                        } else if resp.hovered() {
-                            Color32::from_rgb(235, 245, 255)
-                        } else {
-                            Color32::from_rgb(155, 170, 190)
-                        };
-                        if is_selected {
-                            let underline = Rect::from_min_max(
-                                Pos2::new(rect.min.x, rect.max.y - 2.0),
-                                rect.max,
-                            );
-                            ui.painter().rect_filled(
-                                underline,
-                                CornerRadius::ZERO,
-                                Color32::from_rgb(80, 190, 255),
-                            );
+                    ui.add_space(4.0);
+                    ui.heading(
+                        RichText::new("MediaCraft")
+                            .size(17.0)
+                            .color(Color32::from_rgb(240, 245, 255))
+                            .strong(),
+                    );
+
+                    ui.add_space(18.0);
+
+                    // Global Search Bar
+                    ui.label(RichText::new("🔍").size(12.0).color(Color32::GRAY));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.search_query)
+                            .hint_text("Search files, tags, people...")
+                            .desired_width(ui.available_width().min(420.0)),
+                    );
+
+                    // Right Toolbar Actions using craft_ui::buttons::IconButton
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let btn_style = craft_theme::craft_icon_button_style();
+                        let btn_size = Vec2::new(120.0, 28.0);
+                        if craft_ui::buttons::IconButton::new("Scan / Import", btn_size, &btn_style)
+                            .selected(self.library_state.scan_dialog_open)
+                            .show(ui, |ui, rect, tint| {
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "⤓ Scan / Import",
+                                    egui::FontId::proportional(11.0),
+                                    tint,
+                                );
+                            })
+                            .clicked()
+                        {
+                            self.workspace_mode = WorkspaceMode::Browse;
+                            self.library_state.scan_dialog_open = true;
                         }
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            *label,
-                            egui::FontId::proportional(11.5),
-                            text_color,
+
+                        ui.add_space(4.0);
+                        if craft_ui::buttons::IconButton::new(
+                            "Preferences",
+                            Vec2::new(105.0, 24.0),
+                            &btn_style,
+                        )
+                        .selected(self.preferences_open)
+                        .show(ui, |ui, rect, tint| {
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "⚙ Settings (⌘,)",
+                                egui::FontId::proportional(11.0),
+                                tint,
+                            );
+                        })
+                        .clicked()
+                        {
+                            self.preferences_open = !self.preferences_open;
+                        }
+
+                        ui.add_space(8.0);
+                        let ipc_active = self.ipc_server.is_some();
+                        let status_col = if ipc_active {
+                            Color32::from_rgb(90, 230, 130)
+                        } else {
+                            Color32::GRAY
+                        };
+                        ui.label(
+                            RichText::new(if ipc_active {
+                                "● IPC Active"
+                            } else {
+                                "○ IPC Inactive"
+                            })
+                            .size(11.0)
+                            .color(status_col),
                         );
                     });
-                    if response.clicked() {
-                        self.workspace_mode = *mode;
-                    }
-                }
-            }
+                });
+            });
 
-            ui.add_space(16.0);
-
-            // Global Search Bar
-            ui.label(RichText::new("🔍").size(12.0).color(Color32::GRAY));
-            ui.add(
-                egui::TextEdit::singleline(&mut self.search_query)
-                    .hint_text("Search media, metadata, or content...")
-                    .desired_width(240.0),
-            );
-
-            // Right Toolbar Actions using craft_ui::buttons::IconButton
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let btn_style = craft_theme::craft_icon_button_style();
-                let btn_size = Vec2::new(144.0, 24.0);
-                if craft_ui::buttons::IconButton::new("Export Settings", btn_size, &btn_style)
-                    .selected(self.editing_preset.is_some())
-                    .show(ui, |ui, rect, tint| {
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            "⚙ Export Settings (⌘M)",
-                            egui::FontId::proportional(11.0),
-                            tint,
-                        );
-                    })
-                    .clicked()
-                {
-                    self.editing_preset = if self.editing_preset.is_none() {
-                        self.presets.first().cloned()
-                    } else {
-                        None
-                    };
-                }
-
-                ui.add_space(4.0);
-                if craft_ui::buttons::IconButton::new(
-                    "Preferences",
-                    Vec2::new(105.0, 24.0),
-                    &btn_style,
-                )
-                .selected(self.preferences_open)
-                .show(ui, |ui, rect, tint| {
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "⚙ Settings (⌘,)",
-                        egui::FontId::proportional(11.0),
-                        tint,
+        egui::containers::panel::Panel::left("mediacraft_navigation")
+            .exact_size(212.0)
+            .resizable(true)
+            .frame(
+                egui::Frame::NONE
+                    .fill(Color32::from_rgb(17, 20, 23))
+                    .inner_margin(egui::Margin::same(10)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("WORKSPACES")
+                            .size(10.0)
+                            .strong()
+                            .color(Color32::from_rgb(130, 145, 160)),
                     );
-                })
-                .clicked()
-                {
-                    self.preferences_open = !self.preferences_open;
+                });
+                ui.add_space(5.0);
+                for (label, mode) in [
+                    ("▦  Browse", WorkspaceMode::Browse),
+                    ("▤  Collections", WorkspaceMode::Collections),
+                    ("▷  Process", WorkspaceMode::Process),
+                    ("☷  Queue", WorkspaceMode::Queue),
+                    ("⌘  Automations", WorkspaceMode::Automations),
+                ] {
+                    let selected = self.workspace_mode == mode;
+                    if ui
+                        .selectable_label(selected, RichText::new(label).size(12.0))
+                        .clicked()
+                    {
+                        self.workspace_mode = mode;
+                    }
                 }
 
                 ui.add_space(8.0);
-                let q_status = self.engine_lock().status();
-                let status_col = if q_status.active_jobs > 0 {
-                    Color32::from_rgb(90, 230, 130)
-                } else {
-                    Color32::GRAY
-                };
-                ui.label(
-                    RichText::new(format!("● IPC Active ({})", q_status.active_jobs))
-                        .size(11.0)
-                        .color(status_col),
-                );
+                ui.separator();
+                for (label, mode) in [
+                    ("⇧  Deliver", WorkspaceMode::Deliver),
+                    ("⚙  Presets", WorkspaceMode::Presets),
+                ] {
+                    if ui
+                        .selectable_label(
+                            self.workspace_mode == mode,
+                            RichText::new(label).size(12.0),
+                        )
+                        .clicked()
+                    {
+                        self.workspace_mode = mode;
+                    }
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
+                if matches!(
+                    self.workspace_mode,
+                    WorkspaceMode::Browse | WorkspaceMode::Collections | WorkspaceMode::Inspect
+                ) {
+                    let counts = self.catalog.kind_counts();
+                    let total = self.catalog.all_assets().len();
+                    render_sidebar_nav(ui, &mut self.sidebar_state, &counts, total);
+                }
             });
-        });
 
-        ui.separator();
+        egui::containers::panel::Panel::bottom("mediacraft_activity_drawer")
+            .frame(
+                egui::Frame::NONE
+                    .fill(Color32::from_rgb(17, 20, 23))
+                    .inner_margin(egui::Margin::symmetric(10, 4)),
+            )
+            .show(ui, |ui| {
+                render_queue_drawer(ui, &mut self.drawer_state, &self.engine)
+            });
 
-        match self.workspace_mode {
-            WorkspaceMode::Workstation => {}
+        egui::CentralPanel::default().show(ui, |ui| match self.workspace_mode {
             WorkspaceMode::Queue => {
                 render_queue_workspace(
                     ui,
@@ -1732,23 +1767,6 @@ impl eframe::App for MediaCraftApp {
             }
             WorkspaceMode::Presets => {
                 render_preset_workspace(ui, &mut self.preset_state, &mut self.presets);
-            }
-            WorkspaceMode::Inspect => {
-                let selected_asset = self
-                    .selected_asset_id
-                    .as_deref()
-                    .and_then(|id| self.catalog.get_by_id(id));
-
-                render_inspector_panel(
-                    ui,
-                    &mut self.inspector_state,
-                    selected_asset,
-                    self.catalog.graph(),
-                    Some(&self.workstation_state.textures),
-                );
-
-                ui.separator();
-                render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
             }
             WorkspaceMode::Collections => {
                 let counts = self.catalog.kind_counts();
@@ -1788,30 +1806,23 @@ impl eframe::App for MediaCraftApp {
                         (label, assets)
                     };
 
-                let mut library_action = None;
-                ui.columns(2, |columns| {
-                    render_sidebar_nav(&mut columns[0], &mut self.sidebar_state, &counts, total);
-                    library_action = render_library_view(
-                        &mut columns[1],
-                        &mut self.library_state,
-                        LibraryViewContext {
-                            active_collection: self.sidebar_state.selected_collection,
-                            collection_label: &collection_label,
-                            kind_filter: &mut self.sidebar_state.selected_kind_filter,
-                            kind_counts: &counts,
-                            total_assets: total,
-                            search_query: &mut self.search_query,
-                            assets: &filtered_assets,
-                            selected_asset_id: &mut self.selected_asset_id,
-                            stacks: self.catalog.stacks(),
-                            textures: Some(&self.workstation_state.textures),
-                        },
-                    );
-                });
+                let library_action = render_library_view(
+                    ui,
+                    &mut self.library_state,
+                    LibraryViewContext {
+                        active_collection: self.sidebar_state.selected_collection,
+                        collection_label: &collection_label,
+                        kind_filter: &mut self.sidebar_state.selected_kind_filter,
+                        kind_counts: &counts,
+                        total_assets: total,
+                        search_query: &mut self.search_query,
+                        assets: &filtered_assets,
+                        selected_asset_id: &mut self.selected_asset_id,
+                        stacks: self.catalog.stacks(),
+                        previews: &mut self.previews,
+                    },
+                );
                 self.handle_library_action(library_action);
-
-                ui.separator();
-                render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
             }
             WorkspaceMode::Process => {
                 let selected_asset = self
@@ -1820,16 +1831,63 @@ impl eframe::App for MediaCraftApp {
                     .and_then(|id| self.catalog.get_by_id(id));
                 let mut enqueue_job_action: Option<(EncodingPreset, String, String)> = None;
 
-                ui.columns(2, |columns| {
-                    render_inspector_panel(
-                        &mut columns[0],
-                        &mut self.inspector_state,
-                        selected_asset,
-                        self.catalog.graph(),
-                        Some(&self.workstation_state.textures),
-                    );
+                ui.columns(3, |columns| {
+                    for idx in 0..2 {
+                        let column = &mut columns[idx];
+                        let (label, output) = if idx == 0 {
+                            ("SOURCE", false)
+                        } else {
+                            ("OUTPUT PREVIEW", true)
+                        };
+                        column.heading(label);
+                        column.separator();
+                        if let Some(asset) = selected_asset {
+                            let preview_width = column.available_width();
+                            let (rect, _) = column.allocate_exact_size(
+                                Vec2::new(preview_width, preview_width * 9.0 / 16.0),
+                                egui::Sense::hover(),
+                            );
+                            let painter = column.painter_at(rect);
+                            media_preview::paint_asset_preview(
+                                &mut self.previews,
+                                column.ctx(),
+                                &painter,
+                                rect,
+                                asset,
+                                0.5,
+                            );
+                            if output {
+                                painter.rect_filled(
+                                    rect,
+                                    CornerRadius::same(3),
+                                    Color32::from_black_alpha(35),
+                                );
+                                painter.text(
+                                    rect.left_top() + Vec2::new(8.0, 8.0),
+                                    egui::Align2::LEFT_TOP,
+                                    "OUTPUT PREVIEW • NOT GENERATED",
+                                    FontId::proportional(10.0),
+                                    Color32::from_rgb(34, 218, 215),
+                                );
+                            }
+                            column.label(RichText::new(&asset.filename).strong());
+                            if let Some(video) = &asset.video {
+                                column.label(format!(
+                                    "{} × {}  •  {:.3} fps  •  {}",
+                                    video.width, video.height, video.fps, video.codec
+                                ));
+                            }
+                            if output {
+                                column.label("Output appears here after an encode completes.");
+                            }
+                        } else {
+                            column.centered_and_justified(|ui| {
+                                ui.label("Select a video in Browse to compare source and output.")
+                            });
+                        }
+                    }
                     render_process_panel(
-                        &mut columns[1],
+                        &mut columns[2],
                         &mut self.process_state,
                         selected_asset,
                         &self.presets,
@@ -1846,11 +1904,8 @@ impl eframe::App for MediaCraftApp {
                     );
                     self.drawer_state.is_expanded = true;
                 }
-
-                ui.separator();
-                render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
             }
-            WorkspaceMode::Browse => {
+            WorkspaceMode::Browse | WorkspaceMode::Inspect => {
                 // 2. Central Docking Workspace Area
                 let mut style = DockStyle::from_ui(ui);
                 style.tab_height = 26.0;
@@ -1859,7 +1914,7 @@ impl eframe::App for MediaCraftApp {
                 style.active_background = Color32::from_rgb(42, 50, 64);
                 style.text = Color32::from_rgb(235, 245, 255);
                 style.inactive_text = Color32::from_rgb(160, 175, 195);
-                style.accent = Color32::from_rgb(80, 190, 255);
+                style.accent = Color32::from_rgb(27, 211, 207);
                 style.font = FontId::proportional(11.5);
                 style.border = Stroke::new(1.0, Color32::from_rgb(45, 52, 65));
 
@@ -1907,7 +1962,6 @@ impl eframe::App for MediaCraftApp {
 
                 let total = self.catalog.all_assets().len();
                 let counts = self.catalog.kind_counts();
-                let mut enqueue_job_action: Option<(EncodingPreset, String, String)> = None;
                 let mut library_action = None;
 
                 let output = DockArea::new(egui::Id::new("mediacraft_workspace_dock")).show(
@@ -1917,9 +1971,6 @@ impl eframe::App for MediaCraftApp {
                     |panel| panel.label().into(),
                     |_| Permissions::default(),
                     |ui, panel| match *panel {
-                        Panel::Sidebar => {
-                            render_sidebar_nav(ui, &mut self.sidebar_state, &counts, total);
-                        }
                         Panel::LibraryGrid => {
                             library_action = render_library_view(
                                 ui,
@@ -1934,7 +1985,7 @@ impl eframe::App for MediaCraftApp {
                                     assets: &filtered_assets,
                                     selected_asset_id: &mut self.selected_asset_id,
                                     stacks: self.catalog.stacks(),
-                                    textures: Some(&self.workstation_state.textures),
+                                    previews: &mut self.previews,
                                 },
                             );
                         }
@@ -1944,16 +1995,7 @@ impl eframe::App for MediaCraftApp {
                                 &mut self.inspector_state,
                                 selected_asset,
                                 self.catalog.graph(),
-                                Some(&self.workstation_state.textures),
-                            );
-                        }
-                        Panel::ProcessSidebar => {
-                            render_process_panel(
-                                ui,
-                                &mut self.process_state,
-                                selected_asset,
-                                &self.presets,
-                                &mut enqueue_job_action,
+                                &mut self.previews,
                             );
                         }
                     },
@@ -1964,23 +2006,8 @@ impl eframe::App for MediaCraftApp {
                 }
                 self.layout = layout;
                 self.handle_library_action(library_action);
-
-                // Handle enqueue action from process panel
-                if let Some((preset, src, out)) = enqueue_job_action {
-                    let _ = self.engine_lock().add_job(
-                        PathBuf::from(src),
-                        PathBuf::from(out),
-                        preset,
-                        5,
-                    );
-                    self.drawer_state.is_expanded = true;
-                }
-
-                // 3. Bottom Activity Drawer (Queue & Watch Folders)
-                ui.separator();
-                render_queue_drawer(ui, &mut self.drawer_state, &self.engine);
             }
-        }
+        });
 
         // 4. Modal Export Settings Window (if triggered)
         self.show_export_settings_modal(ui.ctx());

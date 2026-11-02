@@ -25,21 +25,21 @@ pub fn craft_icon_button_style() -> IconButtonStyle {
         },
         hovered: ButtonVisuals {
             fill: Color32::from_rgb(38, 46, 60),
-            stroke: Stroke::new(1.0, Color32::from_rgb(70, 95, 130)),
+            stroke: Stroke::new(1.0, Color32::from_rgb(35, 145, 150)),
             icon: Color32::from_rgb(240, 248, 255),
         },
         pressed: Some(ButtonVisuals {
-            fill: Color32::from_rgb(45, 58, 78),
-            stroke: Stroke::new(1.0, Color32::from_rgb(90, 130, 180)),
+            fill: Color32::from_rgb(25, 65, 68),
+            stroke: Stroke::new(1.0, Color32::from_rgb(45, 185, 185)),
             icon: Color32::WHITE,
         }),
         selected: ButtonVisuals {
-            fill: Color32::from_rgb(26, 58, 98),
-            stroke: Stroke::new(1.2, Color32::from_rgb(75, 170, 245)),
-            icon: Color32::from_rgb(90, 200, 255),
+            fill: Color32::from_rgb(16, 55, 58),
+            stroke: Stroke::new(1.2, Color32::from_rgb(27, 211, 207)),
+            icon: Color32::from_rgb(76, 226, 220),
         },
         corner_radius: CornerRadius::same(4),
-        focus_stroke: Stroke::new(1.5, Color32::from_rgb(80, 180, 255)),
+        focus_stroke: Stroke::new(1.5, Color32::from_rgb(27, 211, 207)),
     }
 }
 
@@ -47,27 +47,27 @@ pub fn craft_icon_button_style() -> IconButtonStyle {
 pub fn craft_accent_button_style() -> IconButtonStyle {
     IconButtonStyle {
         normal: ButtonVisuals {
-            fill: Color32::from_rgb(22, 65, 45),
-            stroke: Stroke::new(1.0, Color32::from_rgb(45, 120, 80)),
-            icon: Color32::from_rgb(140, 240, 180),
+            fill: Color32::from_rgb(20, 188, 192),
+            stroke: Stroke::new(1.0, Color32::from_rgb(30, 215, 215)),
+            icon: Color32::from_rgb(7, 22, 25),
         },
         hovered: ButtonVisuals {
-            fill: Color32::from_rgb(28, 85, 58),
-            stroke: Stroke::new(1.0, Color32::from_rgb(60, 160, 110)),
-            icon: Color32::from_rgb(180, 255, 210),
+            fill: Color32::from_rgb(40, 220, 220),
+            stroke: Stroke::new(1.0, Color32::from_rgb(85, 240, 235)),
+            icon: Color32::from_rgb(7, 22, 25),
         },
         pressed: Some(ButtonVisuals {
-            fill: Color32::from_rgb(34, 105, 72),
-            stroke: Stroke::new(1.2, Color32::from_rgb(80, 200, 140)),
-            icon: Color32::WHITE,
+            fill: Color32::from_rgb(24, 180, 185),
+            stroke: Stroke::new(1.2, Color32::from_rgb(65, 230, 225)),
+            icon: Color32::from_rgb(7, 22, 25),
         }),
         selected: ButtonVisuals {
-            fill: Color32::from_rgb(34, 105, 72),
-            stroke: Stroke::new(1.2, Color32::from_rgb(80, 200, 140)),
-            icon: Color32::WHITE,
+            fill: Color32::from_rgb(24, 180, 185),
+            stroke: Stroke::new(1.2, Color32::from_rgb(65, 230, 225)),
+            icon: Color32::from_rgb(7, 22, 25),
         },
         corner_radius: CornerRadius::same(4),
-        focus_stroke: Stroke::new(1.5, Color32::from_rgb(90, 230, 160)),
+        focus_stroke: Stroke::new(1.5, Color32::from_rgb(27, 211, 207)),
     }
 }
 
@@ -158,8 +158,8 @@ impl Default for ThemeTokens {
             text_primary: Color32::from_rgb(237, 242, 247), // #EDF2F7
             text_secondary: Color32::from_rgb(140, 150, 168), // #8C96A8
             text_disabled: Color32::from_rgb(74, 85, 104),  // #4A5568
-            accent_blue: Color32::from_rgb(29, 104, 189),   // #1D68BD
-            accent_cyan: Color32::from_rgb(0, 180, 216),    // #00B4D8
+            accent_blue: Color32::from_rgb(27, 211, 207),   // #1BD3CF
+            accent_cyan: Color32::from_rgb(27, 211, 207),   // #1BD3CF
             accent_green: Color32::from_rgb(22, 163, 74),   // #16A34A
             accent_danger: Color32::from_rgb(220, 38, 38),  // #DC2626
             accent_amber: Color32::from_rgb(245, 158, 11),  // #F59E0B

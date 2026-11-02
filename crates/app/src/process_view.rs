@@ -3,6 +3,7 @@
 use egui::{Color32, RichText, Vec2};
 use mediacraft_catalog::{MediaAsset, OperationKind};
 use mediacraft_protocol::EncodingPreset;
+use std::path::{Path, PathBuf};
 
 pub struct ProcessViewState {
     pub active_operation: OperationKind,
@@ -24,7 +25,7 @@ impl Default for ProcessViewState {
             resolution_scale: 0,
             faststart_moov: true,
             audio_priming_compensation: true,
-            output_folder: "/Users/zachshallbetter/Downloads".to_string(),
+            output_folder: String::new(),
             file_naming: "{name}_{preset}".to_string(),
         }
     }
@@ -246,7 +247,16 @@ pub fn render_process_panel(
             asset.id,
             state.active_operation.label().to_ascii_lowercase()
         );
-        let out_path = format!("{}/{}", state.output_folder, out_name);
+        let output_dir = if state.output_folder.trim().is_empty() {
+            asset
+                .path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf()
+        } else {
+            PathBuf::from(&state.output_folder)
+        };
+        let out_path = output_dir.join(out_name).display().to_string();
 
         *on_enqueue_job = Some((preset, asset.path.display().to_string(), out_path));
     }

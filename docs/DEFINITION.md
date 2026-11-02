@@ -288,11 +288,11 @@ Combine deterministic facets (codec, frame rate, date, tags, location, missing p
 
 ## 11. Consolidated desktop UI definition
 
-The two supplied UI mockups are **conceptual references**, not implemented screenshots. They agree on a dark, high-information-density media workspace: left sources/collections, central asset grid, selected-asset preview and inspector, contextual processing/presets, and a visible queue. They differ in navigation and how much processing UI is permanently exposed. The merged interaction model is:
+The official visual reference is [`mediacraft-official-ui.png`](mediacraft-official-ui.png). It defines the browse-first dark workspace: left navigation rail, central mixed-media grid, right preview and metadata inspector, and a compact processing queue along the bottom. The paired transcode view places source and output previews side by side with settings adjacent. The official engraved gorilla detective icon and transparent mascot are [`mediacraft-icon.png`](mediacraft-icon.png) and [`../assets/brand/mediacraft-mascot.png`](../assets/brand/mediacraft-mascot.png).
 
 | Region | Default behavior | Expanded behavior |
 |---|---|---|
-| Top toolbar | MediaCraft, Library, Inspect, Process, Queue; global search and view controls | Collections and Automations accessible as destinations, not always separate top tabs |
+| Top toolbar | MediaCraft identity, global search, Scan / Import, and Settings | Workspace navigation remains in the persistent left rail |
 | Left navigation | Favorites, locations, folders, collections, filter facets | Offline volumes, saved searches, ingest sources, rule-managed folders |
 | Center | Mixed-media grid/list with badges, selection, sorting, thumbnail scaling | Compare, contact sheet, waveform, sequence grouping and keyboard culling |
 | Preview / inspector | Selected asset preview and tabs for Info, Streams, Metadata, Analysis, History, Related | Timeline scrubbing, filmstrip, waveform, color/HDR details, relationship graph |
@@ -301,13 +301,13 @@ The two supplied UI mockups are **conceptual references**, not implemented scree
 
 **UI decisions:**
 
-1. **Library first.** The application opens to files and collections, not an empty queue. A selected asset stays visible while a processing action is configured.
+1. **Library first.** The application opens to files and collections, not an empty queue. A selected asset stays visible while a processing action is configured. The app shell follows the suite's media-library and workspace conventions: a persistent left navigation rail, compact top chrome, a central task workspace, and a collapsible activity drawer.
 2. **Contextual controls.** The first mockup's six-operation grid (Convert, Optimize, Extract, Analyze, Proxy, Image Sequence) is useful as a contextual action chooser, not a permanent full-height form. The second mockup's searchable, categorized preset list belongs inside Process or a temporary side sheet.
 3. **Preview is central.** Use the large preview and inspector from both designs, with optional filmstrip and tabs for Streams, Analysis, Color, History and Related.
 4. **Queue is always discoverable, not always expanded.** Keep a compact status/activity strip with expandable queue; the dedicated Queue workspace handles complex batches.
 5. **Progressive disclosure.** Simple operation cards lead to presets, then to advanced settings; technical experts can directly open the full configuration.
 6. **Responsive density.** Panels are resizable/collapsible; narrower windows prioritize browsing and preview over simultaneous four-column layouts.
-7. **Visual alignment.** Match ArtCraft/Craft dark workspace typography, separators, iconography, focus/selection states and interaction behavior. MediaCraft's identity is the engraved black-and-white octopus on a vermilion-red rounded-square icon. **Blue is not the permanent MediaCraft brand accent**; any blue selection states in mockups are provisional and should be harmonized with the suite's shared component tokens.
+7. **Visual alignment.** Match the official reference's charcoal surfaces, thin separators, white labels, teal selection and action states, compact controls, and browse-first hierarchy. Use the supplied engraved black-and-white gorilla detective artwork as the official icon and mascot. Reuse shared craft-ui docking, buttons, and layout components where their contracts fit; keep catalog, inspector, processing, and queue panels in MediaCraft.
 8. **Accessibility.** Full keyboard navigation, clear focus, scalable text, non-color-only job status, accessible progress and reduced-motion behavior.
 
 **Primary screens:** Library (default), Inspect (deep inspection), Process (single/batch setup), Queue (execution), Collections (saved and smart), Automations (rules), and an Ingest flow (verified copy). These are views of one shared asset and job model, not disconnected tools.

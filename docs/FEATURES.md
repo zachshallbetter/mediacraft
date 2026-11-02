@@ -25,6 +25,10 @@
 
 ## Digital asset management feature inventory
 
+For the Bridge-inspired browse, inspect, organize, and hand-off comparison, see [BRIDGE_CAPABILITY_REFERENCE.md](BRIDGE_CAPABILITY_REFERENCE.md). For the Media Encoder-inspired queue, processing, and delivery comparison, see [MEDIA_ENCODER_CAPABILITY_REFERENCE.md](MEDIA_ENCODER_CAPABILITY_REFERENCE.md).
+
+For an implementation-grounded comparison of MediaCraft against both products, see [COMPATIBILITY_GUIDE.md](COMPATIBILITY_GUIDE.md).
+
 | Capability | Behavior | Priority |
 |---|---|---|
 | Filesystem-native browsing | Local and mounted volumes; no mandatory import or relocation | P0 |
@@ -946,7 +950,7 @@ The most valuable result would be a **verified source-to-target capability matri
 
 # Appendix B — Integrated application references and UI direction (2026-10-13)
 
-The canonical consolidated product definition is `DEFINITION.md`. The two provided desktop mockups are exploratory designs, not running-application screenshots. The agreed UI model uses Library-first navigation, a mixed-media grid, selected-asset preview and inspector, contextual Process presets, and a collapsible Queue drawer. Collections, Automations and verified Ingest remain first-class flows without permanently occupying every panel.
+The canonical consolidated product definition is `DEFINITION.md`. The official desktop reference is [`mediacraft-official-ui.png`](mediacraft-official-ui.png); the official icon and mascot are [`mediacraft-icon.png`](mediacraft-icon.png) and [`../assets/brand/mediacraft-mascot.png`](../assets/brand/mediacraft-mascot.png). The UI model uses a browse-first mixed-media grid, selected-asset preview and inspector, side-by-side source/output transcode workspace, and a collapsible Queue drawer. Collections, Automations and verified Ingest remain first-class flows.
 
 | Domain Capability | New capability focus | Priority |
 |---|---|---|

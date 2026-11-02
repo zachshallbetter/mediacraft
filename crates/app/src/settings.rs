@@ -26,14 +26,14 @@ pub struct MediaCraftPreferences {
 impl Default for MediaCraftPreferences {
     fn default() -> Self {
         Self {
-            default_output_folder: "/Users/zachshallbetter/Downloads".to_string(),
+            default_output_folder: String::new(),
             scratch_disk_folder: "/tmp/mediacraft-scratch".to_string(),
             thumbnail_zoom: 160.0,
             target_bitrate_kbps: 45_000,
             faststart_enabled: true,
             audio_priming_enabled: true,
             auto_pause_on_playback: true,
-            hardware_engine: "Apple VideoToolbox (Hardware)".to_string(),
+            hardware_engine: "Automatic".to_string(),
             hardware_decode: true,
             worker_threads: 8,
             zero_copy_buffers: true,

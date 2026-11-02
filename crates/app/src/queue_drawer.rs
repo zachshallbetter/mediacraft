@@ -20,7 +20,7 @@ pub struct QueueDrawerState {
 impl Default for QueueDrawerState {
     fn default() -> Self {
         Self {
-            is_expanded: true,
+            is_expanded: false,
             active_tab: DrawerTab::Queue,
         }
     }
@@ -61,10 +61,7 @@ pub fn render_queue_drawer(
             state.is_expanded = true;
         }
         if ui
-            .selectable_label(
-                state.active_tab == DrawerTab::WatchFolders,
-                "Watch Folders (2)",
-            )
+            .selectable_label(state.active_tab == DrawerTab::WatchFolders, "Watch Folders")
             .clicked()
         {
             state.active_tab = DrawerTab::WatchFolders;

@@ -1,5 +1,7 @@
 # MediaCraft — UI Screen Map
-**Proposed design inventory · v0.1**
+**MediaCraft interface inventory**
+
+The official visual baseline is [`mediacraft-official-ui.png`](mediacraft-official-ui.png). The application shell uses persistent left navigation, compact top controls, a task workspace, and a collapsible activity drawer. Shared craft-ui primitives support the shell; MediaCraft owns media-specific panels and workflows.
 
 Based on the ArtCraft references and our MediaCraft iterations, I would organize the application around **five primary workspaces, six supporting interfaces, and a shared set of dialogs and contextual components**.
 

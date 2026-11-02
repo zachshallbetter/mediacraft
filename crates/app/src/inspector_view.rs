@@ -3,7 +3,7 @@
 use egui::{Color32, CornerRadius, Pos2, Rect, RichText, Stroke, Vec2};
 use mediacraft_catalog::{DerivativeGraph, MediaAsset, MediaKind};
 
-use crate::mockup_art::{WorkstationTextures, paint_asset_thumbnail_with_textures};
+use crate::media_preview::{MediaPreviewCache, paint_asset_preview};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewMode {
@@ -27,7 +27,6 @@ pub struct InspectorState {
     pub active_tab: InspectorTab,
     pub scrub_pos: f32, // 0.0 to 1.0
     pub is_playing: bool,
-    pub volume: f32,
     pub preview_mode: PreviewMode,
     pub split_pos: f32, // 0.0 to 1.0
     pub sidecar_status_msg: Option<String>,
@@ -39,7 +38,6 @@ impl Default for InspectorState {
             active_tab: InspectorTab::Info,
             scrub_pos: 0.15,
             is_playing: false,
-            volume: 0.85,
             preview_mode: PreviewMode::Source,
             split_pos: 0.50,
             sidecar_status_msg: None,
@@ -52,7 +50,7 @@ pub fn render_inspector_panel(
     state: &mut InspectorState,
     asset: Option<&MediaAsset>,
     graph: &DerivativeGraph,
-    textures: Option<&WorkstationTextures>,
+    previews: &mut MediaPreviewCache,
 ) {
     let Some(asset) = asset else {
         ui.vertical_centered(|ui| {
@@ -151,12 +149,13 @@ pub fn render_inspector_panel(
     let inner_rect = rect.shrink(3.0);
     draw_player_frame(
         &painter,
+        ui.ctx(),
         inner_rect,
         asset,
         state.scrub_pos,
         state.preview_mode,
         state.split_pos,
-        textures,
+        previews,
     );
 
     // Timecode burn-in in corner
@@ -193,90 +192,55 @@ pub fn render_inspector_panel(
             let btn_style = crate::craft_theme::craft_icon_button_style();
             let btn_size = Vec2::new(20.0, 20.0);
 
-            let _ = craft_ui::buttons::IconButton::new("Fit View", btn_size, &btn_style).show(
-                ui,
-                |ui, rect, tint| {
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "⛶",
-                        egui::FontId::proportional(10.0),
-                        tint,
-                    );
-                },
-            );
-            ui.add_space(2.0);
+            if asset.kind == MediaKind::Video {
+                ui.add_space(3.0);
+                if craft_ui::buttons::IconButton::new("Skip End", btn_size, &btn_style)
+                    .show(ui, |ui, rect, tint| {
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "⏭",
+                            egui::FontId::proportional(10.0),
+                            tint,
+                        );
+                    })
+                    .clicked()
+                {
+                    state.scrub_pos = 1.0;
+                }
 
-            if craft_ui::buttons::IconButton::new("Mute", btn_size, &btn_style)
-                .selected(state.volume == 0.0)
-                .show(ui, |ui, rect, tint| {
-                    let icon = if state.volume > 0.0 { "🔊" } else { "🔇" };
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        icon,
-                        egui::FontId::proportional(10.0),
-                        tint,
-                    );
-                })
-                .clicked()
-            {
-                state.volume = if state.volume > 0.0 { 0.0 } else { 0.85 };
+                if craft_ui::buttons::IconButton::new("Play", btn_size, &btn_style)
+                    .selected(state.is_playing)
+                    .show(ui, |ui, rect, tint| {
+                        let icon = if state.is_playing { "⏸" } else { "▶" };
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            icon,
+                            egui::FontId::proportional(10.0),
+                            tint,
+                        );
+                    })
+                    .clicked()
+                {
+                    state.is_playing = !state.is_playing;
+                }
+
+                if craft_ui::buttons::IconButton::new("Skip Start", btn_size, &btn_style)
+                    .show(ui, |ui, rect, tint| {
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "⏮",
+                            egui::FontId::proportional(10.0),
+                            tint,
+                        );
+                    })
+                    .clicked()
+                {
+                    state.scrub_pos = 0.0;
+                }
             }
-
-            ui.add_space(3.0);
-            if craft_ui::buttons::IconButton::new("Skip End", btn_size, &btn_style)
-                .show(ui, |ui, rect, tint| {
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "⏭",
-                        egui::FontId::proportional(10.0),
-                        tint,
-                    );
-                })
-                .clicked()
-            {
-                state.scrub_pos = 1.0;
-            }
-
-            if craft_ui::buttons::IconButton::new("Play", btn_size, &btn_style)
-                .selected(state.is_playing)
-                .show(ui, |ui, rect, tint| {
-                    let icon = if state.is_playing { "⏸" } else { "▶" };
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        icon,
-                        egui::FontId::proportional(10.0),
-                        tint,
-                    );
-                })
-                .clicked()
-            {
-                state.is_playing = !state.is_playing;
-            }
-
-            if craft_ui::buttons::IconButton::new("Skip Start", btn_size, &btn_style)
-                .show(ui, |ui, rect, tint| {
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "⏮",
-                        egui::FontId::proportional(10.0),
-                        tint,
-                    );
-                })
-                .clicked()
-            {
-                state.scrub_pos = 0.0;
-            }
-
-            ui.add_space(4.0);
-            ui.add_sized(
-                [42.0, 16.0],
-                egui::Slider::new(&mut state.volume, 0.0..=1.0).show_value(false),
-            );
         });
     });
 
@@ -479,8 +443,12 @@ fn render_info_tab(ui: &mut egui::Ui, asset: &MediaAsset) {
                 ui.label(RichText::new("Video:").size(11.0).color(Color32::GRAY));
                 ui.label(
                     RichText::new(format!(
-                        "{}x{} (16:9), {:.3} fps\n{}, {}-bit",
-                        v.width, v.height, v.fps, v.codec, v.bit_depth
+                        "{}x{} • {}\n{}, {}-bit",
+                        v.width,
+                        v.height,
+                        format_frame_rate(v.fps),
+                        v.codec,
+                        v.bit_depth
                     ))
                     .size(10.5),
                 );
@@ -569,8 +537,10 @@ fn render_streams_tab(ui: &mut egui::Ui, asset: &MediaAsset) {
             ui.label(RichText::new(format!("Codec: {}", v.codec)).size(11.0));
             ui.label(
                 RichText::new(format!(
-                    "Dimensions: {}x{} @ {:.2} fps",
-                    v.width, v.height, v.fps
+                    "Dimensions: {}x{} • {}",
+                    v.width,
+                    v.height,
+                    format_frame_rate(v.fps)
                 ))
                 .size(11.0),
             );
@@ -618,28 +588,31 @@ fn render_streams_tab(ui: &mut egui::Ui, asset: &MediaAsset) {
 }
 
 fn render_metadata_tab(ui: &mut egui::Ui, state: &mut InspectorState, asset: &MediaAsset) {
-    ui.label(
-        RichText::new("Embedded XMP / EXIF Attributes:")
-            .strong()
-            .size(11.5),
-    );
+    ui.label(RichText::new("Indexed File Metadata:").strong().size(11.5));
     ui.add_space(4.0);
 
-    for (k, v) in [
-        ("xmp:CreatorTool", "ARRI Software v7.1"),
-        ("tiff:ColorSpace", "1 (sRGB)"),
-        ("xmpDM:audioSampleRate", "48000"),
-        ("xmpDM:videoFrameRate", "23.976"),
-        ("dc:format", "video/quicktime"),
+    let extension = asset
+        .path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("Unknown");
+    let path_display = asset.path.to_string_lossy().into_owned();
+    let formatted_size = asset.formatted_size();
+    for (label, value) in [
+        ("File name", asset.filename.as_str()),
+        ("File path", path_display.as_str()),
+        ("File type", extension),
+        ("File size", formatted_size.as_str()),
+        ("Modified", asset.date_created.as_str()),
     ] {
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(k)
+                RichText::new(label)
                     .size(10.5)
                     .monospace()
                     .color(Color32::from_rgb(140, 170, 200)),
             );
-            ui.label(RichText::new(v).size(10.5));
+            ui.label(RichText::new(value).size(10.5));
         });
     }
 
@@ -675,14 +648,14 @@ fn render_metadata_tab(ui: &mut egui::Ui, state: &mut InspectorState, asset: &Me
         );
         if has_xmp {
             ui.label(
-                RichText::new("✓ XMP Synced")
+                RichText::new("XMP sidecar found")
                     .size(10.5)
                     .color(Color32::from_rgb(80, 230, 120))
                     .strong(),
             );
         } else {
             ui.label(
-                RichText::new("Embedded Only (No External Sidecar)")
+                RichText::new("No external sidecar found")
                     .size(10.5)
                     .color(Color32::from_rgb(180, 190, 205)),
             );
@@ -705,11 +678,11 @@ fn render_metadata_tab(ui: &mut egui::Ui, state: &mut InspectorState, asset: &Me
                 label: asset.tags.first().cloned(),
                 tags: asset.tags.clone(),
                 title: Some(asset.filename.clone()),
-                description: Some(format!(
-                    "Camera: {}",
-                    asset.camera_model.as_deref().unwrap_or("Standard")
-                )),
-                creator: Some("MediaCraft Operator".to_string()),
+                description: asset
+                    .camera_model
+                    .as_ref()
+                    .map(|camera| format!("Camera: {camera}")),
+                creator: None,
             };
             match mediacraft_catalog::sidecar::write_sidecar(
                 &asset.path,
@@ -739,11 +712,11 @@ fn render_metadata_tab(ui: &mut egui::Ui, state: &mut InspectorState, asset: &Me
                 label: asset.tags.first().cloned(),
                 tags: asset.tags.clone(),
                 title: Some(asset.filename.clone()),
-                description: Some(format!(
-                    "Camera: {}",
-                    asset.camera_model.as_deref().unwrap_or("Standard")
-                )),
-                creator: Some("MediaCraft Operator".to_string()),
+                description: asset
+                    .camera_model
+                    .as_ref()
+                    .map(|camera| format!("Camera: {camera}")),
+                creator: None,
             };
             match mediacraft_catalog::sidecar::write_sidecar(
                 &asset.path,
@@ -772,107 +745,25 @@ fn render_metadata_tab(ui: &mut egui::Ui, state: &mut InspectorState, asset: &Me
 }
 
 fn render_analysis_tab(ui: &mut egui::Ui, _asset: &MediaAsset) {
+    ui.label(RichText::new("Signal Analysis").strong().size(11.5));
+    ui.add_space(6.0);
     ui.label(
-        RichText::new("Perceptual Quality & Signal Analysis")
-            .strong()
-            .size(11.5),
+        RichText::new("No analysis report is available for this file.")
+            .size(11.0)
+            .color(Color32::GRAY),
     );
-    ui.add_space(4.0);
-
-    ui.group(|ui| {
-        ui.label(RichText::new("VMAF Perceptual Score:").size(11.0));
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::ProgressBar::new(0.964)
-                    .desired_width(160.0)
-                    .fill(Color32::from_rgb(60, 220, 110)),
-            );
-            ui.label(
-                RichText::new("96.4 / 100 (Broadcast Quality)")
-                    .size(10.5)
-                    .strong(),
-            );
-        });
-
-        ui.add_space(4.0);
-        ui.label(RichText::new("Peak Signal-to-Noise Ratio (PSNR):").size(11.0));
-        ui.label(
-            RichText::new("44.82 dB (Near Lossless)")
-                .size(10.5)
-                .color(Color32::from_rgb(90, 220, 130)),
-        );
-
-        ui.add_space(4.0);
-        ui.label(RichText::new("Structural Similarity Index (SSIM):").size(11.0));
-        ui.label(
-            RichText::new("0.9924")
-                .size(10.5)
-                .color(Color32::from_rgb(90, 220, 130)),
-        );
-    });
-
-    ui.add_space(4.0);
-    ui.group(|ui| {
-        ui.label(
-            RichText::new("Audio Loudness (EBU R128):")
-                .strong()
-                .size(11.0),
-        );
-        ui.label(RichText::new("Integrated: -23.8 LUFS • True Peak: -1.2 dBTP").size(10.5));
-    });
 }
 
 fn render_history_tab(ui: &mut egui::Ui, _asset: &MediaAsset) {
+    ui.label(RichText::new("Processing History").strong().size(11.5));
+    ui.add_space(6.0);
     ui.label(
-        RichText::new("Asset Ingestion & Transformation Receipts")
-            .strong()
-            .size(11.5),
+        RichText::new("No processing receipts are recorded for this file.")
+            .size(11.0)
+            .color(Color32::GRAY),
     );
-    ui.add_space(4.0);
-
-    let receipts = [
-        (
-            "2026-10-12 14:17:00",
-            "Thumbnail extraction completed (JPEG 1080p, 420 KB)",
-        ),
-        (
-            "2026-10-12 14:16:00",
-            "Audio bounce completed (AAC 320k, 1024-sample priming elst)",
-        ),
-        (
-            "2026-10-12 14:15:00",
-            "Transcoded for Web (H.264 Faststart moov placed)",
-        ),
-        (
-            "2026-10-12 14:10:00",
-            "Generated editing proxy (H.264 1080p 5 Mbps)",
-        ),
-        (
-            "2026-10-12 10:00:00",
-            "Ingested from volume /Volumes/Production/Camera_Card_A",
-        ),
-    ];
-
-    for (ts, desc) in receipts {
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new("✓")
-                    .color(Color32::from_rgb(80, 230, 120))
-                    .strong(),
-            );
-            ui.label(
-                RichText::new(ts)
-                    .size(10.0)
-                    .monospace()
-                    .color(Color32::GRAY),
-            );
-        });
-        ui.label(RichText::new(desc).size(10.5));
-        ui.add_space(2.0);
-    }
 }
 
-/// The File Relationship Graph from mockup2.png
 fn render_related_graph_tab(ui: &mut egui::Ui, asset: &MediaAsset, graph: &DerivativeGraph) {
     ui.label(
         RichText::new("File Relationship Graph (Derivatives & Proxies)")
@@ -929,10 +820,13 @@ fn render_related_graph_tab(ui: &mut egui::Ui, asset: &MediaAsset, graph: &Deriv
 
     ui.add_space(4.0);
     ui.label(
-        RichText::new("├── Generated Derivatives (4 active):")
-            .size(11.0)
-            .monospace()
-            .color(Color32::from_rgb(120, 160, 200)),
+        RichText::new(format!(
+            "├── Generated Derivatives ({}):",
+            derivatives.len()
+        ))
+        .size(11.0)
+        .monospace()
+        .color(Color32::from_rgb(120, 160, 200)),
     );
     ui.add_space(2.0);
 
@@ -998,263 +892,13 @@ fn render_related_graph_tab(ui: &mut egui::Ui, asset: &MediaAsset, graph: &Deriv
 }
 
 fn render_validation_tab(ui: &mut egui::Ui, _asset: &MediaAsset) {
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new("DELIVERY CONTRACT VERIFICATION")
-                .size(10.5)
-                .color(Color32::from_rgb(130, 145, 165))
-                .strong(),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(
-                RichText::new("● 8/8 CHECKS PASSED")
-                    .size(10.5)
-                    .color(Color32::from_rgb(80, 230, 120))
-                    .strong(),
-            );
-        });
-    });
-
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Profile:").size(11.0).color(Color32::GRAY));
-            ui.label(
-                RichText::new("EBU R128 & OTT Streaming Master Specification")
-                    .size(11.0)
-                    .strong(),
-            );
-        });
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Standards:").size(10.0).color(Color32::GRAY));
-            ui.label(
-                RichText::new("ITU-R BS.1770-4 • ISO/IEC 14496-14 (Faststart) • SMPTE ST 2067")
-                    .size(10.0)
-                    .color(Color32::from_rgb(170, 190, 215)),
-            );
-        });
-    });
-
+    ui.label(RichText::new("Delivery Validation").strong().size(11.5));
     ui.add_space(6.0);
     ui.label(
-        RichText::new("COMPATIBILITY & EXECUTION ROUTING ANALYSIS")
-            .size(10.5)
-            .color(Color32::from_rgb(130, 145, 165))
-            .strong(),
+        RichText::new("No delivery validation report is available for this file.")
+            .size(11.0)
+            .color(Color32::GRAY),
     );
-    ui.group(|ui| {
-        let v_codec = _asset
-            .video
-            .as_ref()
-            .map(|v| v.codec.to_lowercase())
-            .unwrap_or_default();
-        let ext = _asset
-            .path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| s.to_lowercase())
-            .unwrap_or_default();
-
-        let can_remux = (v_codec.contains("h.264")
-            || v_codec.contains("avc")
-            || v_codec.contains("prores"))
-            && (ext == "mp4" || ext == "mov" || ext == "m4v");
-
-        ui.horizontal(|ui| {
-            if can_remux {
-                ui.label(
-                    RichText::new("✓ Stream-Copy Remux Eligible")
-                        .size(11.0)
-                        .color(Color32::from_rgb(80, 230, 120))
-                        .strong(),
-                );
-                ui.label(
-                    RichText::new("• Zero Decode Cycles")
-                        .size(10.0)
-                        .color(Color32::from_rgb(120, 200, 255)),
-                );
-            } else {
-                ui.label(
-                    RichText::new("⚠ Full Transcode Required")
-                        .size(11.0)
-                        .color(Color32::from_rgb(255, 190, 70))
-                        .strong(),
-                );
-            }
-        });
-
-        ui.add_space(3.0);
-        let explanation = if can_remux {
-            format!(
-                "Source video bitstream ({}) and container (.{ext}) are fully compatible for zero-decode remuxing. \
-                MediaCraft can repackage packets into an ISOBMFF FastStart container in milliseconds without generational loss, \
-                color resampling, or CPU/GPU decoding cycles.",
-                _asset
-                    .video
-                    .as_ref()
-                    .map(|v| v.codec.as_str())
-                    .unwrap_or("H.264")
-            )
-        } else if _asset.video.is_some() {
-            format!(
-                "Source format ({}) requires raster pixel decoding and recoding to match delivery profile constraints. \
-                Direct stream copy is bypassed to ensure full color subsampling alignment, CRF rate control, and GOP structure compliance.",
-                _asset
-                    .video
-                    .as_ref()
-                    .map(|v| v.codec.as_str())
-                    .unwrap_or("Video")
-            )
-        } else {
-            "Audio-only source master. Direct audio extraction or AAC/FLAC encoding can proceed without video raster overhead.".to_string()
-        };
-
-        ui.label(
-            RichText::new(explanation)
-                .size(10.0)
-                .color(Color32::from_rgb(200, 215, 235)),
-        );
-    });
-
-    ui.add_space(6.0);
-    ui.label(
-        RichText::new("SPECIFICATION COMPLIANCE MATRIX")
-            .size(10.5)
-            .color(Color32::from_rgb(130, 145, 165))
-            .strong(),
-    );
-
-    let checks = [
-        ("Integrated Loudness", "-24.0 ±0.5 LUFS", "-23.8 LUFS", true),
-        ("Maximum True Peak", "≤ -1.0 dBTP", "-1.2 dBTP", true),
-        ("Loudness Range (LRA)", "≤ 14.0 LU", "8.4 LU", true),
-        (
-            "Container Faststart",
-            "moov atom before mdat",
-            "Verified (offset 40)",
-            true,
-        ),
-        (
-            "Audio Priming Sync",
-            "1024 samples elst sync",
-            "1024 samples (21.3 ms)",
-            true,
-        ),
-        ("Video Bitrate Ceiling", "≤ 10,000 kbps", "8,240 kbps", true),
-        (
-            "GOP Cadence & Closed",
-            "Closed GOP, Max N=12",
-            "M=3, N=12 Closed",
-            true,
-        ),
-        (
-            "Color Primaries Matrix",
-            "BT.709 / Rec.709 (1-1-1)",
-            "1-1-1 ITU-R BT.709",
-            true,
-        ),
-    ];
-
-    egui::Grid::new("validation_checks_grid")
-        .striped(true)
-        .num_columns(4)
-        .spacing(Vec2::new(8.0, 5.0))
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new("Parameter")
-                    .size(10.5)
-                    .strong()
-                    .color(Color32::GRAY),
-            );
-            ui.label(
-                RichText::new("Target / Limit")
-                    .size(10.5)
-                    .strong()
-                    .color(Color32::GRAY),
-            );
-            ui.label(
-                RichText::new("Measured")
-                    .size(10.5)
-                    .strong()
-                    .color(Color32::GRAY),
-            );
-            ui.label(
-                RichText::new("Verdict")
-                    .size(10.5)
-                    .strong()
-                    .color(Color32::GRAY),
-            );
-            ui.end_row();
-
-            for (param, target, measured, pass) in checks {
-                ui.label(RichText::new(param).size(10.5));
-                ui.label(
-                    RichText::new(target)
-                        .size(10.0)
-                        .color(Color32::from_rgb(160, 175, 195)),
-                );
-                ui.label(
-                    RichText::new(measured)
-                        .size(10.5)
-                        .monospace()
-                        .color(Color32::from_rgb(220, 235, 255)),
-                );
-                if pass {
-                    ui.label(
-                        RichText::new("✓ PASS")
-                            .size(10.5)
-                            .color(Color32::from_rgb(80, 230, 120))
-                            .strong(),
-                    );
-                } else {
-                    ui.label(
-                        RichText::new("✕ FAIL")
-                            .size(10.5)
-                            .color(Color32::from_rgb(255, 80, 80))
-                            .strong(),
-                    );
-                }
-                ui.end_row();
-            }
-        });
-
-    ui.add_space(8.0);
-    ui.label(
-        RichText::new("CRYPTOGRAPHIC DELIVERY RECEIPT")
-            .size(10.5)
-            .color(Color32::from_rgb(130, 145, 165))
-            .strong(),
-    );
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Algorithm:").size(10.5).color(Color32::GRAY));
-            ui.label(RichText::new("SHA-256 Digest").size(10.5).strong());
-        });
-        ui.label(
-            RichText::new(
-                "sha256:8f4e2b9c7a105d326f584e031b99a5e89d2c4b1a7834e56c12f0a8d9b1e2c3d4",
-            )
-            .size(9.5)
-            .monospace()
-            .color(Color32::from_rgb(140, 210, 255)),
-        );
-    });
-
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        let _ = ui
-            .button(RichText::new("📥 Export Delivery Certificate").size(11.0))
-            .clicked();
-        if ui
-            .button(RichText::new("📋 Copy Receipt").size(11.0))
-            .clicked()
-        {
-            ui.ctx().copy_text(
-                "sha256:8f4e2b9c7a105d326f584e031b99a5e89d2c4b1a7834e56c12f0a8d9b1e2c3d4"
-                    .to_string(),
-            );
-        }
-    });
 }
 
 fn draw_overlay_badge(painter: &egui::Painter, rect: Rect, text: &str, is_source: bool) {
@@ -1283,219 +927,66 @@ fn draw_overlay_badge(painter: &egui::Painter, rect: Rect, text: &str, is_source
 
 fn draw_raster_simulation(
     painter: &egui::Painter,
+    ctx: &egui::Context,
     rect: Rect,
     asset: &MediaAsset,
     is_compressed: bool,
-    textures: Option<&WorkstationTextures>,
+    seek_seconds: f32,
+    previews: &mut MediaPreviewCache,
 ) {
-    let corner = CornerRadius::same(3);
-
-    if let Some(texs) = textures {
-        if let Some(tex) = texs.get_preview_texture(&asset.filename) {
-            let uv = crate::mockup_art::calculate_cover_uv(tex.size(), rect);
-            painter.image(tex.id(), rect, uv, Color32::WHITE);
-            if is_compressed {
-                painter.rect_filled(rect, corner, Color32::from_black_alpha(45));
-            }
-            painter.rect_stroke(
-                rect,
-                corner,
-                Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 25)),
-                egui::StrokeKind::Inside,
-            );
-            return;
-        } else if paint_asset_thumbnail_with_textures(
-            painter,
-            texs,
-            rect,
-            &asset.id,
-            &asset.filename,
-        ) {
-            if is_compressed {
-                painter.rect_filled(rect, corner, Color32::from_black_alpha(45));
-            }
-            return;
-        }
-    }
-    match asset.kind {
-        MediaKind::Video => {
-            if asset.filename.contains("A001") {
-                let base_color = if is_compressed {
-                    Color32::from_rgb(28, 50, 80)
-                } else {
-                    Color32::from_rgb(35, 65, 105)
-                };
-                painter.rect_filled(rect, corner, base_color);
-                let peak = [
-                    Pos2::new(rect.min.x, rect.max.y),
-                    Pos2::new(
-                        rect.min.x + rect.width() * 0.48,
-                        rect.min.y + rect.height() * 0.28,
-                    ),
-                    Pos2::new(rect.max.x, rect.max.y),
-                ];
-                painter.add(egui::epaint::PathShape::convex_polygon(
-                    peak.to_vec(),
-                    if is_compressed {
-                        Color32::from_rgb(55, 75, 100)
-                    } else {
-                        Color32::from_rgb(70, 95, 125)
-                    },
-                    Stroke::NONE,
-                ));
-            } else if asset.filename.contains("Color_Bars") {
-                let bar_w = rect.width() / 7.0;
-                let colors = [
-                    Color32::from_rgb(190, 190, 190),
-                    Color32::from_rgb(190, 190, 0),
-                    Color32::from_rgb(0, 190, 190),
-                    Color32::from_rgb(0, 190, 0),
-                    Color32::from_rgb(190, 0, 190),
-                    Color32::from_rgb(190, 0, 0),
-                    Color32::from_rgb(0, 0, 190),
-                ];
-                for (i, &col) in colors.iter().enumerate() {
-                    let bx = rect.min.x + (i as f32) * bar_w;
-                    let b_rect = Rect::from_min_max(
-                        Pos2::new(bx, rect.min.y),
-                        Pos2::new(bx + bar_w, rect.max.y),
-                    );
-                    let final_col = if is_compressed {
-                        Color32::from_rgb(
-                            col.r().saturating_sub(20),
-                            col.g().saturating_sub(20),
-                            col.b().saturating_sub(20),
-                        )
-                    } else {
-                        col
-                    };
-                    painter.rect_filled(b_rect, CornerRadius::ZERO, final_col);
-                }
-            } else {
-                let col = if is_compressed {
-                    Color32::from_rgb(20, 24, 30)
-                } else {
-                    Color32::from_rgb(25, 30, 38)
-                };
-                painter.rect_filled(rect, corner, col);
-            }
-        }
-        MediaKind::Audio => {
-            painter.rect_filled(rect, corner, Color32::from_rgb(16, 22, 28));
-            let bars = 24;
-            let bar_w = rect.width() / (bars as f32 * 1.4);
-            for i in 0..bars {
-                let h_factor = ((i as f32 * 0.5).sin().abs() * 0.7 + 0.15).clamp(0.1, 0.85);
-                let bx = rect.min.x + (i as f32) * bar_w * 1.35 + 4.0;
-                let bar_h = rect.height() * h_factor;
-                let by = rect.center().y - bar_h * 0.5;
-                let b_rect = Rect::from_min_size(Pos2::new(bx, by), Vec2::new(bar_w, bar_h));
-                painter.rect_filled(
-                    b_rect,
-                    CornerRadius::same(1),
-                    Color32::from_rgb(80, 220, 130),
-                );
-            }
-        }
-        _ => {
-            painter.rect_filled(rect, corner, Color32::from_rgb(30, 35, 45));
-        }
+    paint_asset_preview(previews, ctx, painter, rect, asset, seek_seconds);
+    if is_compressed {
+        painter.rect_filled(rect, CornerRadius::same(3), Color32::from_black_alpha(45));
+        draw_overlay_badge(painter, rect, "NO OUTPUT PREVIEW", false);
     }
 }
 
 fn draw_player_frame(
     painter: &egui::Painter,
+    ctx: &egui::Context,
     rect: Rect,
     asset: &MediaAsset,
-    _scrub: f32,
+    scrub: f32,
     mode: PreviewMode,
     split_pos: f32,
-    textures: Option<&WorkstationTextures>,
+    previews: &mut MediaPreviewCache,
 ) {
+    let seek_seconds = asset.duration_secs.unwrap_or_default() * scrub.clamp(0.0, 1.0);
     match mode {
         PreviewMode::Source => {
-            draw_raster_simulation(painter, rect, asset, false, textures);
-            draw_overlay_badge(painter, rect, "SOURCE: 10-bit Master", true);
+            draw_raster_simulation(painter, ctx, rect, asset, false, seek_seconds, previews);
+            draw_overlay_badge(painter, rect, "SOURCE FILE", true);
         }
         PreviewMode::Output => {
-            draw_raster_simulation(painter, rect, asset, true, textures);
-            draw_overlay_badge(painter, rect, "OUTPUT: Encoded H.264 Proxy", false);
+            draw_raster_simulation(painter, ctx, rect, asset, true, seek_seconds, previews);
         }
         PreviewMode::ComparisonSplit => {
             let split_x =
                 (rect.min.x + rect.width() * split_pos).clamp(rect.min.x + 12.0, rect.max.x - 12.0);
             let right_rect = Rect::from_min_max(Pos2::new(split_x, rect.min.y), rect.max);
-
-            // Draw full master plate first
-            draw_raster_simulation(painter, rect, asset, false, textures);
-
-            // Overwrite right side with compressed simulation
+            draw_raster_simulation(painter, ctx, rect, asset, false, seek_seconds, previews);
             painter.rect_filled(
                 right_rect,
                 CornerRadius::ZERO,
-                Color32::from_black_alpha(55),
+                Color32::from_black_alpha(70),
             );
-
-            // Wipe Divider Line
             painter.line_segment(
                 [
                     Pos2::new(split_x, rect.min.y),
                     Pos2::new(split_x, rect.max.y),
                 ],
-                Stroke::new(2.0, Color32::from_rgb(80, 190, 255)),
+                Stroke::new(2.0, Color32::from_rgb(255, 190, 70)),
             );
-
-            // Wipe Draggable Circular Handle
-            let handle_center = Pos2::new(split_x, rect.center().y);
-            painter.circle_filled(handle_center, 12.0, Color32::from_rgb(22, 28, 38));
-            painter.circle_stroke(
-                handle_center,
-                12.0,
-                Stroke::new(1.5, Color32::from_rgb(80, 190, 255)),
-            );
-            painter.text(
-                handle_center,
-                egui::Align2::CENTER_CENTER,
-                "◄►",
-                egui::FontId::monospace(10.0),
-                Color32::from_rgb(180, 230, 255),
-            );
-
-            // Side Labels
-            let left_badge = Rect::from_min_size(
-                Pos2::new(rect.min.x + 8.0, rect.min.y + 8.0),
-                Vec2::new(130.0, 18.0),
-            );
-            painter.rect_filled(
-                left_badge,
-                CornerRadius::same(2),
-                Color32::from_black_alpha(200),
-            );
-            painter.text(
-                left_badge.center(),
-                egui::Align2::CENTER_CENTER,
-                "◄ SOURCE (10-bit Raw)",
-                egui::FontId::proportional(9.5),
-                Color32::from_rgb(100, 220, 255),
-            );
-
-            let right_badge = Rect::from_min_size(
-                Pos2::new(rect.max.x - 138.0, rect.min.y + 8.0),
-                Vec2::new(130.0, 18.0),
-            );
-            painter.rect_filled(
-                right_badge,
-                CornerRadius::same(2),
-                Color32::from_black_alpha(200),
-            );
-            painter.text(
-                right_badge.center(),
-                egui::Align2::CENTER_CENTER,
-                "OUTPUT (H.264) ►",
-                egui::FontId::proportional(9.5),
-                Color32::from_rgb(255, 190, 100),
-            );
+            draw_overlay_badge(painter, right_rect, "NO OUTPUT PREVIEW", false);
         }
+    }
+}
+
+fn format_frame_rate(fps: f32) -> String {
+    if fps > 0.0 {
+        format!("{fps:.3} fps")
+    } else {
+        "frame rate unknown".to_string()
     }
 }
 
