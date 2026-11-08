@@ -18,7 +18,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 
 | Step | API | Notes |
 |---|---|---|
-| Detect | `sniff` | JPEG, PNG, GIF, WebP, TIFF/BigTIFF, BMP, PSD/PSB, HEIF, AVIF, JPEG XL, camera raw |
+| Detect | `sniff` | JPEG, PNG, GIF, WebP, TIFF/BigTIFF, BMP, PSD/PSB, HEIF, AVIF, JPEG XL, OpenEXR, Radiance HDR, DDS, ICO/CUR, PNM, QOI, TGA, camera raw |
 | Header | `read_header` | Size, depth, alpha, animation, orientation, without decoding pixels |
 | Metadata blocks | `embedded` | EXIF, XMP, ICC (multi-chunk JPEG, compressed PNG) and IPTC, as raw bytes |
 | Metadata | `Metadata::from_embedded`, `parse_exif`, `parse_xmp`, `parse_iptc` | Camera, lens, exposure, capture time (via `chrono`), GPS, title, caption, alt text, keywords, creators, rights, location |
@@ -44,7 +44,14 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | HEIC / HEIF | yes (`ispe`, `irot`, `imir`, `pixi`) | EXIF, XMP, ICC (items, `colr`) | yes, `craft-hevc`; tiled grids; 8/10-bit | no |
 | AVIF | yes | EXIF, XMP, ICC | yes, `craft-av1`; 8/10/12-bit, alpha | no |
 | Camera raw (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2, …) | yes (CR3, RAF, ORF, RW2 from the preview) | EXIF | yes, `craft-raw`: the full-frame embedded preview, else developed (see below) | no |
-| JPEG XL | detected only | no | no | no |
+| JPEG XL | yes (`jxl-oxide`; native builds) | ICC (embedded, else generated from the colour encoding) | yes: first frame, orientation applied, alpha; no CMYK or splines | no |
+| OpenEXR | yes (data window, channels) | none | yes: first valid RGBA layer, float clamped to [0,1] and sRGB-encoded (plain clamp, no tone map) | no |
+| Radiance HDR | yes | none | yes: RGBE float, same clamp and sRGB encoding as EXR | no |
+| DDS | yes | none | DXT1/3/5 (BC1-3) only, first mip | no |
+| ICO / CUR | yes (the entry the decoder picks: deepest, then largest) | none | yes (BMP or PNG entries) | no |
+| PNM (PBM, PGM, PPM, PAM) | yes | none | yes, 8 and 16 bit, PAM alpha | no |
+| QOI | yes | none | yes | no |
+| TGA | yes (v2 footer, else a strict header check) | none | yes, including RLE and colour-mapped | no |
 
 ## Design
 
