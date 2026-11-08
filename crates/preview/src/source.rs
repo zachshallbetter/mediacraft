@@ -50,7 +50,7 @@ pub(crate) struct Source {
     pub colour: Option<(u8, u8)>,
 }
 
-/// A file as a positioned byte source for the MPEG-TS and MXF demuxers.
+/// A file as a positioned byte source for the MPEG-TS, AVI and MXF demuxers.
 struct FileSource {
     file: Mutex<File>,
     len: u64,
@@ -74,6 +74,15 @@ impl FileSource {
 }
 
 impl craft_mpegts::ByteSource for FileSource {
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        FileSource::read_at(self, offset, buf)
+    }
+}
+
+impl craft_avi::ByteSource for FileSource {
     fn len(&self) -> u64 {
         self.len
     }
@@ -111,6 +120,8 @@ pub(crate) fn open(path: &Path) -> Result<Source> {
         mp4(path)
     } else if head.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
         mkv(path)
+    } else if craft_avi::sniff(&head) {
+        avi(path)
     } else if craft_mxf::sniff(&head) {
         mxf(path)
     } else if craft_mpegts::sniff(&head).is_some() {
@@ -269,6 +280,71 @@ fn ts(path: &Path) -> Result<Source> {
         quarter_turns: 0,
         decode_order_times: false,
         read: Box::new(move |i| m.read_unit(&file, si, i).map_err(demux)),
+    })
+}
+
+/// AVI (RIFF, OpenDML): the first video stream, for the codecs this crate decodes. Chunks are in
+/// decode order and carry no timestamps, so a frame's time is its position in the stream.
+fn avi(path: &Path) -> Result<Source> {
+    use craft_avi::StreamKind;
+    let file = FileSource::open(path)?;
+    let m = craft_avi::open(&file).map_err(demux)?;
+    let si = m
+        .streams
+        .iter()
+        .position(|s| s.kind == StreamKind::Video && s.video.is_some())
+        .ok_or(Error::NoVideo)?;
+    let s = m.streams.get(si).ok_or(Error::NoVideo)?;
+    let bmp = s.video.as_ref().ok_or(Error::NoVideo)?;
+    let tag = bmp.compression.map(|b| b.to_ascii_lowercase());
+    let decoder = match &tag {
+        b"mjpg" | b"mjpa" | b"mjpb" | b"jpeg" | b"avri" | b"avrn" | b"ljpg" => Decoder::Mjpeg,
+        b"h264" | b"x264" | b"avc1" | b"davc" | b"vssh" => Decoder::h264(None)?,
+        b"mpg2" | b"mp2v" | b"m2v1" | b"mpeg" | b"mpg1" | b"mp1v" | b"pim1" | b"pim2" | b"dvr " => {
+            Decoder::mpeg2()
+        }
+        other => {
+            return Err(unsupported(
+                String::from_utf8_lossy(other).trim().to_string(),
+            ));
+        }
+    };
+    let intra = decoder.intra_only();
+    // Frame time is the chunk's position among the stream's chunks; an empty chunk (a dropped
+    // frame, shown again by players) has nothing to decode and is left out. Without an index
+    // that marks key frames only the first frame can be trusted to start a decode.
+    let keys_known = s.keyframes_known || intra;
+    let mut chunks = Vec::new();
+    let mut samples = Vec::new();
+    for (i, c) in s.chunks.iter().enumerate() {
+        if c.size > 0 {
+            chunks.push(i);
+            samples.push((
+                i64::try_from(i).unwrap_or(i64::MAX),
+                if keys_known { c.key } else { i == 0 },
+            ));
+        }
+    }
+    let fps = if s.scale > 0 && s.rate > 0 {
+        f64::from(s.rate) / f64::from(s.scale)
+    } else if m.header.micro_sec_per_frame > 0 {
+        1e6 / f64::from(m.header.micro_sec_per_frame)
+    } else {
+        25.0
+    };
+    Ok(Source {
+        colour: None,
+        decoder,
+        samples,
+        ticks_per_second: fps,
+        crop: Crop::None,
+        quarter_turns: 0,
+        // B-frame streams store pictures in decode order: presentation order comes from the decoder.
+        decode_order_times: !intra,
+        read: Box::new(move |i| {
+            let chunk = chunks.get(i).copied().ok_or(Error::NoFrame)?;
+            m.read_chunk(&file, si, chunk).map_err(demux)
+        }),
     })
 }
 

@@ -3,9 +3,9 @@
 //! Poster frames and waveforms from MediaCraft's own demuxers and decoders, no ffmpeg.
 //!
 //! Containers: MP4/MOV (`craft-isobmff`), MKV/WebM (`craft-matroska`), MPEG transport and
-//! program streams (`craft-mpegts`: `.ts`, `.m2ts`, `.mts`, `.mpg`, `.vob`) and MXF
-//! (`craft-mxf`). Video codecs: H.264, HEVC, VP8, VP9, AV1, MPEG-1/2, ProRes, DNxHD/HR and
-//! Motion JPEG.
+//! program streams (`craft-mpegts`: `.ts`, `.m2ts`, `.mts`, `.mpg`, `.vob`), AVI (`craft-avi`:
+//! Motion JPEG, H.264 and MPEG-1/2 only) and MXF (`craft-mxf`). Video codecs: H.264, HEVC, VP8,
+//! VP9, AV1, MPEG-1/2, ProRes, DNxHD/HR and Motion JPEG.
 //!
 //! A poster frame seeks to the sync sample before the requested time and decodes forward only
 //! to that time, at most [`FrameOptions::max_decode_frames`] frames. It converts Y′CbCr to RGB
@@ -53,7 +53,7 @@ pub enum Error {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     /// Not a container this crate reads.
-    #[error("not an MP4, MOV, MKV, WebM, MPEG-TS/PS or MXF file")]
+    #[error("not an MP4, MOV, MKV, WebM, MPEG-TS/PS, AVI or MXF file")]
     UnsupportedContainer,
     /// The container has no video track.
     #[error("no video track")]
@@ -153,13 +153,54 @@ pub fn poster_frame(path: &Path, opts: &FrameOptions) -> Result<PosterFrame> {
     let (pic, seconds) = if src.decode_order_times {
         // Pictures come out in presentation order from the sync sample on: the k-th is shown
         // at the sync sample's position plus k. Decode until that one appears.
-        let start_pts = src.samples.get(start).map_or(0, |s| s.0);
+        // MPEG-2 streams open a GOP with the I picture coded ahead of the B pictures that show
+        // before it: the I picture's temporal reference says by how many, and its display
+        // position is that many after its place in the stream.
+        let mpeg2 = matches!(src.decoder, Decoder::Mpeg2(_));
+        let leading = |i: usize| -> i64 {
+            if mpeg2 {
+                read(i)
+                    .ok()
+                    .and_then(|d| mpeg2_temporal_reference(&d))
+                    .unwrap_or(0)
+            } else {
+                0
+            }
+        };
+        let shown_at = |i: usize| {
+            src.samples
+                .get(i)
+                .map_or(0, |s| s.0)
+                .saturating_add(leading(i))
+        };
+        let mut start = start;
+        let mut start_pts = shown_at(start);
+        // A GOP whose first picture shows after the target: use the sync sample before it.
+        if start_pts > want
+            && let Some(prev) = src
+                .samples
+                .get(..start)
+                .and_then(|s| s.iter().rposition(|(_, key)| *key))
+        {
+            start = prev;
+            start_pts = shown_at(start);
+        }
         let needed = usize::try_from(want.saturating_sub(start_pts).max(0))
             .unwrap_or(0)
             .min(opts.max_decode_frames);
-        let pic = nth_output(&mut src.decoder, start, src.samples.len(), needed, |i| {
-            read(i)
-        })?;
+        // Stop at the next sync sample, with the B pictures MPEG-2 codes after it that show
+        // before it: pictures of the following GOP restart their order count and must not be
+        // released ahead of this GOP's.
+        let end = src
+            .samples
+            .iter()
+            .enumerate()
+            .skip(start + 1)
+            .find(|(_, (_, key))| *key)
+            .map_or(src.samples.len(), |(i, _)| {
+                (i + usize::try_from(leading(i)).unwrap_or(0)).min(src.samples.len())
+            });
+        let pic = nth_output(&mut src.decoder, start, end, needed, |i| read(i))?;
         let shown = start_pts + i64::try_from(needed).unwrap_or(0);
         (pic, shown as f64 / src.ticks_per_second)
     } else {
@@ -182,6 +223,14 @@ pub fn poster_frame(path: &Path, opts: &FrameOptions) -> Result<PosterFrame> {
         src.decoder.name(),
         src.colour,
     )
+}
+
+/// Temporal reference (display position in its GOP) of the first picture header in an MPEG-1/2
+/// access unit.
+fn mpeg2_temporal_reference(unit: &[u8]) -> Option<i64> {
+    let at = unit.windows(4).position(|w| w == [0, 0, 1, 0])?;
+    let b = unit.get(at + 4..at + 6)?;
+    Some(i64::from(b[0]) << 2 | i64::from(b[1] >> 6))
 }
 
 /// Most pictures H.264 and HEVC may hold back for reordering.

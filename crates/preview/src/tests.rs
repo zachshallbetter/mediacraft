@@ -253,3 +253,158 @@ fn dnx_in_mxf_through_craft_mxf_and_craft_dnx() {
         );
     }
 }
+
+fn riff_chunk(id: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let mut b = id.to_vec();
+    b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    b.extend_from_slice(data);
+    if data.len() % 2 == 1 {
+        b.push(0);
+    }
+    b
+}
+
+fn riff_list(kind: &[u8; 4], list: &[u8; 4], content: &[u8]) -> Vec<u8> {
+    let mut data = list.to_vec();
+    data.extend_from_slice(content);
+    riff_chunk(kind, &data)
+}
+
+/// An AVI with one video stream of `frames` (data, key frame), 64×48 at 30 fps, with an `idx1`.
+fn avi(compression: &[u8; 4], frames: &[(Vec<u8>, bool)]) -> Vec<u8> {
+    let le32 = |v: u32| v.to_le_bytes();
+    let (w, h) = (64u32, 48u32);
+    let mut avih = Vec::new();
+    for v in [
+        33_333,
+        0,
+        0,
+        0x10,
+        frames.len() as u32,
+        0,
+        1,
+        0,
+        w,
+        h,
+        0,
+        0,
+        0,
+        0,
+    ] {
+        avih.extend_from_slice(&le32(v));
+    }
+    let mut strh = b"vids".to_vec();
+    strh.extend_from_slice(compression);
+    for v in [
+        0,
+        0,
+        0,
+        1,
+        30,
+        0,
+        frames.len() as u32,
+        0,
+        0xFFFF_FFFF,
+        0,
+        0,
+        0,
+    ] {
+        strh.extend_from_slice(&le32(v));
+    }
+    let mut strf = Vec::new();
+    for v in [40, w, h] {
+        strf.extend_from_slice(&le32(v));
+    }
+    strf.extend_from_slice(&[1, 0, 24, 0]);
+    strf.extend_from_slice(compression);
+    strf.extend_from_slice(&[0; 20]);
+    let strl = riff_list(
+        b"LIST",
+        b"strl",
+        &[riff_chunk(b"strh", &strh), riff_chunk(b"strf", &strf)].concat(),
+    );
+    let hdrl = riff_list(
+        b"LIST",
+        b"hdrl",
+        &[riff_chunk(b"avih", &avih), strl].concat(),
+    );
+    let (mut movi, mut idx1) = (Vec::new(), Vec::new());
+    for (data, key) in frames {
+        idx1.extend_from_slice(b"00dc");
+        idx1.extend_from_slice(&le32(if *key { 0x10 } else { 0 }));
+        // Relative to the `movi` FourCC.
+        idx1.extend_from_slice(&le32(4 + movi.len() as u32));
+        idx1.extend_from_slice(&le32(data.len() as u32));
+        movi.extend_from_slice(&riff_chunk(b"00dc", data));
+    }
+    let movi = riff_list(b"LIST", b"movi", &movi);
+    riff_list(
+        b"RIFF",
+        b"AVI ",
+        &[hdrl, movi, riff_chunk(b"idx1", &idx1)].concat(),
+    )
+}
+
+/// `frames` flat-grey 64×48 Annex B H.264 pictures, one per `luma(i)`, a key frame every 10.
+fn h264_annexb(frames: usize) -> Vec<(Vec<u8>, bool)> {
+    let (w, h) = (64usize, 48usize);
+    let mut cfg = craft_h264enc::EncoderConfig::new(w as u32, h as u32, 30, 1);
+    cfg.keyint = 10;
+    cfg.bframes = 0;
+    let mut enc = craft_h264enc::Encoder::new(cfg).unwrap();
+    let mut out = Vec::new();
+    for i in 0..frames {
+        let y = vec![luma(i); w * h];
+        let c = vec![128u8; (w / 2) * (h / 2)];
+        let f = craft_h264enc::YuvFrame {
+            y: &y,
+            u: &c,
+            v: &c,
+            y_stride: w,
+            uv_stride: w / 2,
+        };
+        out.extend(enc.encode(&f, i as i64).unwrap());
+    }
+    out.extend(enc.flush());
+    out.into_iter().map(|p| (p.data, p.keyframe)).collect()
+}
+
+#[test]
+fn avi_h264_poster_frames_seek_like_mp4() {
+    let path = write("clip.avi", &avi(b"H264", &h264_annexb(30)));
+    for (at, frame) in [(0.0, 0usize), (0.5, 15), (0.9, 27), (60.0, 29)] {
+        let f = poster_frame(&path, &FrameOptions::at(at)).unwrap();
+        assert_eq!((f.codec, f.source_width, f.source_height), ("h264", 64, 48));
+        let p = f.image.pixel(32, 24).unwrap();
+        assert!(
+            p[0].abs_diff(grey(luma(frame))) <= 3,
+            "at {at}s: {p:?}, want frame {frame}"
+        );
+    }
+}
+
+#[test]
+fn avi_skips_empty_chunks_and_rejects_codecs_without_a_decoder() {
+    // A dropped frame (an empty chunk) between two pictures is left out of the decode.
+    let mut frames = h264_annexb(4);
+    frames.insert(2, (Vec::new(), false));
+    let f = poster_frame(
+        &write("dropped.avi", &avi(b"H264", &frames)),
+        &FrameOptions::at(0.0),
+    )
+    .unwrap();
+    assert_eq!(f.codec, "h264");
+    let xvid = avi(b"XVID", &[(vec![0, 0, 1, 0xB0], true)]);
+    match poster_frame(&write("xvid.avi", &xvid), &FrameOptions::at(0.0)) {
+        Err(Error::UnsupportedCodec(c)) => assert_eq!(c, "xvid"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn mpeg2_temporal_reference_comes_from_the_picture_header() {
+    // sequence header start code, then a picture start code with temporal reference 2 (I picture)
+    let unit = [0, 0, 1, 0xB3, 9, 9, 0, 0, 1, 0, 0x00, 0x88, 0xFF];
+    assert_eq!(mpeg2_temporal_reference(&unit), Some(2));
+    assert_eq!(mpeg2_temporal_reference(&[0, 0, 1, 0xB3]), None);
+}

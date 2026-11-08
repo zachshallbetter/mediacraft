@@ -1,13 +1,15 @@
 //! Audio waveforms: per-column peaks of the opening seconds of a file, decoded in-tree.
 //!
-//! Reads WAV, AIFF/AIFC, MP4/MOV/M4A, MKV/WebM and Ogg Opus. Decodes PCM directly, AAC through
-//! `craft-aac` and Opus through `craft-opus`. FLAC, MP3 and Vorbis have no decoder in this
-//! workspace yet and return [`Error::UnsupportedCodec`].
+//! Reads WAV, AIFF/AIFC, MP4/MOV/M4A, MKV/WebM, Ogg Opus and MPEG transport streams. Decodes PCM
+//! directly, AAC through `craft-aac`, Opus through `craft-opus` and AC-3 / E-AC-3 (MP4, MKV and
+//! MPEG-TS) through `craft-ac3`. FLAC, MP3 and Vorbis have no decoder in this workspace yet and
+//! return [`Error::UnsupportedCodec`].
 
 use crate::{Error, Result};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::{Mutex, PoisonError};
 
 /// Waveform request.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,7 +38,7 @@ pub struct Waveform {
     pub seconds: f64,
     /// Sample rate of the decoded audio.
     pub sample_rate: u32,
-    /// Codec decoded (`pcm`, `aac`, `opus`).
+    /// Codec decoded (`pcm`, `aac`, `opus`, `ac3`, `eac3`).
     pub codec: &'static str,
 }
 
@@ -162,7 +164,8 @@ impl PcmFormat {
 
 /// Read peaks from the opening of an audio (or video) file.
 pub fn waveform(path: &Path, opts: &WaveformOptions) -> Result<Waveform> {
-    let mut head = [0u8; 12];
+    // Enough for the five packet sync bytes that identify a transport stream.
+    let mut head = [0u8; 1100];
     let n = File::open(path)?.read(&mut head)?;
     let head = head.get(..n).unwrap_or(&[]);
     if head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WAVE") {
@@ -182,6 +185,9 @@ pub fn waveform(path: &Path, opts: &WaveformOptions) -> Result<Waveform> {
     }
     if head.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
         return mkv(path, opts);
+    }
+    if craft_mpegts::sniff(head).is_some() {
+        return ts(path, opts);
     }
     Err(Error::UnsupportedContainer)
 }
@@ -352,8 +358,58 @@ fn mp4(path: &Path, opts: &WaveformOptions) -> Result<Waveform> {
             }
             mono.into_waveform(opts.columns, rate, "pcm")
         }
+        Some(CodecConfig::Ac3 { .. } | CodecConfig::Eac3 { .. }) => {
+            ac3(t.samples.len(), read, opts, |rate| priming(t, rate))
+        }
         Some(other) => Err(Error::UnsupportedCodec(other.name().into())),
         None => Err(Error::UnsupportedCodec("unknown".into())),
+    }
+}
+
+/// AC-3 and E-AC-3 through `craft-ac3`. `count` access units are read with `read`; `skip` gives
+/// the leading samples to hide at the stream's rate. The rate and the codec come from the first
+/// syncframe, so a damaged first unit is passed over.
+fn ac3(
+    count: usize,
+    read: impl Fn(usize) -> Result<Vec<u8>>,
+    opts: &WaveformOptions,
+    skip: impl Fn(u32) -> usize,
+) -> Result<Waveform> {
+    let first = (0..count.min(64))
+        .find_map(|i| craft_ac3::parse_header(&read(i).ok()?).ok())
+        .ok_or_else(|| Error::Decode("no AC-3 syncframe".into()))?;
+    let codec = if first.is_eac3() { "eac3" } else { "ac3" };
+    let rate = first.sample_rate;
+    let mut dec = craft_ac3::Decoder::new();
+    let mut mono = Mono::new(rate, opts.max_seconds);
+    mono.skip = skip(rate);
+    for i in 0..count {
+        if mono.full() {
+            break;
+        }
+        push_ac3(&mut dec, &read(i)?, &mut mono);
+    }
+    mono.into_waveform(opts.columns, rate, codec)
+}
+
+/// The syncframes of one access unit: E-AC-3 follows its independent substream with the
+/// dependent ones, which decode to no channels. A damaged frame is skipped, as a player would.
+fn push_ac3(dec: &mut craft_ac3::Decoder, mut data: &[u8], mono: &mut Mono) {
+    while !mono.full() {
+        let Ok(h) = craft_ac3::parse_header(data) else {
+            return;
+        };
+        let (Some(frame), Some(rest)) = (data.get(..h.frame_bytes), data.get(h.frame_bytes..))
+        else {
+            return;
+        };
+        if h.frame_bytes == 0 {
+            return;
+        }
+        if let Ok(d) = dec.decode(frame) {
+            mono.push_planar(&d.channels);
+        }
+        data = rest;
     }
 }
 
@@ -432,7 +488,57 @@ fn mkv(path: &Path, opts: &WaveformOptions) -> Result<Waveform> {
             }
             mono.into_waveform(opts.columns, rate, "pcm")
         }
+        Codec::Ac3 | Codec::Eac3 => ac3(t.samples.len(), read, opts, |_| 0),
         other => Err(Error::UnsupportedCodec(other.name())),
+    }
+}
+
+/// MPEG transport stream: the first AC-3 or E-AC-3 audio stream. Other audio codecs in a
+/// transport stream have no decoder here yet.
+fn ts(path: &Path, opts: &WaveformOptions) -> Result<Waveform> {
+    use craft_mpegts::{Codec, Kind};
+    let src = FileSource::open(path)?;
+    let m = craft_mpegts::open(&src).map_err(|e| Error::Demux(e.to_string()))?;
+    let si = m
+        .find(Kind::Audio, |c| matches!(c, Codec::Ac3 | Codec::Eac3))
+        .or_else(|| m.find(Kind::Audio, |_| true))
+        .ok_or(Error::NoAudio)?;
+    let s = m.streams.get(si).ok_or(Error::NoAudio)?;
+    if !matches!(s.codec, Codec::Ac3 | Codec::Eac3) {
+        return Err(Error::UnsupportedCodec(s.codec.name().to_ascii_lowercase()));
+    }
+    let read = |i| {
+        m.read_unit(&src, si, i)
+            .map_err(|e| Error::Demux(e.to_string()))
+    };
+    ac3(s.units.len(), read, opts, |_| 0)
+}
+
+/// A file as a positioned byte source for the MPEG-TS demuxer.
+struct FileSource {
+    file: Mutex<File>,
+    len: u64,
+}
+
+impl FileSource {
+    fn open(path: &Path) -> Result<Self> {
+        let file = File::open(path)?;
+        let len = file.metadata()?.len();
+        Ok(Self {
+            file: Mutex::new(file),
+            len,
+        })
+    }
+}
+
+impl craft_mpegts::ByteSource for FileSource {
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        let mut f = self.file.lock().unwrap_or_else(PoisonError::into_inner);
+        f.seek(SeekFrom::Start(offset))?;
+        f.read_exact(buf)
     }
 }
 

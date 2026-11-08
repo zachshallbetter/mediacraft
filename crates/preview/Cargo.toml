@@ -24,6 +24,8 @@ craft-dnx = { workspace = true }
 craft-mpegts = { workspace = true }
 craft-mxf = { workspace = true }
 craft-aac = { workspace = true }
+craft-ac3 = { workspace = true }
+craft-avi = { workspace = true }
 craft-flac = { workspace = true }
 craft-opus = { workspace = true }
 craft-image = { workspace = true }
