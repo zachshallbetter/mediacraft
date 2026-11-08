@@ -4,11 +4,14 @@
 pub(crate) mod bmff;
 pub(crate) mod bmp;
 pub(crate) mod dds;
+pub(crate) mod dpx;
 pub(crate) mod exr;
 pub(crate) mod gif;
 pub(crate) mod hdr;
 pub(crate) mod ico;
 pub(crate) mod jpeg;
+pub(crate) mod jxl;
+pub(crate) mod pcx;
 pub(crate) mod png;
 pub(crate) mod pnm;
 pub(crate) mod psd;
@@ -18,7 +21,6 @@ pub(crate) mod tiff_file;
 pub(crate) mod webp;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) mod jxl;
 
 use crate::Orientation;
 
