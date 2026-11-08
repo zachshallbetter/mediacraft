@@ -12,7 +12,6 @@ workspace = true
 [dependencies]
 mediacraft-protocol = { workspace = true }
 mediacraft-bitstream = { workspace = true }
-craft-media = { workspace = true }
 craft-aac = { workspace = true }
 craft-isobmff = { workspace = true }
 craft-h264 = { workspace = true }

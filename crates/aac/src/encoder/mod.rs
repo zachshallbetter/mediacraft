@@ -283,8 +283,11 @@ impl Encoder {
         self.stats
     }
 
-    /// Encodes an audio buffer implementing `AudioBufferRef` from `craft_media`.
-    pub fn encode_buffer<B: craft_media::AudioBufferRef>(&mut self, buffer: &B) -> Vec<Vec<u8>> {
+    /// Encodes an audio buffer implementing `AudioBufferRef` from `mediacraft_types`.
+    pub fn encode_buffer<B: mediacraft_types::AudioBufferRef>(
+        &mut self,
+        buffer: &B,
+    ) -> Vec<Vec<u8>> {
         let ch_count = buffer.channels();
         let mut slices = Vec::with_capacity(ch_count);
         for ch in 0..ch_count {

@@ -1,6 +1,6 @@
-//! Adversarial evaluations, diagnostics, and fallback verification for `craft-media`.
+//! Adversarial evaluations, diagnostics, and fallback verification for `mediacraft-types`.
 
-use craft_media::{
+use mediacraft_types::{
     AudioBuffer, AudioBufferRef, AudioStreamDescriptor, ChannelLayout, Packet,
     PacketTimelineValidator, PixelFormat, Rational, SampleFormat, TimelineAnomaly,
     TimelineFallbackPolicy, VideoStreamDescriptor,

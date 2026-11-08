@@ -1,4 +1,8 @@
-//! Shared Media Infrastructure (`craft-media`)
+//! MediaCraft stream types (`mediacraft-types`)
+//!
+//! Named `craft-media` until 2026-11; renamed because storytold/craft-libs publishes a
+//! different crate under that name (bit I/O and containers). See
+//! `docs/CRAFT_MEDIA_NAMING.md`.
 //!
 //! Provides fundamental media representations, audio/video buffer views,
 //! rational timebase operations, elementary stream descriptors, and error

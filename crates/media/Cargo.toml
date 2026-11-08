@@ -1,5 +1,5 @@
 [package]
-name = "craft-media"
+name = "mediacraft-types"
 description = "Common media stream metadata, buffer descriptors, error contracts, and rational time primitives"
 version.workspace = true
 edition.workspace = true

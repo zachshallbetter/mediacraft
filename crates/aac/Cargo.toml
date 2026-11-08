@@ -16,7 +16,7 @@ rayon = []
 
 [dependencies]
 mediacraft-bitstream = { workspace = true }
-craft-media = { workspace = true }
+mediacraft-types = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }

@@ -40,7 +40,7 @@ Rather than designing shared library abstractions in isolation, components are f
   - *Audio Infrastructure*: AAC-LC encoder/decoder (`craft-aac`), lossless FLAC (`craft-flac`), and Opus (`craft-opus`).
   - *Audio DSP & Acoustics*: EBU R128 loudness, true-peak meter, and cross-correlation delay sync (`craft-audio-dsp`).
   - *Video Codecs*: Intra/inter H.264/AVC decoder (`craft-h264`), multi-pass rate-controlled encoder (`craft-h264enc`), HEVC/H.265 (`craft-hevc`), and Apple ProRes 422/4444 (`craft-prores`).
-  - *Multiplexing & Remuxing*: ISO Base Media File Format MP4/MOV faststart muxer (`craft-isobmff`), Matroska MKV/WebM parser (`craft-matroska`), and stream-copy routing facade (`craft-media`).
+  - *Multiplexing & Remuxing*: ISO Base Media File Format MP4/MOV faststart muxer (`craft-isobmff`), Matroska MKV/WebM parser (`craft-matroska`), shared stream types (`mediacraft-types`), and stream-copy remuxing in the daemon (`pipeline/remux_adapter.rs`).
 - **Empirical Oracles**: Codec implementations are verified against rigorous mathematical and ffmpeg/ffprobe verification oracles (`mediacraft-oracles`), proving bit-exactness, zero panics, and conformance.
 
 ### 3. Shared Library Architecture & Document Packaging ([`CRAFT_LIBS_RFC.md`](../CRAFT_LIBS_RFC.md))
@@ -99,7 +99,7 @@ mediacraft/
 │   │   ├── bitstream/          (Pure bit I/O, MSB/LSB readers/writers, Exp-Golomb, RBSP)
 │   │   ├── isobmff/            (ISO Base Media File Format parser/muxer: MP4, MOV, faststart)
 │   │   ├── matroska/           (Matroska / WebM container parser: EBML header, Cluster parsing)
-│   │   └── media/              (Stream-copy remuxing facade and media routing pipeline)
+│   │   └── media/              (mediacraft-types: stream descriptors, buffer views, errors, rational time; see docs/CRAFT_MEDIA_NAMING.md)
 │   │
 │   └── Documents, Layered Images & Safe Packaging (Staged for craft-libs):
 │       ├── pdf/                (craft-pdf: Clean-room ISO 32000 PDF COS parser, filters, crypt, content)

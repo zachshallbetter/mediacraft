@@ -58,7 +58,7 @@ mediacraft-daemon = { path = "crates/daemon" }
 mediacraft-client = { path = "crates/client" }
 mediacraft-oracles = { path = "crates/oracles" }
 mediacraft-catalog = { path = "crates/catalog" }
-craft-media = { path = "crates/media" }
+mediacraft-types = { path = "crates/media" }
 craft-aac = { path = "crates/aac" }
 craft-isobmff = { path = "crates/isobmff" }
 craft-flac = { path = "crates/flac" }

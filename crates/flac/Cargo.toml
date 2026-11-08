@@ -12,7 +12,6 @@ workspace = true
 
 [dependencies]
 mediacraft-bitstream = { workspace = true }
-craft-media = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
