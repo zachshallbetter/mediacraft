@@ -100,6 +100,7 @@ pub fn render(bytes: &[u8], spec: &RenditionSpec) -> Result<Rendition> {
             limits: spec.limits,
             fit: Some((sw, sh)),
             raw: spec.raw,
+            ..Default::default()
         },
     )?;
     let mut sized = resize(&d.image, sw, sh, &spec.resize)?;

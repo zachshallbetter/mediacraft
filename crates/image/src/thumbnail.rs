@@ -79,6 +79,7 @@ pub fn thumbnail(bytes: &[u8], opts: &ThumbnailOptions) -> Result<Thumbnail> {
             limits: opts.limits,
             fit: Some((max_edge, max_edge)),
             raw: RawMode::Preview,
+            ..Default::default()
         },
     )?;
     let source = if (d.image.width(), d.image.height()) == (d.source_width, d.source_height) {
@@ -112,6 +113,7 @@ fn embedded_preview(bytes: &[u8], max_edge: u32, opts: &ThumbnailOptions) -> Opt
             limits: opts.limits,
             fit: None,
             raw: RawMode::Preview,
+            ..Default::default()
         },
     )
     .ok()?;

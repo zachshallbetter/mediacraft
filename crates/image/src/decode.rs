@@ -19,6 +19,21 @@ pub struct DecodeOptions {
     pub fit: Option<(u32, u32)>,
     /// How to read camera raws.
     pub raw: RawMode,
+    /// Where a PSD/PSB's pixels come from.
+    pub psd: PsdMode,
+}
+
+/// Where [`decode`] gets a PSD/PSB's pixels (`psd` feature).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PsdMode {
+    /// The saved composite when it is valid (the fast path); otherwise a composite of the layers.
+    /// A file without a usable composite and without layers, or one whose layers cannot be
+    /// composited (bitmap, indexed, Lab...), gives the saved composite or its error.
+    #[default]
+    Auto,
+    /// Composite the layers even when a composite is saved, falling back to the saved composite
+    /// only for colour modes the compositor does not handle.
+    Layers,
 }
 
 /// How [`decode`] turns a camera raw into pixels.
@@ -110,7 +125,7 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
         }
         Format::Raw => return decode_raw(bytes, &header, opts),
         Format::Psd => {
-            let (img, profile) = psd(bytes)?;
+            let (img, profile) = psd(bytes, opts.psd, &opts.limits)?;
             if icc.is_none() {
                 icc = profile;
             }
@@ -346,20 +361,38 @@ fn jpeg_scaled(_: &[u8], _: u32, _: u32, _: &Limits) -> Result<Rgba8Image> {
     Err(Format::Jpeg.unsupported())
 }
 
-/// The merged composite of a PSD/PSB and its ICC profile, through `craft-psd`.
+/// A PSD/PSB's pixels and ICC profile, through `craft-psd`: the saved composite when it is
+/// valid, otherwise (or when forced) a composite of the layers.
 #[cfg(feature = "psd")]
-fn psd(bytes: &[u8]) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
+fn psd(bytes: &[u8], mode: PsdMode, limits: &Limits) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
     let file = craft_psd::PsdFile::from_bytes(bytes)
         .map_err(|e| Error::Decode(Format::Psd, e.to_string()))?;
-    let c = file
-        .composite_rgba8()
-        .map_err(|e| Error::Decode(Format::Psd, e.to_string()))?;
-    let img = Rgba8Image::new(c.width, c.height, c.data)?;
-    Ok((img, file.icc_profile().map(<[u8]>::to_vec)))
+    let icc = file.icc_profile().map(<[u8]>::to_vec);
+    let saved = || -> Result<Rgba8Image> {
+        let c = file
+            .composite_rgba8()
+            .map_err(|e| Error::Decode(Format::Psd, e.to_string()))?;
+        Rgba8Image::new(c.width, c.height, c.data)
+    };
+    // Files saved without "maximise compatibility" carry a placeholder composite.
+    let real = file.has_real_merged_data() != Some(false);
+    if mode == PsdMode::Auto
+        && real
+        && let Ok(img) = saved()
+    {
+        return Ok((img, icc));
+    }
+    if file.layers().is_empty() {
+        return Ok((saved()?, icc));
+    }
+    match crate::psd_compose::composite_file(&file, limits) {
+        Ok((img, _)) => Ok((img, icc)),
+        Err(e) => saved().map(|img| (img, icc)).map_err(|_| e),
+    }
 }
 
 #[cfg(not(feature = "psd"))]
-fn psd(_: &[u8]) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
+fn psd(_: &[u8], _: PsdMode, _: &Limits) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
     Err(Format::Psd.unsupported())
 }
 

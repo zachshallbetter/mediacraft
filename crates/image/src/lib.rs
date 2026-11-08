@@ -73,6 +73,8 @@ mod iptc;
 mod metadata;
 mod orientation;
 mod pixels;
+#[cfg(feature = "psd")]
+mod psd_compose;
 #[cfg(feature = "raw")]
 mod raw;
 mod rendition;
@@ -83,7 +85,7 @@ mod xmp;
 pub mod yuv;
 
 pub use container::{Embedded, embedded};
-pub use decode::{DecodeOptions, Decoded, RawMode, decode};
+pub use decode::{DecodeOptions, Decoded, PsdMode, RawMode, decode};
 pub use encode::{EncodeOptions, OutputFormat, encode, encode_plain};
 pub use error::{Error, Result};
 pub use exif::{Exif, Gps, parse_exif};
@@ -94,6 +96,8 @@ pub use iptc::{Iptc, parse_iptc};
 pub use metadata::Metadata;
 pub use orientation::Orientation;
 pub use pixels::{Limits, Rgba8Image};
+#[cfg(feature = "psd")]
+pub use psd_compose::{CompositeReport, composite_layers};
 pub use rendition::{MetadataPolicy, Rendition, RenditionSpec, render};
 pub use resize::{Filter, ResizeOptions, fit_within, resize, resize_to_fit};
 pub use thumbnail::{Thumbnail, ThumbnailOptions, ThumbnailSource, thumbnail};

@@ -40,7 +40,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | TIFF | yes | EXIF, XMP, ICC, IPTC | yes | no |
 | GIF | yes | none | first frame | no |
 | BMP | yes | none | yes | no |
-| PSD / PSB | yes | EXIF, XMP, ICC, IPTC | merged composite via `craft-psd` | no |
+| PSD / PSB | yes | EXIF, XMP, ICC, IPTC | saved composite via `craft-psd`, else a composite of the layers (`PsdMode::Layers` forces it; `composite_layers` reports what it left out) | no |
 | HEIC / HEIF | yes (`ispe`, `irot`, `imir`, `pixi`) | EXIF, XMP, ICC (items, `colr`) | yes, `craft-hevc`; tiled grids; 8/10-bit | no |
 | AVIF | yes | EXIF, XMP, ICC | yes, `craft-av1`; 8/10/12-bit, alpha | no |
 | Camera raw (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2, …) | yes (CR3, RAF, ORF, RW2 from the preview) | EXIF | yes, `craft-raw`: the full-frame embedded preview, else developed (see below) | no |
