@@ -124,12 +124,13 @@ pub(crate) fn header(b: &[u8], format: Format) -> Result<RawHeader> {
                 };
                 orientation = orientation.then(step);
             }
-            // axis 0: mirror about the vertical axis (left↔right); 1: about the horizontal axis.
+            // imir mode 0 reverses top and bottom, 1 left and right (ISO/IEC 23008-12, 2nd edition;
+            // the 2017 text called the field `axis` and read ambiguously). libheif and Apple agree.
             Some(Prop::Imir(axis)) => {
                 let step = if *axis == 0 {
-                    Orientation::MirrorHorizontal
-                } else {
                     Orientation::MirrorVertical
+                } else {
+                    Orientation::MirrorHorizontal
                 };
                 orientation = orientation.then(step);
             }

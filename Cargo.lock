@@ -640,7 +640,9 @@ name = "craft-image"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "craft-av1",
  "craft-cms",
+ "craft-hevc",
  "craft-psd",
  "flate2",
  "image",

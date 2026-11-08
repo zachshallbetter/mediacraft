@@ -50,6 +50,9 @@ pub fn embedded(bytes: &[u8]) -> Embedded<'_> {
         Some(Format::WebP) => formats::webp::embedded(bytes),
         Some(Format::Tiff | Format::Raw) => formats::tiff_file::embedded(bytes),
         Some(Format::Psd) => formats::psd::embedded(bytes),
+        Some(f @ (Format::Heif | Format::Avif)) => crate::heif::Heif::parse(bytes, f)
+            .map(|h| h.embedded())
+            .unwrap_or_default(),
         _ => Embedded::default(),
     }
 }

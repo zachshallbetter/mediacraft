@@ -71,8 +71,6 @@ impl Format {
     /// metadata of every format are still read.
     pub fn not_decodable(self) -> Option<&'static str> {
         match self {
-            Format::Heif => Some("HEVC decoding is not in this build"),
-            Format::Avif => Some("no permissively licensed pure-Rust AV1 decoder yet"),
             Format::Jxl => Some("JPEG XL decoding is not in this build"),
             Format::Raw => Some("camera raw needs a raw developer"),
             _ => None,
@@ -299,7 +297,8 @@ mod tests {
     fn decodability_is_reported() {
         assert!(Format::Jpeg.can_decode());
         assert!(Format::Psd.can_decode());
-        assert!(!Format::Heif.can_decode());
+        assert!(Format::Heif.can_decode() && Format::Avif.can_decode());
+        assert!(!Format::Jxl.can_decode());
         assert_eq!(Format::WebP.mime(), "image/webp");
         assert_eq!(Format::Jxl.to_string(), "JPEG XL");
     }

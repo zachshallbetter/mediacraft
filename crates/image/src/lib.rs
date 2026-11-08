@@ -50,6 +50,7 @@ mod exif;
 mod format;
 mod formats;
 mod header;
+mod heif;
 mod icc;
 mod iptc;
 mod metadata;

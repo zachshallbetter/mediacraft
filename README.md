@@ -102,7 +102,7 @@ mediacraft/
 │   ├── Clean-Room Video Infrastructure (Staged for craft-libs):
 │   │   ├── h264/               (H.264 / AVC video decoder, CAVLC/CABAC entropy, deblocking)
 │   │   ├── h264enc/            (H.264 / AVC video encoder, rate control, multi-pass VBR)
-│   │   ├── hevc/               (H.265 / HEVC video encoder & decoder, SAO, wavefront processing)
+│   │   ├── hevc/               (H.265 / HEVC video decoder, SAO, wavefront processing; no encoder)
 │   │   ├── prores/             (Apple ProRes 422/4444 decoder, frame headers, DCT reconstruction)
 │   │   ├── av1/                (craft-av1: AV1 decoder, from FilmCraft)
 │   │   ├── vp9/                (craft-vp9: VP9 decoder, 8–12-bit, from FilmCraft)

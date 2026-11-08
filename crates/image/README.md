@@ -41,7 +41,8 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | GIF | yes | none | first frame | no |
 | BMP | yes | none | yes | no |
 | PSD / PSB | yes | EXIF, XMP, ICC, IPTC | merged composite via `craft-psd` | no |
-| HEIF / AVIF | yes (`ispe`, `irot`, `imir`, `pixi`) | not yet | no | no |
+| HEIC / HEIF | yes (`ispe`, `irot`, `imir`, `pixi`) | EXIF, XMP, ICC (items, `colr`) | yes, `craft-hevc`; tiled grids; 8/10-bit | no |
+| AVIF | yes | EXIF, XMP, ICC | yes, `craft-av1`; 8/10/12-bit, alpha | no |
 | TIFF-based raw (DNG, NEF, ARW, …) | yes | EXIF | no | no |
 | JPEG XL | detected only | no | no | no |
 
@@ -68,7 +69,10 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 
 * **`craft-cms`** (vendored from storytold/craft-libs into this workspace) handles ICC parsing and transforms, the same colour
   management module the Craft apps use.
-* **`craft-psd`** (this workspace) provides PSD/PSB composites.
+* **`craft-psd`** (this workspace) provides PSD/PSB composites; **`craft-hevc`** and
+  **`craft-av1`** (this workspace) decode HEIC and AVIF.
+* **`craft_image::yuv`** converts Y′CbCr planes to RGBA for stills and for
+  `mediacraft-preview`'s video frames alike.
 * **`image`** does the raster codecs, and **`jpeg-decoder`** adds DCT-scaled JPEG decoding, which
   `image` does not expose.
 * **`quick-xml`** reads XMP, **`chrono`** handles dates, and **`flate2`** handles PNG's
@@ -87,7 +91,8 @@ working space, HDR gain maps, proofing and print. It uses `craft-cms` where Ligh
 
 ## Not yet
 
-* **HEIF/AVIF:** pixel decoding and EXIF/XMP extraction (headers are read).
+* **HEIC alpha:** HEIF stores alpha as a monochrome (4:0:0) HEVC image, which `craft-hevc` does
+  not decode yet; such images decode opaque, with correct colour. AVIF alpha is decoded.
 * **JPEG XL:** headers and decoding.
 * **Camera raw:** development (headers and EXIF are read).
 * **Extended XMP:** JPEG packets split across several APP1 segments.

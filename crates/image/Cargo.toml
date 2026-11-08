@@ -20,6 +20,9 @@ craft-cms = { workspace = true }
 quick-xml = { workspace = true }
 # Layered PSD/PSB composites and their image resources, from this workspace.
 craft-psd = { workspace = true }
+# HEIC and AVIF stills, from this workspace.
+craft-hevc = { workspace = true }
+craft-av1 = { workspace = true, default-features = false }
 chrono = { workspace = true }
 flate2 = { workspace = true }
 serde = { workspace = true }

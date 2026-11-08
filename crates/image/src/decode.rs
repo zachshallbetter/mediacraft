@@ -85,6 +85,15 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
             }
             _ => full(bytes, format, &opts.limits)?,
         },
+        Format::Heif | Format::Avif => {
+            let (img, profile) = guarded(format, || {
+                crate::heif::Heif::parse(bytes, format)?.decode(&opts.limits)
+            })?;
+            if icc.is_none() {
+                icc = profile;
+            }
+            img
+        }
         Format::Psd => {
             let (img, profile) = psd(bytes)?;
             if icc.is_none() {
@@ -272,12 +281,17 @@ mod tests {
     #[test]
     fn undecodable_formats_say_why() {
         assert!(matches!(
+            decode(b"\xFF\x0A\xFA\x7F\0\0\0\0", &DecodeOptions::default()),
+            Err(Error::Unsupported(Format::Jxl, _))
+        ));
+        // A HEIF with no items is malformed, not undecodable.
+        assert!(
             decode(
                 b"\0\0\0\x18ftypheic\0\0\0\0mif1heic",
                 &DecodeOptions::default()
-            ),
-            Err(Error::Unsupported(Format::Heif, _))
-        ));
+            )
+            .is_err()
+        );
         assert!(matches!(
             decode(b"garbage!", &DecodeOptions::default()),
             Err(Error::UnknownFormat)
