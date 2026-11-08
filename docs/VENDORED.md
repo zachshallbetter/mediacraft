@@ -19,11 +19,17 @@ into `crates/` rather than fetched as Git dependencies.
 | `craft-mpegts` | `crates/mpegts` | storytold/filmcraft `crates/mpegts` | same | mediacraft-preview, catalog |
 | `craft-mxf` | `crates/mxf` | storytold/filmcraft `crates/mxf` | same | mediacraft-preview, catalog |
 | `mediacraft-testkit` | `crates/testkit` | storytold/filmcraft `crates/testkit` (dev-dependency only) | same | the seven above |
+| `craft-vp8enc` | `crates/vp8enc` | storytold/photocraft `src/codecs/vp8.rs` and `src/codecs/vp8/` | `3aa1d9f43` | craft-image |
 
 The first four craft-libs crates are the commit MediaCraft was already pinned to. `craft-cms` is from craft-libs
 `main` on 2026-11-07.
 
 ## Local changes
+
+**PhotoCraft VP8 encoder.** PhotoCraft's `codecs::vp8` module becomes the crate root of
+`craft-vp8enc`: `vp8.rs` is `src/lib.rs` and its submodules sit beside it unchanged. The only
+additions are the crate-root lint attributes MediaCraft's other crates carry and a `rustfmt.toml`
+with PhotoCraft's formatting (`max_width = 160`).
 
 **FilmCraft crates.** These are renamed `filmcraft-<x>` → `craft-<x>`, matching MediaCraft's
 other codec crates, and `filmcraft-testkit` → `mediacraft-testkit`. Their two internal

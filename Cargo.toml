@@ -25,6 +25,8 @@ members = [
     "crates/archive",
     "crates/image",
     "crates/preview",
+    # Vendored from storytold/photocraft; see docs/VENDORED.md.
+    "crates/vp8enc",
     # Vendored from storytold/filmcraft; see docs/VENDORED.md.
     "crates/av1",
     "crates/vp9",
@@ -85,6 +87,7 @@ craft-pdf = { path = "crates/pdf" }
 craft-archive = { path = "crates/archive" }
 craft-image = { path = "crates/image" }
 mediacraft-preview = { path = "crates/preview" }
+craft-vp8enc = { path = "crates/vp8enc" }
 
 # Vendored from storytold/filmcraft (docs/VENDORED.md).
 craft-av1 = { path = "crates/av1" }

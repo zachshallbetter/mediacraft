@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 pub enum MetadataPolicy {
     /// No EXIF.
     Strip,
-    /// A minimal EXIF with the creator and copyright notice (JPEG and PNG; WebP output carries
-    /// no EXIF).
+    /// A minimal EXIF with the creator and copyright notice (JPEG, PNG and lossy WebP; lossless
+    /// WebP output carries no EXIF).
     #[default]
     Attribution,
 }

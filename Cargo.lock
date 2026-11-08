@@ -644,6 +644,7 @@ dependencies = [
  "craft-cms",
  "craft-hevc",
  "craft-psd",
+ "craft-vp8enc",
  "flate2",
  "image",
  "jpeg-decoder",
@@ -792,6 +793,10 @@ dependencies = [
  "mediacraft-testkit",
  "thiserror 2.0.21",
 ]
+
+[[package]]
+name = "craft-vp8enc"
+version = "0.1.0"
 
 [[package]]
 name = "craft-vp9"

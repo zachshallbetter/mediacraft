@@ -16,7 +16,13 @@ pub enum OutputFormat {
     },
     /// PNG, RGB when every pixel is opaque, RGBA otherwise.
     Png,
-    /// Lossless WebP (VP8L). Lossy WebP needs an encoder this build does not have.
+    /// Lossy WebP: one VP8 key frame (`craft-vp8enc`), quality 1–100. Translucent pixels keep
+    /// their alpha in an uncompressed `ALPH` chunk; ICC and EXIF are carried as chunks.
+    Webp {
+        /// 1–100.
+        quality: u8,
+    },
+    /// Lossless WebP (VP8L).
     WebpLossless,
 }
 
@@ -26,7 +32,7 @@ impl OutputFormat {
         match self {
             OutputFormat::Jpeg { .. } => Format::Jpeg,
             OutputFormat::Png => Format::Png,
-            OutputFormat::WebpLossless => Format::WebP,
+            OutputFormat::Webp { .. } | OutputFormat::WebpLossless => Format::WebP,
         }
     }
 }
@@ -104,6 +110,9 @@ pub fn encode(img: &Rgba8Image, format: OutputFormat, opts: &EncodeOptions) -> R
                 out = insert_png_chunk(out, b"eXIf", exif)?;
             }
         }
+        OutputFormat::Webp { quality } => {
+            out = encode_webp_lossy(img, quality, opts)?;
+        }
         OutputFormat::WebpLossless => {
             let mut enc = image::codecs::webp::WebPEncoder::new_lossless(&mut out);
             if let Some(icc) = &opts.icc {
@@ -114,6 +123,77 @@ pub fn encode(img: &Rgba8Image, format: OutputFormat, opts: &EncodeOptions) -> R
                 .map_err(err)?;
         }
     }
+    Ok(out)
+}
+
+/// Lossy WebP (RFC 9649): the colour as a VP8 key frame and, when any pixel is translucent, the
+/// alpha plane as an uncompressed `ALPH` chunk. The extended (`VP8X`) form is written whenever
+/// there is alpha, ICC or EXIF, with chunks in the order the specification gives.
+fn encode_webp_lossy(img: &Rgba8Image, quality: u8, opts: &EncodeOptions) -> Result<Vec<u8>> {
+    let f = Format::WebP;
+    let (w, h) = (img.width(), img.height());
+    if w > craft_vp8enc::MAX_DIMENSION || h > craft_vp8enc::MAX_DIMENSION {
+        return Err(Error::Encode(
+            f,
+            format!(
+                "lossy WebP holds at most {} pixels per side",
+                craft_vp8enc::MAX_DIMENSION
+            ),
+        ));
+    }
+    // Colour as stored (not flattened): alpha travels separately. `from_rgb` takes the bytes
+    // per pixel (4 here), not a row stride.
+    let yuv = craft_vp8enc::Yuv::from_rgb(img.data(), w, h, 4);
+    let frame = craft_vp8enc::encode_frame(
+        &yuv,
+        craft_vp8enc::Params {
+            quality: quality.clamp(1, 100),
+        },
+    )
+    .map_err(|e| Error::Encode(f, e.to_string()))?;
+    let alpha = (!img.is_opaque()).then(|| {
+        // ALPH header: no preprocessing, no filter, no compression; then one byte per pixel.
+        let mut a = Vec::with_capacity(w as usize * h as usize + 1);
+        a.push(0);
+        a.extend(img.data().as_chunks::<4>().0.iter().map(|p| p[3]));
+        a
+    });
+    let chunk = |out: &mut Vec<u8>, fourcc: &[u8; 4], payload: &[u8]| -> Result<()> {
+        let len = u32::try_from(payload.len())
+            .map_err(|_| Error::Encode(f, "WebP chunk over 4 GiB".into()))?;
+        out.extend_from_slice(fourcc);
+        out.extend_from_slice(&len.to_le_bytes());
+        out.extend_from_slice(payload);
+        if payload.len() % 2 == 1 {
+            out.push(0);
+        }
+        Ok(())
+    };
+    let mut body = b"WEBP".to_vec();
+    if alpha.is_some() || opts.icc.is_some() || opts.exif.is_some() {
+        let flags = (u8::from(opts.icc.is_some()) << 5)
+            | (u8::from(alpha.is_some()) << 4)
+            | (u8::from(opts.exif.is_some()) << 3);
+        let mut x = vec![flags, 0, 0, 0];
+        x.extend_from_slice(&(w - 1).to_le_bytes()[..3]);
+        x.extend_from_slice(&(h - 1).to_le_bytes()[..3]);
+        chunk(&mut body, b"VP8X", &x)?;
+        if let Some(icc) = &opts.icc {
+            chunk(&mut body, b"ICCP", icc)?;
+        }
+        if let Some(a) = &alpha {
+            chunk(&mut body, b"ALPH", a)?;
+        }
+    }
+    chunk(&mut body, b"VP8 ", &frame)?;
+    if let Some(exif) = &opts.exif {
+        chunk(&mut body, b"EXIF", exif)?;
+    }
+    let size =
+        u32::try_from(body.len()).map_err(|_| Error::Encode(f, "WebP file over 4 GiB".into()))?;
+    let mut out = b"RIFF".to_vec();
+    out.extend_from_slice(&size.to_le_bytes());
+    out.extend_from_slice(&body);
     Ok(out)
 }
 
@@ -233,5 +313,97 @@ mod tests {
         )
         .unwrap();
         assert_eq!(read_header(&clear).unwrap().has_alpha, Some(true));
+    }
+}
+
+#[cfg(test)]
+mod webp_tests {
+    use super::*;
+    use crate::{
+        DecodeOptions, Orientation, decode, embedded, exif::minimal_exif, parse_exif, read_header,
+    };
+
+    fn gradient(w: u32, h: u32, alpha: impl Fn(u32) -> u8) -> Rgba8Image {
+        let mut d = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                d.extend_from_slice(&[(x * 255 / w) as u8, (y * 255 / h) as u8, 140, alpha(x)]);
+            }
+        }
+        Rgba8Image::new(w, h, d).unwrap()
+    }
+
+    #[test]
+    fn lossy_webp_round_trips_through_the_webp_decoder() {
+        let img = gradient(96, 64, |_| 255);
+        let bytes = encode_plain(&img, OutputFormat::Webp { quality: 85 }).unwrap();
+        let h = read_header(&bytes).unwrap();
+        assert_eq!(
+            (h.format, h.width, h.height, h.has_alpha),
+            (Format::WebP, 96, 64, Some(false))
+        );
+        let back = decode(&bytes, &DecodeOptions::default()).unwrap().image;
+        let diff: u64 = img
+            .data()
+            .iter()
+            .zip(back.data())
+            .map(|(a, b)| u64::from(a.abs_diff(*b)))
+            .sum();
+        let mean = diff as f64 / img.data().len() as f64;
+        assert!(mean < 4.0, "mean error {mean}");
+        // Smaller than lossless on textured, photo-like content (flat synthetic gradients are the
+        // one place lossless wins).
+        let mut seed = 12345u32;
+        let mut noisy = img.clone();
+        for v in noisy.data_mut().iter_mut().filter(|v| **v != 255) {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            *v = v.saturating_add((seed >> 27) as u8);
+        }
+        let lossy = encode_plain(&noisy, OutputFormat::Webp { quality: 85 }).unwrap();
+        let lossless = encode_plain(&noisy, OutputFormat::WebpLossless).unwrap();
+        assert!(
+            lossy.len() < lossless.len(),
+            "{} vs {}",
+            lossy.len(),
+            lossless.len()
+        );
+    }
+
+    #[test]
+    fn lossy_webp_keeps_alpha_icc_and_exif() {
+        let img = gradient(40, 30, |x| if x < 20 { 255 } else { 77 });
+        let icc = crate::icc::srgb_profile();
+        let exif = minimal_exif(Orientation::Identity, Some("Ada"), None);
+        let opts = EncodeOptions {
+            icc: Some(icc.clone()),
+            exif: Some(exif),
+            ..Default::default()
+        };
+        let bytes = encode(&img, OutputFormat::Webp { quality: 70 }, &opts).unwrap();
+        assert_eq!(read_header(&bytes).unwrap().has_alpha, Some(true));
+        let back = decode(&bytes, &DecodeOptions::default()).unwrap().image;
+        assert_eq!(back.pixel(5, 5).unwrap()[3], 255);
+        assert_eq!(
+            back.pixel(35, 5).unwrap()[3],
+            77,
+            "alpha is stored losslessly"
+        );
+        let e = embedded(&bytes);
+        assert_eq!(e.icc.as_deref(), Some(icc.as_slice()));
+        assert_eq!(
+            parse_exif(e.exif.as_deref().unwrap())
+                .unwrap()
+                .artist
+                .as_deref(),
+            Some("Ada")
+        );
+    }
+
+    #[test]
+    fn lossy_webp_quality_trades_size() {
+        let img = gradient(128, 128, |_| 255);
+        let low = encode_plain(&img, OutputFormat::Webp { quality: 20 }).unwrap();
+        let high = encode_plain(&img, OutputFormat::Webp { quality: 95 }).unwrap();
+        assert!(low.len() < high.len(), "{} vs {}", low.len(), high.len());
     }
 }

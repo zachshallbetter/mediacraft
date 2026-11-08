@@ -23,6 +23,8 @@ craft-psd = { workspace = true }
 # HEIC and AVIF stills, from this workspace.
 craft-hevc = { workspace = true }
 craft-av1 = { workspace = true, default-features = false }
+# Lossy WebP: a VP8 key-frame encoder, from this workspace.
+craft-vp8enc = { workspace = true }
 chrono = { workspace = true }
 flate2 = { workspace = true }
 serde = { workspace = true }

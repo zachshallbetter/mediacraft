@@ -1,0 +1,11 @@
+[package]
+name = "craft-vp8enc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Clean-room VP8 key-frame encoder (the lossy WebP bitstream), from RFC 6386; vendored from PhotoCraft"
+
+[lints]
+workspace = true

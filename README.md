@@ -77,7 +77,7 @@ Rather than designing shared library abstractions in isolation, components are f
 
 ## 3. Workspace Topology
 
-MediaCraft is organized as an integrated cargo workspace containing 37 high-performance, `#![forbid(unsafe_code)]` member crates:
+MediaCraft is organized as an integrated cargo workspace containing 38 high-performance, `#![forbid(unsafe_code)]` member crates:
 
 ```text
 mediacraft/
@@ -107,6 +107,7 @@ mediacraft/
 │   │   ├── av1/                (craft-av1: AV1 decoder, from FilmCraft)
 │   │   ├── vp9/                (craft-vp9: VP9 decoder, 8–12-bit, from FilmCraft)
 │   │   ├── vp8/                (craft-vp8: VP8 decoder, from FilmCraft)
+│   │   ├── vp8enc/             (craft-vp8enc: VP8 key-frame encoder for lossy WebP, from PhotoCraft)
 │   │   ├── mpeg2v/             (craft-mpeg2v: MPEG-1/2 video decoder, from FilmCraft)
 │   │   └── dnx/                (craft-dnx: DNxHD/DNxHR (VC-3) decoder and encoder, from FilmCraft)
 │   │

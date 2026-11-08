@@ -28,7 +28,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | Resize | `resize`, `resize_to_fit` | Linear light, premultiplied alpha, box prefilter then Lanczos-3 |
 | Thumbnail | `thumbnail` | Embedded EXIF preview when big enough, else scaled decode |
 | Rendition | `render` | Fit, sRGB, upright, encode, metadata policy |
-| Encode | `encode` | JPEG, PNG, lossless WebP; ICC and EXIF embedding |
+| Encode | `encode` | JPEG, PNG, lossy WebP (`craft-vp8enc`) and lossless WebP; ICC and EXIF embedding |
 
 ### Formats
 
@@ -36,7 +36,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 |---|---|---|---|---|
 | JPEG | yes | EXIF, XMP, ICC, IPTC | yes (DCT-scaled) | yes |
 | PNG / APNG | yes | EXIF, XMP, ICC | yes (first frame) | yes |
-| WebP | yes | EXIF, XMP, ICC | yes (first frame) | lossless only |
+| WebP | yes | EXIF, XMP, ICC | yes (first frame) | lossy (VP8, alpha, ICC, EXIF) and lossless |
 | TIFF | yes | EXIF, XMP, ICC, IPTC | yes | no |
 | GIF | yes | none | first frame | no |
 | BMP | yes | none | yes | no |
@@ -96,7 +96,7 @@ working space, HDR gain maps, proofing and print. It uses `craft-cms` where Ligh
 * **JPEG XL:** headers and decoding.
 * **Camera raw:** development (headers and EXIF are read).
 * **Extended XMP:** JPEG packets split across several APP1 segments.
-* **Encoding:** lossy WebP and AVIF output.
+* **Encoding:** AVIF output; EXIF in lossless WebP.
 * **Large images:** non-JPEG sources decode at full size before resizing. `Limits::max_pixels`
   bounds that memory.
 
