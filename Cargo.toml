@@ -139,3 +139,7 @@ opt-level = 3
 
 [profile.dev.package.craft-mpeg2v]
 opt-level = 3
+
+# The VP8 encoder's timing test (crates/vp8enc) needs optimised code to see a quadratic slowdown.
+[profile.dev.package.craft-vp8enc]
+opt-level = 3

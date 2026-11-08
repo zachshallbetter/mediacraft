@@ -453,7 +453,14 @@ impl<'a> Encoder<'a> {
         let whole_cost = best_sse + 3 * lambda;
 
         // B_PRED: sub-blocks in raster order, each predicted from the reconstruction so far.
-        let saved_y = self.rec_y.data.clone();
+        // Only this macroblock's 16×16 luma changes during the trial; saving the whole plane here
+        // made every macroblock cost the full frame (quadratic in the image size).
+        let w = self.rec_y.width;
+        let mut saved_y = [0u8; 256];
+        for r in 0..16 {
+            let row = (y0 + r) * w + x0;
+            saved_y[r * 16..r * 16 + 16].copy_from_slice(&self.rec_y.data[row..row + 16]);
+        }
         let mut b_modes = [B_DC_PRED; 16];
         let mut b_blocks: Vec<Block> = Vec::with_capacity(16);
         let mut b_sse = 0u64;
@@ -495,7 +502,10 @@ impl<'a> Encoder<'a> {
             (B_PRED, None, b_blocks)
         } else {
             // Whole-block mode: undo the B_PRED reconstruction, code 16 blocks + Y2.
-            self.rec_y.data = saved_y;
+            for r in 0..16 {
+                let row = (y0 + r) * w + x0;
+                self.rec_y.data[row..row + 16].copy_from_slice(&saved_y[r * 16..r * 16 + 16]);
+            }
             let mut dcs = [0i32; 16];
             let mut ac_blocks: Vec<[i32; 16]> = Vec::with_capacity(16);
             let mut deq_blocks: Vec<[i32; 16]> = Vec::with_capacity(16);
@@ -784,6 +794,38 @@ pub fn encode_frame(yuv: &Yuv, params: Params) -> Result<Vec<u8>, Vp8Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A textured test picture, so every macroblock does real mode search.
+    fn texture(w: u32, h: u32) -> Yuv {
+        let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+        let mut seed = 7u32;
+        for y in 0..h {
+            for x in 0..w {
+                seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                let n = (seed >> 26) as u8;
+                rgb.extend_from_slice(&[(x % 251) as u8 ^ n, (y % 241) as u8, ((x + y) % 239) as u8 ^ (n << 1)]);
+            }
+        }
+        Yuv::from_rgb(&rgb, w, h, 3)
+    }
+
+    /// Encoding time per pixel must not grow with the image: a 36× larger frame may take at most
+    /// about 36× longer (108× allowed for timer noise). Saving the whole reconstruction plane per
+    /// macroblock once made this quadratic, so a 2560 px rendition took over ten seconds.
+    #[test]
+    fn encode_time_is_linear_in_the_pixel_count() {
+        let time = |side: u32| {
+            let yuv = texture(side, side);
+            let t = std::time::Instant::now();
+            let out = encode_frame(&yuv, Params { quality: 82 }).unwrap();
+            assert!(!out.is_empty());
+            t.elapsed().as_secs_f64()
+        };
+        let _warm = time(64);
+        let small = time(256).max(1e-4);
+        let large = time(1536);
+        assert!(large / small < 108.0, "256² took {small:.4} s, 1536² took {large:.4} s");
+    }
 
     #[test]
     fn quantizer_curve_is_monotone_and_spans_the_range() {

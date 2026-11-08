@@ -30,6 +30,11 @@ The first four craft-libs crates are the commit MediaCraft was already pinned to
 `craft-vp8enc`: `vp8.rs` is `src/lib.rs` and its submodules sit beside it unchanged. The only
 additions are the crate-root lint attributes MediaCraft's other crates carry and a `rustfmt.toml`
 with PhotoCraft's formatting (`max_width = 160`).
+One fix is made in place: the B_PRED trial in `encode_macroblock` saved and restored the whole
+reconstructed luma plane for every macroblock, making encoding quadratic in the image size (a
+2560 px rendition took 12 to 16 seconds). It now saves only the macroblock's 16×16 block. The output
+is byte-identical, and `encode_time_is_linear_in_the_pixel_count` guards it. This should go
+upstream to PhotoCraft.
 
 **FilmCraft crates.** These are renamed `filmcraft-<x>` → `craft-<x>`, matching MediaCraft's
 other codec crates, and `filmcraft-testkit` → `mediacraft-testkit`. Their two internal
