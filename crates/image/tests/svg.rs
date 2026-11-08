@@ -81,7 +81,7 @@ fn fits_to_the_requested_size() {
     let d = decode(src.as_bytes(), &opts).expect("decodes");
     assert_eq!((d.image.width(), d.image.height()), (200, 100));
     // And through the thumbnail path.
-    let t = thumbnail(src.as_bytes(), &ThumbnailOptions::default());
+    let t = thumbnail(src.as_bytes(), &ThumbnailOptions::new(64));
     assert!(t.is_ok(), "{:?}", t.err());
 }
 
