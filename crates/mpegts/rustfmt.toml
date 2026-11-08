@@ -1,0 +1,3 @@
+# FilmCraft formatting, so this vendored crate stays diffable against upstream.
+max_width = 160
+use_small_heuristics = "Max"

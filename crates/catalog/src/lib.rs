@@ -58,8 +58,8 @@ impl MediaKind {
 
     pub fn from_extension(ext: &str) -> Self {
         match ext.to_ascii_lowercase().as_str() {
-            "mov" | "mp4" | "m4v" | "mkv" | "avi" | "mxf" | "webm" | "mts" | "m2ts" | "mpeg"
-            | "mpg" => Self::Video,
+            "mov" | "mp4" | "m4v" | "mkv" | "avi" | "mxf" | "webm" | "mts" | "m2ts" | "ts"
+            | "vob" | "mpeg" | "mpg" => Self::Video,
             "wav" | "aif" | "aiff" | "m4a" | "aac" | "flac" | "mp3" | "ogg" | "opus" => Self::Audio,
             "png" | "jpg" | "jpeg" | "webp" | "tif" | "tiff" | "gif" | "bmp" | "exr" | "heic"
             | "heif" | "avif" => Self::Image,

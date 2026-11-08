@@ -202,3 +202,53 @@ fn clean_aperture_crops_like_players_do() {
     assert_eq!(c.data(), &[16, 17, 18, 19, 20, 21, 22, 23]);
     assert!(crop_to(&img, (2, 0, 2, 1)).is_none());
 }
+
+/// 25 frames of DNxHR HQ at 25 fps in OP1a MXF, frame `i` a flat grey of `luma(i)`, written
+/// with the workspace's own DNx encoder and MXF writer.
+fn dnx_mxf() -> Vec<u8> {
+    let (w, h) = (256u32, 144u32);
+    let mut enc = craft_dnx::Encoder::new(craft_dnx::Profile::Hq, w, h).unwrap();
+    let rate = craft_mxf::Rational { num: 25, den: 1 };
+    let mut cfg = craft_mxf::WriterConfig::new(
+        craft_mxf::Pattern::Op1a,
+        rate,
+        craft_mxf::PackageIds::from_seed("preview", "DNx clip"),
+    );
+    cfg.picture = Some(craft_mxf::PictureDesc::new(
+        craft_mxf::PictureCoding::Vc3 {
+            cid: craft_dnx::Profile::Hq.cid(),
+        },
+        w,
+        h,
+    ));
+    let mut wr = craft_mxf::MxfWriter::new(std::io::Cursor::new(Vec::new()), cfg).unwrap();
+    for i in 0..25 {
+        let mut f = craft_dnx::Frame::new(w, h, craft_dnx::ChromaFormat::Yuv422, 8, false);
+        f.y.iter_mut().for_each(|s| *s = u16::from(luma(i)));
+        wr.push_picture(&enc.encode(&f).unwrap(), craft_mxf::FrameInfo::intra())
+            .unwrap();
+    }
+    wr.finish().unwrap().into_inner()
+}
+
+#[test]
+fn dnx_in_mxf_through_craft_mxf_and_craft_dnx() {
+    let path = write("clip.mxf", &dnx_mxf());
+    for (at, frame) in [(0.0, 0usize), (0.4, 10), (5.0, 24)] {
+        let f = poster_frame(&path, &FrameOptions::at(at)).unwrap();
+        assert_eq!(
+            (f.codec, f.source_width, f.source_height),
+            ("dnxhd", 256, 144)
+        );
+        let p = f.image.pixel(128, 72).unwrap();
+        assert!(
+            p[0].abs_diff(grey(luma(frame))) <= 3,
+            "at {at}s: {p:?}, want frame {frame}"
+        );
+        assert!(
+            (f.seconds - frame as f64 / 25.0).abs() < 1e-6,
+            "at {at}s: {}",
+            f.seconds
+        );
+    }
+}

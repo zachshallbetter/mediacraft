@@ -10,7 +10,7 @@ use crate::{Error, Format, Orientation, Result};
 const MAX_BOXES: usize = 4096;
 
 /// `(type, payload)` for each box in `b`.
-fn boxes(b: &[u8]) -> Vec<([u8; 4], &[u8])> {
+pub(crate) fn boxes(b: &[u8]) -> Vec<([u8; 4], &[u8])> {
     let mut out = Vec::new();
     let mut p = 0usize;
     while out.len() < MAX_BOXES {
@@ -150,7 +150,7 @@ pub(crate) fn header(b: &[u8], format: Format) -> Result<RawHeader> {
 }
 
 /// Property indices (1-based) associated with `item` in an `ipma` box.
-fn ipma_for(d: &[u8], item: u32) -> Option<Vec<usize>> {
+pub(crate) fn ipma_for(d: &[u8], item: u32) -> Option<Vec<usize>> {
     let version = *d.first()?;
     let flags = be_u32(d, 0)? & 0x00FF_FFFF;
     let count = be_u32(d, 4)?;

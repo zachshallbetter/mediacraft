@@ -10,6 +10,7 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::{Mutex, PoisonError};
 
 use crate::{AudioStreamInfo, VideoStreamInfo};
 
@@ -48,7 +49,255 @@ pub(crate) fn probe(path: &Path) -> Option<Probed> {
     if head.starts_with(b"OggS") {
         return ogg(&head, &mut file, size);
     }
+    if craft_mxf::sniff(&head) {
+        return mxf(path);
+    }
+    if craft_mpegts::sniff(&head).is_some() {
+        return mpeg_ts(path);
+    }
     mpeg_audio(&head, size)
+}
+
+/// A file as a positioned byte source for the MPEG-TS and MXF demuxers.
+struct FileSource {
+    file: Mutex<File>,
+    len: u64,
+}
+
+impl FileSource {
+    fn open(path: &Path) -> Option<Self> {
+        let file = File::open(path).ok()?;
+        let len = file.metadata().ok()?.len();
+        Some(Self {
+            file: Mutex::new(file),
+            len,
+        })
+    }
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        let mut f = self.file.lock().unwrap_or_else(PoisonError::into_inner);
+        f.seek(SeekFrom::Start(offset))?;
+        f.read_exact(buf)
+    }
+}
+
+impl craft_mpegts::ByteSource for FileSource {
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        FileSource::read_at(self, offset, buf)
+    }
+}
+
+impl craft_mxf::ByteSource for FileSource {
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        FileSource::read_at(self, offset, buf)
+    }
+}
+
+/// Size and bit depth from the first coded picture of an elementary stream.
+fn elementary_video(codec: &str, unit: &[u8]) -> Option<(u32, u32, u8, Option<f32>)> {
+    match codec {
+        "mpeg1video" | "mpeg2video" => {
+            let s = craft_mpeg2v::probe(unit)?;
+            let fps = s
+                .frame_rate
+                .filter(|(_, d)| *d > 0)
+                .map(|(n, d)| n as f32 / d as f32);
+            Some((s.width, s.height, 8, fps))
+        }
+        "h264" => {
+            let r = craft_h264::diagnose_h264_stream(unit);
+            Some((
+                r.width?,
+                r.height?,
+                r.bit_depth.and_then(|b| u8::try_from(b).ok()).unwrap_or(8),
+                None,
+            ))
+        }
+        "hevc" => {
+            let r = craft_hevc::diagnose_hevc_stream(unit);
+            Some((
+                r.width?,
+                r.height?,
+                r.bit_depth.and_then(|b| u8::try_from(b).ok()).unwrap_or(8),
+                None,
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// MPEG transport and program streams (`.ts`, `.m2ts`, `.mts`, `.mpg`, `.vob`).
+fn mpeg_ts(path: &Path) -> Option<Probed> {
+    use craft_mpegts::{Codec, Kind};
+    let src = FileSource::open(path)?;
+    let m = craft_mpegts::open(&src).ok()?;
+    let seconds = |s: &craft_mpegts::Stream| {
+        s.pts_range()
+            .map(|(a, b)| (b - a) as f64 / 90_000.0)
+            .filter(|d| *d > 0.0)
+    };
+
+    let video = m.find(Kind::Video, |_| true).and_then(|si| {
+        let s = m.streams.get(si)?;
+        let codec = match &s.codec {
+            Codec::H264 => "h264",
+            Codec::Hevc => "hevc",
+            Codec::Mpeg2Video => "mpeg2video",
+            Codec::Mpeg1Video => "mpeg1video",
+            _ => return None,
+        };
+        let key = s.units.iter().position(|u| u.key).unwrap_or(0);
+        let unit = m.read_unit(&src, si, key).ok()?;
+        let (width, height, bit_depth, header_fps) = elementary_video(codec, &unit)?;
+        // Frames over the timestamp span, one frame duration included.
+        let fps = header_fps.or_else(|| {
+            let n = s.units.len() as f64;
+            seconds(s)
+                .filter(|_| n > 1.0)
+                .map(|d| ((n - 1.0) / d) as f32)
+        });
+        Some(VideoStreamInfo {
+            codec: codec.into(),
+            width,
+            height,
+            fps: fps.unwrap_or(0.0),
+            color_space: "Unknown".into(),
+            hdr: false,
+            bit_depth,
+        })
+    });
+
+    // Audio in a private stream (type 0x06 without a descriptor, as BDAV/M2TS writers do) is
+    // identified by its first frame's header.
+    let sniffed = |si: usize| -> Option<Codec> {
+        let unit = m.read_unit(&src, si, 0).ok()?;
+        [Codec::AacAdts, Codec::Ac3, Codec::Eac3, Codec::MpegAudio]
+            .into_iter()
+            .find(|c| craft_mpegts::frame_info(c, &unit).is_some())
+    };
+    let audio_stream = m
+        .find(Kind::Audio, |_| true)
+        .map(|si| (si, None))
+        .or_else(|| {
+            m.streams
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| matches!(s.codec, Codec::Unknown(_)))
+                .find_map(|(si, _)| sniffed(si).map(|c| (si, Some(c))))
+        });
+    let audio = audio_stream.and_then(|(si, sniffed_codec)| {
+        let s = m.streams.get(si)?;
+        let stream_codec = sniffed_codec.unwrap_or_else(|| s.codec.clone());
+        let unit = m.read_unit(&src, si, 0).ok()?;
+        let info = craft_mpegts::frame_info(&stream_codec, &unit);
+        let codec = match (&stream_codec, info.map(|i| i.variant)) {
+            (Codec::MpegAudio, Some(3)) => "mp3".to_string(),
+            (Codec::MpegAudio, Some(1)) => "mp1".to_string(),
+            (Codec::MpegAudio, _) => "mp2".to_string(),
+            (Codec::AacAdts | Codec::AacLatm, _) => "aac".to_string(),
+            (Codec::Ac3, _) => "ac3".to_string(),
+            (Codec::Eac3, _) => "eac3".to_string(),
+            (Codec::Dts, _) => "dts".to_string(),
+            (Codec::TrueHd, _) => "truehd".to_string(),
+            (Codec::LpcmBluray | Codec::LpcmDvd, _) => "pcm".to_string(),
+            (other, _) => other.name().to_ascii_lowercase(),
+        };
+        let (sample_rate, channels) = match (info, s.lpcm) {
+            (Some(i), _) => (i.sample_rate, i.channels),
+            (None, Some(l)) => (l.sample_rate, l.channels),
+            (None, None) => (0, 0),
+        };
+        let bytes: u64 = s.units.iter().map(|u| u64::from(u.size)).sum();
+        let kbps = seconds(s).map_or(0, |d| (bytes as f64 * 8.0 / d / 1000.0).round() as u32);
+        Some(AudioStreamInfo {
+            codec,
+            sample_rate,
+            channels: u8::try_from(channels).unwrap_or(u8::MAX),
+            bit_depth: s.lpcm.and_then(|l| u8::try_from(l.bits).ok()).unwrap_or(0),
+            bitrate_kbps: kbps,
+        })
+    });
+
+    let duration = m
+        .streams
+        .iter()
+        .filter(|s| matches!(s.kind(), Kind::Video | Kind::Audio))
+        .filter_map(seconds)
+        .fold(None, |a: Option<f64>, d| Some(a.map_or(d, |a| a.max(d))))
+        .and_then(finite);
+    (video.is_some() || audio.is_some()).then_some((video, audio, duration))
+}
+
+/// MXF: picture and sound descriptors from the header metadata.
+fn mxf(path: &Path) -> Option<Probed> {
+    use craft_mxf::{Codec, TrackKind};
+    let src = FileSource::open(path)?;
+    let m = craft_mxf::open(&src).ok()?;
+    let rate = |r: craft_mxf::Rational| {
+        (r.den > 0 && r.num > 0).then(|| f64::from(r.num) / f64::from(r.den))
+    };
+
+    let pic = m.tracks.iter().find(|t| t.kind == TrackKind::Picture);
+    let video = pic.and_then(|t| {
+        let p = t.picture.as_ref()?;
+        let codec = match &t.codec {
+            Codec::Avc { .. } => "h264",
+            Codec::Vc3 => "dnxhd",
+            Codec::ProRes { .. } => "prores",
+            Codec::Mpeg2 => "mpeg2video",
+            Codec::Mpeg4Visual => "mpeg4",
+            Codec::Jpeg2000 => "jpeg2000",
+            Codec::Dv => "dvvideo",
+            Codec::Uncompressed => "rawvideo",
+            _ => "unknown",
+        };
+        let (width, height) = if p.display_width > 0 && p.display_height > 0 {
+            (p.display_width, p.display_height)
+        } else {
+            (p.stored_width, p.stored_height)
+        };
+        Some(VideoStreamInfo {
+            codec: codec.into(),
+            width,
+            height,
+            fps: rate(t.edit_rate).unwrap_or(0.0) as f32,
+            color_space: "Unknown".into(),
+            hdr: false,
+            bit_depth: u8::try_from(p.component_depth)
+                .ok()
+                .filter(|b| *b > 0)
+                .unwrap_or(8),
+        })
+    });
+    let audio = m
+        .tracks
+        .iter()
+        .find(|t| t.kind == TrackKind::Sound)
+        .and_then(|t| {
+            let s = t.sound.as_ref()?;
+            let sample_rate = rate(s.sample_rate)?.round() as u32;
+            let bits = u8::try_from(s.bits).unwrap_or(0);
+            Some(AudioStreamInfo {
+                codec: pcm_name(false, false, s.bits as u16),
+                sample_rate,
+                channels: u8::try_from(s.channels).unwrap_or(u8::MAX),
+                bit_depth: bits,
+                bitrate_kbps: (u64::from(sample_rate) * u64::from(s.channels) * u64::from(s.bits)
+                    / 1000) as u32,
+            })
+        });
+    let duration = pic
+        .or_else(|| m.tracks.first())
+        .and_then(|t| {
+            Some(t.duration.unwrap_or(t.samples.len() as i64) as f64 / rate(t.edit_rate)?)
+        })
+        .and_then(finite);
+    (video.is_some() || audio.is_some()).then_some((video, audio, duration))
 }
 
 fn is_bmff(b: &[u8]) -> bool {
@@ -191,6 +440,15 @@ fn entry_name(t: &craft_isobmff::Track) -> String {
     match &entry.format.0 {
         b"mp4a" => "aac".into(),
         b"mp4v" => "mpeg4".into(),
+        // XDCAM, HDV and IMX: MPEG-2 video under QuickTime codes.
+        f if f.starts_with(b"xd")
+            || f.starts_with(b"hdv")
+            || f.starts_with(b"mx")
+            || f == b"mpg2"
+            || f == b"m2v1" =>
+        {
+            "mpeg2video".into()
+        }
         b"avc1" | b"avc3" => "h264".into(),
         b"hvc1" | b"hev1" => "hevc".into(),
         other => String::from_utf8_lossy(other).trim().to_ascii_lowercase(),

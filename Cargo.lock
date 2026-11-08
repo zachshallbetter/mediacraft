@@ -561,11 +561,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-av1"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-bitstream",
+ "mediacraft-testkit",
+ "rayon",
+ "rustix 1.1.5",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "craft-cms"
 version = "0.1.0"
 dependencies = [
  "moxcms",
  "rayon",
+]
+
+[[package]]
+name = "craft-dnx"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-bitstream",
+ "mediacraft-testkit",
+ "rayon",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -654,6 +675,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-mpeg2v"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-testkit",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-mpegts"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-testkit",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-mxf"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "mediacraft-testkit",
+]
+
+[[package]]
 name = "craft-opus"
 version = "0.1.0"
 dependencies = [
@@ -735,6 +781,24 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "craft-vp8"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-testkit",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-vp9"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-bitstream",
+ "mediacraft-testkit",
+ "rayon",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1854,9 +1918,14 @@ version = "0.1.0"
 dependencies = [
  "craft-archive",
  "craft-atomic",
+ "craft-h264",
+ "craft-hevc",
  "craft-image",
  "craft-isobmff",
  "craft-matroska",
+ "craft-mpeg2v",
+ "craft-mpegts",
+ "craft-mxf",
  "craft-pdf",
  "mediacraft-bitstream",
  "mediacraft-protocol",
@@ -1932,6 +2001,8 @@ name = "mediacraft-preview"
 version = "0.1.0"
 dependencies = [
  "craft-aac",
+ "craft-av1",
+ "craft-dnx",
  "craft-flac",
  "craft-h264",
  "craft-h264enc",
@@ -1939,8 +2010,13 @@ dependencies = [
  "craft-image",
  "craft-isobmff",
  "craft-matroska",
+ "craft-mpeg2v",
+ "craft-mpegts",
+ "craft-mxf",
  "craft-opus",
  "craft-prores",
+ "craft-vp8",
+ "craft-vp9",
  "mediacraft-bitstream",
  "thiserror 2.0.21",
 ]
@@ -1953,6 +2029,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "mediacraft-testkit"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "png 0.18.1",
+ "tempfile",
 ]
 
 [[package]]

@@ -25,6 +25,15 @@ members = [
     "crates/archive",
     "crates/image",
     "crates/preview",
+    # Vendored from storytold/filmcraft; see docs/VENDORED.md.
+    "crates/av1",
+    "crates/vp9",
+    "crates/vp8",
+    "crates/dnx",
+    "crates/mpeg2v",
+    "crates/mpegts",
+    "crates/mxf",
+    "crates/testkit",
     # Vendored from storytold/craft-libs; see docs/VENDORED.md.
     "crates/atomic",
     "crates/settings",
@@ -77,6 +86,16 @@ craft-archive = { path = "crates/archive" }
 craft-image = { path = "crates/image" }
 mediacraft-preview = { path = "crates/preview" }
 
+# Vendored from storytold/filmcraft (docs/VENDORED.md).
+craft-av1 = { path = "crates/av1" }
+craft-vp9 = { path = "crates/vp9" }
+craft-vp8 = { path = "crates/vp8" }
+craft-dnx = { path = "crates/dnx" }
+craft-mpeg2v = { path = "crates/mpeg2v" }
+craft-mpegts = { path = "crates/mpegts" }
+craft-mxf = { path = "crates/mxf" }
+mediacraft-testkit = { path = "crates/testkit" }
+
 # Vendored from storytold/craft-libs (docs/VENDORED.md): MediaCraft builds from this tree alone.
 craft-ui = { path = "crates/ui" }
 craft-quit = { path = "crates/quit" }
@@ -100,3 +119,20 @@ image = { version = "0.25", default-features = false }
 jpeg-decoder = { version = "0.3", default-features = false }
 quick-xml = "0.41"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+# Codec hot loops: the spec-vector tests of the vendored FilmCraft decoders are minutes slower in
+# an unoptimised debug build (FilmCraft builds them the same way).
+[profile.dev.package.craft-av1]
+opt-level = 3
+
+[profile.dev.package.craft-vp9]
+opt-level = 3
+
+[profile.dev.package.craft-vp8]
+opt-level = 3
+
+[profile.dev.package.craft-dnx]
+opt-level = 3
+
+[profile.dev.package.craft-mpeg2v]
+opt-level = 3

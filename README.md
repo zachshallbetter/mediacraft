@@ -77,7 +77,7 @@ Rather than designing shared library abstractions in isolation, components are f
 
 ## 3. Workspace Topology
 
-MediaCraft is organized as an integrated cargo workspace containing 29 high-performance, `#![forbid(unsafe_code)]` member crates:
+MediaCraft is organized as an integrated cargo workspace containing 37 high-performance, `#![forbid(unsafe_code)]` member crates:
 
 ```text
 mediacraft/
@@ -103,12 +103,19 @@ mediacraft/
 │   │   ├── h264/               (H.264 / AVC video decoder, CAVLC/CABAC entropy, deblocking)
 │   │   ├── h264enc/            (H.264 / AVC video encoder, rate control, multi-pass VBR)
 │   │   ├── hevc/               (H.265 / HEVC video encoder & decoder, SAO, wavefront processing)
-│   │   └── prores/             (Apple ProRes 422/4444 decoder, frame headers, DCT reconstruction)
+│   │   ├── prores/             (Apple ProRes 422/4444 decoder, frame headers, DCT reconstruction)
+│   │   ├── av1/                (craft-av1: AV1 decoder, from FilmCraft)
+│   │   ├── vp9/                (craft-vp9: VP9 decoder, 8–12-bit, from FilmCraft)
+│   │   ├── vp8/                (craft-vp8: VP8 decoder, from FilmCraft)
+│   │   ├── mpeg2v/             (craft-mpeg2v: MPEG-1/2 video decoder, from FilmCraft)
+│   │   └── dnx/                (craft-dnx: DNxHD/DNxHR (VC-3) decoder and encoder, from FilmCraft)
 │   │
 │   ├── Container & Bitstream Primitives (Staged for craft-libs):
 │   │   ├── bitstream/          (Pure bit I/O, MSB/LSB readers/writers, Exp-Golomb, RBSP)
 │   │   ├── isobmff/            (ISO Base Media File Format parser/muxer: MP4, MOV, faststart)
 │   │   ├── matroska/           (Matroska / WebM container parser: EBML header, Cluster parsing)
+│   │   ├── mpegts/             (craft-mpegts: MPEG-2 transport and program stream demuxer, from FilmCraft)
+│   │   ├── mxf/                (craft-mxf: MXF demuxer and writer, from FilmCraft)
 │   │   └── media/              (mediacraft-types: stream descriptors, buffer views, errors, rational time; see docs/CRAFT_MEDIA_NAMING.md)
 │   │
 │   ├── Documents, Layered Images & Safe Packaging (Staged for craft-libs):
@@ -136,8 +143,9 @@ mediacraft/
 
 ## 3a. Standalone Build
 
-MediaCraft builds from this repository alone: the craft-libs crates it uses (`craft-ui`, `craft-quit`,
-`craft-settings`, `craft-atomic`, `craft-cms`) are vendored into `crates/` at pinned commits. See
+MediaCraft builds from this repository alone. The craft-libs crates it uses (`craft-ui`, `craft-quit`,
+`craft-settings`, `craft-atomic`, `craft-cms`) and FilmCraft's AV1, VP9, VP8, MPEG-2 and DNx decoders
+and MPEG-TS and MXF demuxers are vendored into `crates/` at pinned commits. See
 [`docs/VENDORED.md`](docs/VENDORED.md) for sources, local changes and updating, and
 [`docs/CRAFT_MEDIA_NAMING.md`](docs/CRAFT_MEDIA_NAMING.md) for what independence still needs.
 

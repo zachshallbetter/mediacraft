@@ -43,7 +43,7 @@ here depends on upstream `craft-media`.
 |---|---|---|
 | Catalogue indexing (`catalog/src/av_probe.rs`) | `ffprobe` for every video and audio file | In-tree: `craft-isobmff`, `craft-matroska` and header parsers. Agrees with ffprobe on 299 local files (see the commit). No ffprobe call remains. |
 | Still previews (`app/src/media_preview.rs`) | `image` crate, ffmpeg fallback | `craft-image`. ffmpeg only for HEIC, AVIF and camera raw. |
-| Video poster frames | `ffmpeg` | `mediacraft-preview` (MP4/MOV/MKV with H.264, HEVC, ProRes). ffmpeg only for VP9, AV1 and MPEG-4 Part 2. |
+| Video poster frames | `ffmpeg` | `mediacraft-preview`: MP4/MOV, MKV/WebM, MPEG-TS/PS and MXF with H.264, HEVC, VP8, VP9, AV1, MPEG-1/2, ProRes, DNxHD/HR and MJPEG. ffmpeg only for MPEG-4 Part 2, JPEG 2000, DV and AVI. |
 | Audio waveforms | `ffmpeg` | `mediacraft-preview` (WAV, AIFF, MP4/MKV PCM, AAC, Opus, Ogg Opus). ffmpeg only for FLAC, MP3, Vorbis, E-AC-3 and raw ADTS. |
 
 The app runs without ffmpeg installed; files in the "only" columns then show no preview.
@@ -78,8 +78,8 @@ against `craft-bitstream` with few changes.
 
 1. ~~Replace `ffprobe` in the catalogue.~~ Done.
 2. ~~Replace `ffmpeg` poster frames and waveforms for the codecs in this tree.~~ Done.
-3. Bring the FilmCraft decoders in (VP9, AV1, VP8, then MXF, MPEG-TS, MPEG-2 and DNx), each as
-   its own crate with its tests and an origin note.
+3. ~~Bring the FilmCraft decoders in.~~ Done: VP9, AV1, VP8, DNx, MPEG-2, MPEG-TS/PS and MXF
+   (`docs/VENDORED.md`), wired into probing and poster frames.
 4. Bring HEIF decode in (HEVC intra is already here in `craft-hevc`), so iPhone photos need no
    ffmpeg.
 5. Audio decoders for FLAC, MP3 and Vorbis, and ADTS framing for raw AAC files.

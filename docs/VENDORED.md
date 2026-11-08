@@ -11,10 +11,29 @@ into `crates/` rather than fetched as Git dependencies.
 | `craft-ui` | `crates/ui` | storytold/craft-libs `crates/ui` | `666c358065261a2816b376fa3bb10538dbf53040` | app |
 | `craft-cms` | `crates/cms` | storytold/craft-libs `crates/cms` | `904f55bb210c5a0570051204ebd210043d8e50ea` | craft-image |
 
-The first four are the commit MediaCraft was already pinned to. `craft-cms` is from craft-libs
+| `craft-av1` | `crates/av1` | storytold/filmcraft `crates/av1` (`filmcraft-av1`) | `4d571c2a666cace681209a1f617f68cd9cefefed` | mediacraft-preview |
+| `craft-vp9` | `crates/vp9` | storytold/filmcraft `crates/vp9` | same | mediacraft-preview |
+| `craft-vp8` | `crates/vp8` | storytold/filmcraft `crates/vp8` | same | mediacraft-preview |
+| `craft-dnx` | `crates/dnx` | storytold/filmcraft `crates/dnx` | same | mediacraft-preview |
+| `craft-mpeg2v` | `crates/mpeg2v` | storytold/filmcraft `crates/mpeg2v` | same | mediacraft-preview, catalog |
+| `craft-mpegts` | `crates/mpegts` | storytold/filmcraft `crates/mpegts` | same | mediacraft-preview, catalog |
+| `craft-mxf` | `crates/mxf` | storytold/filmcraft `crates/mxf` | same | mediacraft-preview, catalog |
+| `mediacraft-testkit` | `crates/testkit` | storytold/filmcraft `crates/testkit` (dev-dependency only) | same | the seven above |
+
+The first four craft-libs crates are the commit MediaCraft was already pinned to. `craft-cms` is from craft-libs
 `main` on 2026-11-07.
 
 ## Local changes
+
+**FilmCraft crates.** These are renamed `filmcraft-<x>` → `craft-<x>`, matching MediaCraft's
+other codec crates, and `filmcraft-testkit` → `mediacraft-testkit`. Their two internal
+dependencies are repointed: `filmcraft-bitstream` → `mediacraft-bitstream`, which carries the same
+`BitReader`, and the testkit. References in sources and docs are rewritten to match. A
+`rustfmt.toml` with FilmCraft's formatting (`max_width = 160`) is added. Nothing else changes.
+The root `Cargo.toml` builds the five decoders at `opt-level = 3` in dev profiles, as FilmCraft
+does, because their spec-vector tests are minutes slower without it.
+
+**craft-libs crates.**
 
 Each crate is byte-identical to its source commit, with one addition: a `rustfmt.toml` with
 craft-libs' formatting (`max_width = 150`). That lets `cargo fmt --all --check` pass without
@@ -30,6 +49,10 @@ The workspace changes that make them build here are:
 Licences and third-party notices (two CC0 ICC profiles, Fogra's FOGRA39 data) are in `NOTICE`.
 
 ## Updating from upstream
+
+For the FilmCraft crates, `git archive` them from filmcraft at the new commit and apply the same
+renames: package names, `filmcraft_`/`filmcraft-` references, and the bitstream and testkit
+dependencies. Then diff against `crates/<x>`. For craft-libs:
 
 ```sh
 REV=<craft-libs commit>

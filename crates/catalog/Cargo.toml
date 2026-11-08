@@ -13,6 +13,11 @@ craft-archive = { workspace = true }
 craft-image = { workspace = true }
 craft-isobmff = { workspace = true }
 craft-matroska = { workspace = true }
+craft-mpegts = { workspace = true }
+craft-mxf = { workspace = true }
+craft-mpeg2v = { workspace = true }
+craft-h264 = { workspace = true }
+craft-hevc = { workspace = true }
 craft-atomic = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }

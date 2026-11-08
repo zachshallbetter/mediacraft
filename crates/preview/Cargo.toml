@@ -16,6 +16,13 @@ craft-matroska = { workspace = true }
 craft-h264 = { workspace = true }
 craft-hevc = { workspace = true }
 craft-prores = { workspace = true }
+craft-vp9 = { workspace = true }
+craft-av1 = { workspace = true }
+craft-vp8 = { workspace = true }
+craft-mpeg2v = { workspace = true }
+craft-dnx = { workspace = true }
+craft-mpegts = { workspace = true }
+craft-mxf = { workspace = true }
 craft-aac = { workspace = true }
 craft-flac = { workspace = true }
 craft-opus = { workspace = true }

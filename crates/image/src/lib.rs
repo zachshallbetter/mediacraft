@@ -60,6 +60,7 @@ mod resize;
 mod thumbnail;
 mod tiff;
 mod xmp;
+pub mod yuv;
 
 pub use container::{Embedded, embedded};
 pub use decode::{DecodeOptions, Decoded, decode};

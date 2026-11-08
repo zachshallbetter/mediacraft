@@ -1,7 +1,7 @@
-//! Planar Y′CbCr to 8-bit RGBA (ITU-T H.273 matrices, limited or full range, any chroma
+//! Planar Y′CbCr (and G/B/R) to 8-bit RGBA (ITU-T H.273 matrices, limited or full range, any chroma
 //! subsampling the decoders produce, 8- to 16-bit samples).
 
-use craft_image::Rgba8Image;
+use crate::Rgba8Image;
 
 /// Luma coefficients (Kr, Kb) of the matrices the decoders signal.
 fn coefficients(matrix: u8, height: u32) -> (f32, f32) {
@@ -18,15 +18,19 @@ fn coefficients(matrix: u8, height: u32) -> (f32, f32) {
 }
 
 /// One plane: samples, stride in samples, and its size.
-pub(crate) struct Plane<'a, T> {
+pub struct Plane<'a, T> {
+    /// Samples.
     pub data: &'a [T],
+    /// Samples per row.
     pub stride: usize,
+    /// Plane width.
     pub width: u32,
+    /// Plane height.
     pub height: u32,
 }
 
 /// Convert planes to RGBA. `T` is `u8` or `u16`; `bits` is the significant bit depth.
-pub(crate) fn to_rgba<T: Copy + Into<u32>>(
+pub fn to_rgba<T: Copy + Into<u32>>(
     y: Plane<'_, T>,
     cb: Plane<'_, T>,
     cr: Plane<'_, T>,
@@ -78,6 +82,51 @@ pub(crate) fn to_rgba<T: Copy + Into<u32>>(
                 None => 255,
             };
             out.extend_from_slice(&[to8(r), to8(g), to8(b), a]);
+        }
+    }
+    Rgba8Image::new(w, h, out).ok()
+}
+
+/// Planes that hold G, B and R (DNx RGB, VP9 sRGB, AV1 with the identity matrix).
+pub fn rgb_to_rgba<T: Copy + Into<u32>>(
+    g: Plane<'_, T>,
+    b: Plane<'_, T>,
+    r: Plane<'_, T>,
+    alpha: Option<Plane<'_, T>>,
+    bits: u32,
+    full_range: bool,
+) -> Option<Rgba8Image> {
+    let (w, h) = (g.width, g.height);
+    if w == 0
+        || h == 0
+        || bits == 0
+        || bits > 16
+        || (b.width, b.height, r.width, r.height) != (w, h, w, h)
+    {
+        return None;
+    }
+    let max = ((1u32 << bits) - 1) as f32;
+    let shift = bits.saturating_sub(8);
+    let (off, scale) = if full_range {
+        (0.0, max)
+    } else {
+        ((16u32 << shift) as f32, (219u32 << shift) as f32)
+    };
+    let mut out = Vec::with_capacity(w as usize * h as usize * 4);
+    for row in 0..h as usize {
+        for col in 0..w as usize {
+            let at = |p: &Plane<'_, T>| {
+                p.data
+                    .get(row * p.stride + col)
+                    .map(|v| ((*v).into() as f32 - off) / scale)
+            };
+            let a = match &alpha {
+                Some(p) => {
+                    ((*p.data.get(row * p.stride + col)?).into() as f32 / max * 255.0 + 0.5) as u8
+                }
+                None => 255,
+            };
+            out.extend_from_slice(&[to8(at(&r)?), to8(at(&g)?), to8(at(&b)?), a]);
         }
     }
     Rgba8Image::new(w, h, out).ok()
