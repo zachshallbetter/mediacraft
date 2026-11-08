@@ -79,6 +79,7 @@ mod psd_compose;
 mod raw;
 mod rendition;
 mod resize;
+mod svg_sanitize;
 mod thumbnail;
 mod tiff;
 mod xmp;
@@ -100,6 +101,7 @@ pub use pixels::{Limits, Rgba8Image};
 pub use psd_compose::{CompositeReport, composite_layers};
 pub use rendition::{MetadataPolicy, Rendition, RenditionSpec, render};
 pub use resize::{Filter, ResizeOptions, fit_within, resize, resize_to_fit};
+pub use svg_sanitize::{SanitizeLimits, sanitize_svg, sanitize_svg_with};
 pub use thumbnail::{Thumbnail, ThumbnailOptions, ThumbnailSource, thumbnail};
 pub use xmp::{Xmp, XmpError, parse_xmp};
 

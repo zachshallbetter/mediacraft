@@ -61,6 +61,7 @@ pub fn read_header(bytes: &[u8]) -> Result<Header> {
         Format::Pcx => formats::pcx::header(bytes).ok_or_else(|| cut(format))?,
         Format::Fits => formats::fits::header(bytes).ok_or_else(|| cut(format))?,
         Format::Dicom => formats::dicom::header(bytes).ok_or_else(|| cut(format))?,
+        Format::Svg => formats::svg::header(bytes)?,
     };
     // HEIF's own transform properties are authoritative and its EXIF orientation is
     // informational only (ISO/IEC 23008-12 §A.2.1); TIFF tag 274 is the EXIF value itself.

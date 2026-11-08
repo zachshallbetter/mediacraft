@@ -17,6 +17,7 @@ pub(crate) mod png;
 pub(crate) mod pnm;
 pub(crate) mod psd;
 pub(crate) mod qoi;
+pub(crate) mod svg;
 pub(crate) mod tga;
 pub(crate) mod tiff_file;
 pub(crate) mod webp;

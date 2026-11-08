@@ -20,7 +20,7 @@ workspace = true
 default = ["full"]
 full = [
     "jpeg", "png", "webp", "gif", "bmp", "tiff", "psd", "heic", "avif", "jxl", "raw", "exr", "hdr",
-    "dds", "ico", "pnm", "qoi", "tga", "dpx", "pcx", "fits", "dicom",
+    "dds", "ico", "pnm", "qoi", "tga", "dpx", "pcx", "fits", "dicom", "svg",
 ]
 # JPEG decoding (with DCT-domain downscaling) and encoding.
 jpeg = ["image/jpeg", "dep:jpeg-decoder"]
@@ -48,6 +48,9 @@ ico = ["image/ico"]
 pnm = ["image/pnm"]
 qoi = ["image/qoi"]
 tga = ["image/tga"]
+# SVG rasterising (usvg + resvg, no text and no system fonts). The sanitiser, sniffing and headers
+# are always built.
+svg = ["dep:usvg", "dep:resvg"]
 # Decoders written in this crate: no dependencies, the feature only switches decoding on.
 dpx = []
 pcx = []
@@ -55,6 +58,11 @@ fits = []
 dicom = []
 
 [dependencies]
+# SVG rendering. resvg 0.45 as in vectorcraft; usvg 0.45 is the version it needs. `text` is left
+# out on purpose: no shaping and no system fonts. `raster-images` is the JPEG, GIF and WebP
+# decoders for `data:` images (PNG is always there).
+usvg = { workspace = true, optional = true }
+resvg = { workspace = true, optional = true }
 # Pixel codecs. `image` is the decoder and encoder for the raster formats (each codec is behind
 # the matching feature above) and supplies the resampler; jpeg-decoder adds DCT-domain
 # downscaling, which `image` does not expose, for fast JPEG thumbnails.
@@ -63,6 +71,7 @@ jpeg-decoder = { workspace = true, optional = true }
 # ICC profile parsing and transforms, shared with the rest of the Craft suite.
 craft-cms = { workspace = true }
 quick-xml = { workspace = true }
+roxmltree = { workspace = true }
 # Layered PSD/PSB composites and their image resources, from this workspace.
 craft-psd = { workspace = true, optional = true }
 # HEIC and AVIF stills, from this workspace.
@@ -93,6 +102,10 @@ required-features = ["png", "heic", "avif"]
 [[test]]
 name = "raw"
 required-features = ["raw"]
+
+[[test]]
+name = "svg"
+required-features = ["svg", "png"]
 
 [[test]]
 name = "robustness"

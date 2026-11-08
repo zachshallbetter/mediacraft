@@ -18,13 +18,14 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 
 | Step | API | Notes |
 |---|---|---|
-| Detect | `sniff` | JPEG, PNG, GIF, WebP, TIFF/BigTIFF, BMP, PSD/PSB, HEIF, AVIF, JPEG XL, OpenEXR, Radiance HDR, DDS, ICO/CUR, PNM, QOI, TGA, DPX, PCX, FITS, DICOM, camera raw |
+| Detect | `sniff` | JPEG, PNG, GIF, WebP, TIFF/BigTIFF, BMP, PSD/PSB, HEIF, AVIF, JPEG XL, OpenEXR, Radiance HDR, DDS, ICO/CUR, PNM, QOI, TGA, DPX, PCX, FITS, DICOM, SVG/SVGZ, camera raw |
 | Header | `read_header` | Size, depth, alpha, animation, orientation, without decoding pixels |
 | Metadata blocks | `embedded` | EXIF, XMP, ICC (multi-chunk JPEG, compressed PNG) and IPTC, as raw bytes |
 | Metadata | `Metadata::from_embedded`, `parse_exif`, `parse_xmp`, `parse_iptc` | Camera, lens, exposure, capture time (via `chrono`), GPS, title, caption, alt text, keywords, creators, rights, location |
 | Probe | `probe`, `probe_file` | All of the above in one call; `probe_file` reads a 16 MiB prefix |
 | Colour | `icc_info`, `Decoded::convert_to_srgb` | Profile description; conversion to sRGB through `craft-cms` |
-| Decode | `decode` | RGBA8; DCT-scaled JPEG decode when a target size is given |
+| Decode | `decode` | RGBA8; DCT-scaled JPEG decode and sharp vector rendering when a target size is given |
+| Sanitise | `sanitize_svg` | Allowlist SVG sanitiser (always built, no renderer needed) |
 | Resize | `resize`, `resize_to_fit` | Linear light, premultiplied alpha, box prefilter then Lanczos-3 |
 | Thumbnail | `thumbnail` | Embedded EXIF preview when big enough, else scaled decode |
 | Rendition | `render` | Fit, sRGB, upright, encode, metadata policy |
@@ -55,6 +56,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | PCX | yes | none | yes: RLE, 1/2/4-bit with header palette, 8-bit with VGA palette, 24-bit planes | no |
 | FITS | yes | none | yes: primary HDU, BITPIX 8/16/32/-32/-64, linear min/max stretch to 8 bits (lossy) | no |
 | DICOM | yes | none | uncompressed transfer syntaxes only, grey (window or min/max) and RGB; compressed syntaxes are refused | no |
+| SVG / SVGZ | yes (`width`/`height` or `viewBox`) | none | yes: `usvg` + `resvg`, sanitised first; fitted to the target size, else intrinsic size. `data:` images only; no text yet (see below) | no |
 | TGA | yes (v2 footer, else a strict header check) | none | yes, including RLE and colour-mapped | no |
 
 ## Cargo features
@@ -91,6 +93,7 @@ and the size of non-TIFF raws such as CR3 (`raw`).
 | `exr` | OpenEXR decode | `exr` |
 | `hdr`, `dds`, `ico`, `pnm`, `qoi`, `tga` | Decode through `image` | none beyond `image` (`ico` uses `image`'s own BMP and PNG; `qoi` adds `qoi`) |
 | `dpx`, `pcx`, `fits`, `dicom` | Decode, written in this crate | none |
+| `svg` | SVG / SVGZ rendering | `usvg` and `resvg` (`tiny-skia`, `png`, `roxmltree`, `svgtypes`, and `gif`, `image-webp`, `zune-jpeg` for `data:` images); no text shaping, no fonts |
 | `full` | All of the above (the default) | all of the above |
 
 Always present: `image` (the resampler; with no codec it adds `moxcms`, `bytemuck`, `byteorder-lite`
@@ -152,8 +155,31 @@ working space, HDR gain maps, proofing and print. It uses `craft-cms` where Ligh
   raws) gets a colour matrix and tone curve fitted to the camera's own JPEG. A cropped preview is
   matched against the same crop of the sensor, and the full frame is developed.
 
+## SVG
+
+`sanitize_svg(bytes)` is always built and has no renderer behind it, so a service that only stores
+or serves SVG can call it with every feature off. It parses with `roxmltree` and writes back plain
+SVG from an allowlist of elements and attributes. It removes `script`, `foreignObject`,
+animation, every `on*` attribute, every `href` that is not a local `#fragment` or a
+`data:image/png|jpeg|gif|webp` URI, `javascript:` anywhere, `<style>` content with `@import`,
+`expression(`, CSS escapes or a `url(` that is not a fragment, comments, processing instructions,
+DOCTYPE and entity declarations. Internal entities are expanded first; external ones are never
+read (a reference to one is an error). Element count, depth, `<use>` expansion (a "billion laughs"
+built from nested `<use>`) and decompressed size are capped, and a document over a cap is an error.
+`SanitizeLimits` and `sanitize_svg_with` change the caps.
+
+With the `svg` feature `decode` rasterises SVG and SVGZ. Every document goes through the sanitiser
+first. With `DecodeOptions::fit` the result is the largest size within it that keeps the aspect
+ratio (up as well as down); without it the intrinsic size, which `Limits` must allow. Images
+load from `data:` URIs only: a path or URL in `href` never opens a file or a socket.
+
+Text does not render yet. `usvg` is built without its `text` feature, so `<text>` is skipped and
+system fonts are never read. Rendering text with fonts embedded in the document or from the shared
+font stack is tracked in #24.
+
 ## Not yet
 
+* **SVG text:** needs the shared font stack (#24).
 * **HEIC alpha:** HEIF stores alpha as a monochrome (4:0:0) HEVC image, which `craft-hevc` does
   not decode yet; such images decode opaque, with correct colour. AVIF alpha is decoded.
 * **JPEG XL:** headers and decoding.

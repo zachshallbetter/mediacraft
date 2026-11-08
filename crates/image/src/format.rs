@@ -52,6 +52,8 @@ pub enum Format {
     Fits,
     /// DICOM (medical images, uncompressed transfer syntaxes).
     Dicom,
+    /// SVG (and gzip-compressed `.svgz`).
+    Svg,
     /// Camera raw: TIFF-structured (DNG, CR2, NEF, ARW, …) or other containers (CR3, RAF, …).
     Raw,
 }
@@ -81,6 +83,7 @@ impl Format {
             Format::Pcx => "pcx",
             Format::Fits => "fits",
             Format::Dicom => "dcm",
+            Format::Svg => "svg",
             Format::Raw => "raw",
         }
     }
@@ -109,6 +112,7 @@ impl Format {
             Format::Pcx => "image/x-pcx",
             Format::Fits => "image/fits",
             Format::Dicom => "application/dicom",
+            Format::Svg => "image/svg+xml",
             Format::Raw => "image/x-raw",
         }
     }
@@ -144,6 +148,7 @@ impl Format {
             Format::Pcx => (cfg!(feature = "pcx"), "the `pcx` feature is off"),
             Format::Fits => (cfg!(feature = "fits"), "the `fits` feature is off"),
             Format::Dicom => (cfg!(feature = "dicom"), "the `dicom` feature is off"),
+            Format::Svg => (cfg!(feature = "svg"), "the `svg` feature is off"),
             Format::Raw => (cfg!(feature = "raw"), "the `raw` feature is off"),
         };
         (!built).then_some(why)
@@ -190,6 +195,7 @@ impl fmt::Display for Format {
             Format::Pcx => "PCX",
             Format::Fits => "FITS",
             Format::Dicom => "DICOM",
+            Format::Svg => "SVG",
             Format::Raw => "camera raw",
         };
         f.write_str(name)
@@ -296,6 +302,9 @@ pub fn sniff(b: &[u8]) -> Option<Format> {
     }
     if tga_header_plausible(b) {
         return Some(Format::Tga);
+    }
+    if formats::svg::sniff(b) {
+        return Some(Format::Svg);
     }
     None
 }

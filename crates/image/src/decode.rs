@@ -101,7 +101,11 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
         return Err(Error::Unsupported(format, why));
     }
     let header = read_header(bytes)?;
-    opts.limits.check_size(header.width, header.height)?;
+    // A vector's stored size says nothing about the raster it will be drawn at; the SVG decoder
+    // checks the size it draws.
+    if format != Format::Svg {
+        opts.limits.check_size(header.width, header.height)?;
+    }
     let blocks = embedded(bytes);
     let exif = blocks.exif.as_deref().and_then(parse_exif);
     let mut icc = blocks.icc.map(|c| c.into_owned());
@@ -142,6 +146,9 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
         Format::Pcx => crate::formats::pcx::decode(bytes, &opts.limits)?,
         Format::Fits => crate::formats::fits::decode(bytes, &opts.limits)?,
         Format::Dicom => crate::formats::dicom::decode(bytes, &opts.limits)?,
+        Format::Svg => guarded(format, || {
+            crate::formats::svg::decode(bytes, &opts.limits, opts.fit)
+        })?,
         Format::Exr | Format::Hdr => float(bytes, format, &opts.limits)?,
         _ => full(bytes, format, &opts.limits)?,
     };

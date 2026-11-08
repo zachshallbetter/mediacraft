@@ -144,6 +144,9 @@ jpeg-decoder = { version = "0.3", default-features = false }
 quick-xml = "0.41"
 roxmltree = "0.21"
 miniz_oxide = "0.9"
+# SVG rendering for craft-image. Same resvg as vectorcraft; usvg is the version it needs.
+usvg = { version = "0.45", default-features = false }
+resvg = { version = "0.45", default-features = false, features = ["raster-images"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 # Codec hot loops: the spec-vector tests of the vendored FilmCraft decoders are minutes slower in
