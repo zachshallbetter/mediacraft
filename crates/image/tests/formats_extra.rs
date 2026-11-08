@@ -5,6 +5,9 @@
 use craft_image::{
     DecodeOptions, Error, Format, Limits, Rgba8Image, decode, probe, read_header, sniff,
 };
+use image::ExtendedColorType;
+use image::ImageEncoder;
+use image::codecs::pnm::{PnmEncoder, PnmSubtype, SampleEncoding};
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb, Rgba};
 use std::io::Cursor;
 
@@ -76,22 +79,43 @@ fn qoi_round_trip() {
     assert_eq!(read_header(&bytes).unwrap().has_alpha, Some(false));
 }
 
+fn pnm_binary<P: image::Pixel<Subpixel = u8>>(
+    img: &ImageBuffer<P, Vec<u8>>,
+    subtype: PnmSubtype,
+    color: ExtendedColorType,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    PnmEncoder::new(&mut out)
+        .with_subtype(subtype)
+        .write_image(img.as_raw(), img.width(), img.height(), color)
+        .unwrap();
+    out
+}
+
 #[test]
 fn pnm_round_trip() {
-    // RGBA is written as PAM (P7), RGB as P6, grey as P5.
+    // The default writer always emits PAM (P7); P6 and P5 need an explicit subtype.
     let pam = encode_with(DynamicImage::ImageRgba8(pattern()), ImageFormat::Pnm);
     assert!(pam.starts_with(b"P7"));
     assert_eq!(read_header(&pam).unwrap().has_alpha, Some(true));
     round_trip(&pam, Format::Pnm, &expected(), true);
 
     let rgb = DynamicImage::ImageRgba8(pattern()).into_rgb8();
-    let ppm = encode_with(DynamicImage::ImageRgb8(rgb), ImageFormat::Pnm);
+    let ppm = pnm_binary(
+        &rgb,
+        PnmSubtype::Pixmap(SampleEncoding::Binary),
+        ExtendedColorType::Rgb8,
+    );
     assert!(ppm.starts_with(b"P6"));
     assert_eq!(read_header(&ppm).unwrap().has_alpha, Some(false));
     round_trip(&ppm, Format::Pnm, &expected(), false);
 
     let grey = DynamicImage::ImageRgba8(pattern()).into_luma8();
-    let pgm = encode_with(DynamicImage::ImageLuma8(grey.clone()), ImageFormat::Pnm);
+    let pgm = pnm_binary(
+        &grey,
+        PnmSubtype::Graymap(SampleEncoding::Binary),
+        ExtendedColorType::L8,
+    );
     assert!(pgm.starts_with(b"P5"));
     let d = decode(&pgm, &opts()).unwrap();
     assert_eq!(d.image.pixel(3, 2).unwrap()[0], grey.get_pixel(3, 2).0[0]);
@@ -196,6 +220,118 @@ fn exr_is_clamped_and_srgb_encoded() {
     let p = d.image.pixel(3, 0).unwrap();
     assert_eq!((p[0], p[1]), (255, 0));
     assert_eq!(d.image.pixel(4, 0).unwrap()[0], 0, "NaN becomes 0");
+}
+
+/// Probe the bytes, decode them through the public API, and return the pixels.
+fn probe_and_decode(bytes: &[u8], format: Format, w: u32, h: u32) -> Rgba8Image {
+    assert_eq!(sniff(bytes), Some(format));
+    assert!(format.can_decode());
+    let info = probe(bytes).unwrap();
+    assert_eq!(
+        (info.header.format, info.header.width, info.header.height),
+        (format, w, h)
+    );
+    let d = decode(bytes, &opts()).unwrap();
+    assert_eq!(
+        (d.format, d.image.width(), d.image.height()),
+        (format, w, h)
+    );
+    d.image
+}
+
+#[test]
+fn dpx_rgb8() {
+    let mut f = vec![0u8; 2048];
+    f[..4].copy_from_slice(b"SDPX");
+    f[4..8].copy_from_slice(&2048u32.to_be_bytes());
+    f[770..772].copy_from_slice(&1u16.to_be_bytes());
+    f[772..776].copy_from_slice(&2u32.to_be_bytes());
+    f[776..780].copy_from_slice(&1u32.to_be_bytes());
+    f[780 + 20] = 50; // RGB
+    f[780 + 23] = 8;
+    f[780 + 28..780 + 32].copy_from_slice(&2048u32.to_be_bytes());
+    f[780 + 32..780 + 36].copy_from_slice(&u32::MAX.to_be_bytes());
+    f.extend_from_slice(&[255, 0, 0, 0, 0, 255, 0, 0]); // two pixels, line padded to a word
+    let img = probe_and_decode(&f, Format::Dpx, 2, 1);
+    assert_eq!(img.pixel(0, 0), Some([255, 0, 0, 255]));
+    assert_eq!(img.pixel(1, 0), Some([0, 0, 255, 255]));
+    assert_eq!(read_header(&f).unwrap().bit_depth, Some(8));
+}
+
+#[test]
+fn pcx_truecolour() {
+    let mut f = vec![0u8; 128];
+    f[0] = 0x0A;
+    f[1] = 5;
+    f[2] = 1; // RLE
+    f[3] = 8;
+    f[8..10].copy_from_slice(&1u16.to_le_bytes()); // xmax: 2 pixels
+    f[65] = 3; // planes
+    f[66..68].copy_from_slice(&2u16.to_le_bytes()); // bytes per plane line
+    // One scanline: the R plane, then G, then B. Every byte is below 0xC0, so all are literals.
+    f.extend_from_slice(&[10, 100, 20, 110, 30, 120]);
+    let img = probe_and_decode(&f, Format::Pcx, 2, 1);
+    assert_eq!(img.pixel(0, 0), Some([10, 20, 30, 255]));
+    assert_eq!(img.pixel(1, 0), Some([100, 110, 120, 255]));
+}
+
+#[test]
+fn fits_is_flipped_and_stretched() {
+    let card = |t: &str| {
+        let mut c = t.as_bytes().to_vec();
+        c.resize(80, b' ');
+        c
+    };
+    let mut f = Vec::new();
+    for t in [
+        "SIMPLE  =                    T",
+        "BITPIX  =                    8",
+        "NAXIS   =                    2",
+        "NAXIS1  =                    2",
+        "NAXIS2  =                    2",
+        "END",
+    ] {
+        f.extend(card(t));
+    }
+    f.resize(2880, b' ');
+    f.extend_from_slice(&[0, 85, 170, 255]); // bottom row first
+    f.resize(2880 * 2, 0);
+    let img = probe_and_decode(&f, Format::Fits, 2, 2);
+    assert_eq!(img.pixel(0, 0), Some([170, 170, 170, 255]));
+    assert_eq!(img.pixel(1, 1), Some([85, 85, 85, 255]));
+}
+
+#[test]
+fn dicom_uncompressed_grey() {
+    // Explicit VR little endian. Short elements: tag, VR, u16 length, value.
+    fn el(out: &mut Vec<u8>, g: u16, e: u16, vr: &[u8; 2], v: &[u8]) {
+        out.extend_from_slice(&g.to_le_bytes());
+        out.extend_from_slice(&e.to_le_bytes());
+        out.extend_from_slice(vr);
+        if matches!(vr, b"OB" | b"OW") {
+            out.extend_from_slice(&[0, 0]);
+            out.extend_from_slice(&(v.len() as u32).to_le_bytes());
+        } else {
+            out.extend_from_slice(&(v.len() as u16).to_le_bytes());
+        }
+        out.extend_from_slice(v);
+    }
+    let mut f = vec![0u8; 128];
+    f.extend_from_slice(b"DICM");
+    el(&mut f, 2, 0x10, b"UI", b"1.2.840.10008.1.2.1\0");
+    el(&mut f, 0x28, 0x02, b"US", &1u16.to_le_bytes());
+    el(&mut f, 0x28, 0x04, b"CS", b"MONOCHROME2 ");
+    el(&mut f, 0x28, 0x10, b"US", &2u16.to_le_bytes());
+    el(&mut f, 0x28, 0x11, b"US", &2u16.to_le_bytes());
+    el(&mut f, 0x28, 0x100, b"US", &8u16.to_le_bytes());
+    el(&mut f, 0x28, 0x101, b"US", &8u16.to_le_bytes());
+    el(&mut f, 0x28, 0x102, b"US", &7u16.to_le_bytes());
+    el(&mut f, 0x28, 0x103, b"US", &0u16.to_le_bytes());
+    el(&mut f, 0x7FE0, 0x10, b"OB", &[0, 85, 170, 255]);
+    let img = probe_and_decode(&f, Format::Dicom, 2, 2);
+    // DICOM rows run top to bottom.
+    assert_eq!(img.pixel(0, 0), Some([0, 0, 0, 255]));
+    assert_eq!(img.pixel(1, 1), Some([255, 255, 255, 255]));
 }
 
 /// A 4×4 DDS with one block of the given FourCC: colour endpoints red and blue, all indices 0.

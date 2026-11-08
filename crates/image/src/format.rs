@@ -1,5 +1,6 @@
 //! Format detection from leading bytes.
 
+use crate::formats;
 use crate::tiff::Tiff;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -42,6 +43,14 @@ pub enum Format {
     Qoi,
     /// Truevision TGA.
     Tga,
+    /// DPX (SMPTE 268M film scans).
+    Dpx,
+    /// ZSoft PCX.
+    Pcx,
+    /// FITS (astronomical images).
+    Fits,
+    /// DICOM (medical images, uncompressed transfer syntaxes).
+    Dicom,
     /// Camera raw: TIFF-structured (DNG, CR2, NEF, ARW, …) or other containers (CR3, RAF, …).
     Raw,
 }
@@ -67,6 +76,10 @@ impl Format {
             Format::Pnm => "pnm",
             Format::Qoi => "qoi",
             Format::Tga => "tga",
+            Format::Dpx => "dpx",
+            Format::Pcx => "pcx",
+            Format::Fits => "fits",
+            Format::Dicom => "dcm",
             Format::Raw => "raw",
         }
     }
@@ -91,6 +104,10 @@ impl Format {
             Format::Pnm => "image/x-portable-anymap",
             Format::Qoi => "image/qoi",
             Format::Tga => "image/x-tga",
+            Format::Dpx => "image/x-dpx",
+            Format::Pcx => "image/x-pcx",
+            Format::Fits => "image/fits",
+            Format::Dicom => "application/dicom",
             Format::Raw => "image/x-raw",
         }
     }
@@ -133,6 +150,10 @@ impl fmt::Display for Format {
             Format::Pnm => "PNM",
             Format::Qoi => "QOI",
             Format::Tga => "TGA",
+            Format::Dpx => "DPX",
+            Format::Pcx => "PCX",
+            Format::Fits => "FITS",
+            Format::Dicom => "DICOM",
             Format::Raw => "camera raw",
         };
         f.write_str(name)
@@ -163,6 +184,18 @@ pub fn sniff(b: &[u8]) -> Option<Format> {
         ])
     {
         return Some(Format::Jxl);
+    }
+    // DICOM keeps its marker after a 128-byte preamble that may hold anything (even a TIFF
+    // header), so look for it before the TIFF checks.
+    if formats::dicom::sniff(b) {
+        return Some(Format::Dicom);
+    }
+    // FITS is the one text-led format here; its `SIMPLE  =` card is unambiguous.
+    if formats::fits::sniff(b) {
+        return Some(Format::Fits);
+    }
+    if formats::dpx::sniff(b) {
+        return Some(Format::Dpx);
     }
     if b.starts_with(&[0x76, 0x2F, 0x31, 0x01]) {
         return Some(Format::Exr);
@@ -221,6 +254,9 @@ pub fn sniff(b: &[u8]) -> Option<Format> {
     }
     if is_pnm(b) {
         return Some(Format::Pnm);
+    }
+    if formats::pcx::sniff(b) {
+        return Some(Format::Pcx);
     }
     if tga_header_plausible(b) {
         return Some(Format::Tga);

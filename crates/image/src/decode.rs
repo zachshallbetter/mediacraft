@@ -141,6 +141,10 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
             }
             img
         }
+        Format::Dpx => crate::formats::dpx::decode(bytes, &opts.limits)?,
+        Format::Pcx => crate::formats::pcx::decode(bytes, &opts.limits)?,
+        Format::Fits => crate::formats::fits::decode(bytes, &opts.limits)?,
+        Format::Dicom => crate::formats::dicom::decode(bytes, &opts.limits)?,
         Format::Exr | Format::Hdr => float(bytes, format, &opts.limits)?,
         _ => full(bytes, format, &opts.limits)?,
     };

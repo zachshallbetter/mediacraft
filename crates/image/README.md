@@ -18,7 +18,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 
 | Step | API | Notes |
 |---|---|---|
-| Detect | `sniff` | JPEG, PNG, GIF, WebP, TIFF/BigTIFF, BMP, PSD/PSB, HEIF, AVIF, JPEG XL, OpenEXR, Radiance HDR, DDS, ICO/CUR, PNM, QOI, TGA, camera raw |
+| Detect | `sniff` | JPEG, PNG, GIF, WebP, TIFF/BigTIFF, BMP, PSD/PSB, HEIF, AVIF, JPEG XL, OpenEXR, Radiance HDR, DDS, ICO/CUR, PNM, QOI, TGA, DPX, PCX, FITS, DICOM, camera raw |
 | Header | `read_header` | Size, depth, alpha, animation, orientation, without decoding pixels |
 | Metadata blocks | `embedded` | EXIF, XMP, ICC (multi-chunk JPEG, compressed PNG) and IPTC, as raw bytes |
 | Metadata | `Metadata::from_embedded`, `parse_exif`, `parse_xmp`, `parse_iptc` | Camera, lens, exposure, capture time (via `chrono`), GPS, title, caption, alt text, keywords, creators, rights, location |
@@ -51,6 +51,10 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | ICO / CUR | yes (the entry the decoder picks: deepest, then largest) | none | yes (BMP or PNG entries) | no |
 | PNM (PBM, PGM, PPM, PAM) | yes | none | yes, 8 and 16 bit, PAM alpha | no |
 | QOI | yes | none | yes | no |
+| DPX | yes (size, bits, orientation) | none | yes: first element, luma/RGB/RGBA at 8/10/12/16 bits, code values as display-referred (no log conversion) | no |
+| PCX | yes | none | yes: RLE, 1/2/4-bit with header palette, 8-bit with VGA palette, 24-bit planes | no |
+| FITS | yes | none | yes: primary HDU, BITPIX 8/16/32/-32/-64, linear min/max stretch to 8 bits (lossy) | no |
+| DICOM | yes | none | uncompressed transfer syntaxes only, grey (window or min/max) and RGB; compressed syntaxes are refused | no |
 | TGA | yes (v2 footer, else a strict header check) | none | yes, including RLE and colour-mapped | no |
 
 ## Design

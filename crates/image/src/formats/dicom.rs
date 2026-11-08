@@ -17,13 +17,11 @@
 //! Element lengths come from the file and are never trusted: values and pixel data must lie
 //! inside the input, sizes are checked against [`Limits`] before the output is allocated, and
 //! only the elements needed are recorded.
-#![allow(dead_code)] // wired by coordinator
 
 use super::RawHeader;
 use crate::{Error, Format, Limits, Result, Rgba8Image};
 
-// TODO(wire): Format::Dicom
-const F: Format = Format::Raw;
+const F: Format = Format::Dicom;
 const PREAMBLE: usize = 132; // 128 bytes + "DICM"
 const UNDEFINED: u32 = 0xFFFF_FFFF;
 const PIXEL_DATA: (u16, u16) = (0x7FE0, 0x0010);

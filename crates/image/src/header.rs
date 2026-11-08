@@ -56,6 +56,10 @@ pub fn read_header(bytes: &[u8]) -> Result<Header> {
         Format::Pnm => formats::pnm::header(bytes)?,
         Format::Qoi => formats::qoi::header(bytes)?,
         Format::Tga => formats::tga::header(bytes)?,
+        Format::Dpx => formats::dpx::header(bytes).ok_or_else(|| cut(format))?,
+        Format::Pcx => formats::pcx::header(bytes).ok_or_else(|| cut(format))?,
+        Format::Fits => formats::fits::header(bytes).ok_or_else(|| cut(format))?,
+        Format::Dicom => formats::dicom::header(bytes).ok_or_else(|| cut(format))?,
     };
     // HEIF's own transform properties are authoritative and its EXIF orientation is
     // informational only (ISO/IEC 23008-12 §A.2.1); TIFF tag 274 is the EXIF value itself.
@@ -90,4 +94,9 @@ fn jxl_header(_bytes: &[u8]) -> Result<RawHeader> {
         Format::Jxl,
         "JPEG XL headers are not read in the browser build",
     ))
+}
+
+/// The error for a header reader that only says "no".
+fn cut(format: Format) -> Error {
+    Error::Malformed(format, "header is damaged or cut short".into())
 }

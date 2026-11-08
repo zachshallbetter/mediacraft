@@ -16,10 +16,9 @@
 //!
 //! Orientation is not applied to the pixels; [`header`] reports it (mapped to the EXIF values)
 //! for the pipeline to apply, like the other containers.
-#![allow(dead_code)] // wired by coordinator
 
 use super::RawHeader;
-use crate::{Error, Limits, Orientation, Result, Rgba8Image};
+use crate::{Error, Format, Limits, Orientation, Result, Rgba8Image};
 
 /// Offset of the orientation field, followed by the element count.
 const ORIENTATION: usize = 768;
@@ -28,13 +27,12 @@ const ELEMENT0: usize = 780;
 const UNDEF32: u32 = u32::MAX;
 const MAX_ELEMENTS: u16 = 8;
 
-// TODO(wire): Format::Dpx — these use the generic variant until `Format` has one.
 fn bad(msg: impl std::fmt::Display) -> Error {
-    Error::InvalidArgument(format!("malformed DPX data: {msg}"))
+    Error::Malformed(Format::Dpx, msg.to_string())
 }
 
 fn unsupported(msg: impl std::fmt::Display) -> Error {
-    Error::InvalidArgument(format!("DPX pixels cannot be decoded: {msg}"))
+    Error::Decode(Format::Dpx, msg.to_string())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

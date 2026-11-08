@@ -12,13 +12,11 @@
 //!
 //! Sizes are checked against [`Limits`] before any allocation, and the pixel data must be
 //! present in the input, so the output can never be larger than four times the input.
-#![allow(dead_code)] // wired by coordinator
 
 use super::RawHeader;
 use crate::{Error, Format, Limits, Result, Rgba8Image};
 
-// TODO(wire): Format::Fits
-const F: Format = Format::Raw;
+const F: Format = Format::Fits;
 const BLOCK: usize = 2880;
 const CARD: usize = 80;
 

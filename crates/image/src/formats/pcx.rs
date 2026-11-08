@@ -9,16 +9,14 @@
 //!
 //! RLE packets must not cross a scanline (planes of one scanline form a single run space, as
 //! encoders write them).
-#![allow(dead_code)] // wired by coordinator
 
 use super::RawHeader;
-use crate::{Error, Limits, Result, Rgba8Image};
+use crate::{Error, Format, Limits, Result, Rgba8Image};
 
 const HEADER: usize = 128;
 
-// TODO(wire): Format::Pcx — this uses the generic variant until `Format` has one.
 fn bad(msg: impl std::fmt::Display) -> Error {
-    Error::InvalidArgument(format!("malformed PCX data: {msg}"))
+    Error::Malformed(Format::Pcx, msg.to_string())
 }
 
 fn le16(b: &[u8], at: usize) -> u16 {
