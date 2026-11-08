@@ -48,15 +48,10 @@ here depends on upstream `craft-media`.
 
 Still images no longer need ffmpeg on the `feat/craft-image` branch, except HEIC, AVIF and raw.
 
-### Code that lives outside this repository
+### Code that lived outside this repository
 
-| Dependency | Source | Used by |
-|---|---|---|
-| `craft-ui`, `craft-quit`, `craft-settings`, `craft-atomic` | craft-libs @ `666c358`, a Git dependency | app, daemon, catalog |
-| `craft-cms` | craft-libs @ `904f55b`, a Git dependency (`feat/craft-image` branch) | `craft-image` (ICC to sRGB) |
-
-These build without network access once fetched and pinned. They are still code MediaCraft does
-not own.
+Done: `craft-ui`, `craft-quit`, `craft-settings`, `craft-atomic` and `craft-cms` are vendored
+into `crates/` (see `docs/VENDORED.md`). `Cargo.lock` no longer references craft-libs.
 
 ### Codecs in the suite that MediaCraft lacks
 
@@ -87,5 +82,4 @@ against `craft-bitstream` with few changes.
 3. Bring the FilmCraft decoders in (VP9, AV1, VP8, then MXF, MPEG-TS, MPEG-2 and DNx), each as
    its own crate with its tests and an origin note.
 4. Bring HEIF decode in, so iPhone photos need no ffmpeg.
-5. Decide whether the craft-libs Git dependencies are acceptable for "independent" or should be
-   vendored into this tree.
+5. ~~Vendor the craft-libs Git dependencies.~~ Done; see `docs/VENDORED.md`.

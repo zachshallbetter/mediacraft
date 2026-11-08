@@ -77,7 +77,7 @@ Rather than designing shared library abstractions in isolation, components are f
 
 ## 3. Workspace Topology
 
-MediaCraft is organized as an integrated cargo workspace containing 23 high-performance, `#![forbid(unsafe_code)]` member crates:
+MediaCraft is organized as an integrated cargo workspace containing 28 high-performance, `#![forbid(unsafe_code)]` member crates:
 
 ```text
 mediacraft/
@@ -110,11 +110,18 @@ mediacraft/
 │   │   ├── matroska/           (Matroska / WebM container parser: EBML header, Cluster parsing)
 │   │   └── media/              (mediacraft-types: stream descriptors, buffer views, errors, rational time; see docs/CRAFT_MEDIA_NAMING.md)
 │   │
-│   └── Documents, Layered Images & Safe Packaging (Staged for craft-libs):
-│       ├── pdf/                (craft-pdf: Clean-room ISO 32000 PDF COS parser, filters, crypt, content)
-│       ├── archive/            (craft-archive: Safe ZIP/TAR inspection, Zip Slip defense, ResourceBudget)
-│       ├── psd/                (craft-psd: PSD/PSB layered raster image decoder)
-│       └── image/              (craft-image: still-image headers, metadata, colour, thumbnails, renditions)
+│   ├── Documents, Layered Images & Safe Packaging (Staged for craft-libs):
+│   │   ├── pdf/                (craft-pdf: Clean-room ISO 32000 PDF COS parser, filters, crypt, content)
+│   │   ├── archive/            (craft-archive: Safe ZIP/TAR inspection, Zip Slip defense, ResourceBudget)
+│   │   ├── psd/                (craft-psd: PSD/PSB layered raster image decoder)
+│   │   └── image/              (craft-image: still-image headers, metadata, colour, thumbnails, renditions)
+│   │
+│   └── Vendored from craft-libs (docs/VENDORED.md):
+│       ├── ui/                 (craft-ui: egui controls, docking, icons, theme)
+│       ├── quit/               (craft-quit: platform quit and close handling)
+│       ├── settings/           (craft-settings: config.toml storage, recovery, migration)
+│       ├── atomic/             (craft-atomic: crash-safe atomic file replacement)
+│       └── cms/                (craft-cms: ICC v2/v4 colour management)
 └── docs/
     ├── INTERFACE.md            (UI Screen Map: 5 workspaces, 20 screens, 14 panels)
     ├── MEDIA_INFRASTRUCTURE_SPEC.md (Shared media library architecture)
@@ -123,6 +130,15 @@ mediacraft/
     ├── FEATURES.md             (Comprehensive feature & capability inventory)
     └── LAB_NOTES.md            (Exploration logs, empirical receipts, and findings)
 ```
+
+---
+
+## 3a. Standalone Build
+
+MediaCraft builds from this repository alone: the craft-libs crates it uses (`craft-ui`, `craft-quit`,
+`craft-settings`, `craft-atomic`, `craft-cms`) are vendored into `crates/` at pinned commits. See
+[`docs/VENDORED.md`](docs/VENDORED.md) for sources, local changes and updating, and
+[`docs/CRAFT_MEDIA_NAMING.md`](docs/CRAFT_MEDIA_NAMING.md) for what independence still needs.
 
 ---
 

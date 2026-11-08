@@ -66,7 +66,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 
 ## Shared tooling
 
-* **`craft-cms`** (storytold/craft-libs) handles ICC parsing and transforms, the same colour
+* **`craft-cms`** (vendored from storytold/craft-libs into this workspace) handles ICC parsing and transforms, the same colour
   management module the Craft apps use.
 * **`craft-psd`** (this workspace) provides PSD/PSB composites.
 * **`image`** does the raster codecs, and **`jpeg-decoder`** adds DCT-scaled JPEG decoding, which
