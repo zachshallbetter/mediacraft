@@ -15,6 +15,7 @@ craft-isobmff = { workspace = true }
 craft-matroska = { workspace = true }
 craft-mpegts = { workspace = true }
 craft-mxf = { workspace = true }
+craft-avi = { workspace = true }
 craft-mpeg2v = { workspace = true }
 craft-h264 = { workspace = true }
 craft-hevc = { workspace = true }

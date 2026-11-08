@@ -1,10 +1,10 @@
 //! Stream probing with MediaCraft's own demuxers and parsers: no ffprobe.
 //!
 //! ISO BMFF (MP4, MOV, M4A, 3GP) goes through `craft-isobmff`, Matroska and WebM through
-//! `craft-matroska`. Both read only box and element headers, never media payloads. WAV, AIFF,
-//! FLAC, Ogg Opus/Vorbis, MP3 and ADTS AAC are read from their own headers. Containers
-//! without a demuxer in this workspace (AVI, MXF, MPEG-TS/PS) give no stream info rather than a
-//! guess. Codec names follow ffprobe's (`h264`, `hevc`, `prores`, `aac`, `pcm_s16le`, …) so
+//! `craft-matroska`. Both read only box and element headers, never media payloads. AVI goes
+//! through `craft-avi` (its headers and chunk index, no payloads). WAV, AIFF, FLAC, Ogg
+//! Opus/Vorbis, MP3 and ADTS AAC are read from their own headers. Containers without a demuxer
+//! in this workspace give no stream info rather than a guess. Codec names follow ffprobe's (`h264`, `hevc`, `prores`, `aac`, `pcm_s16le`, …) so
 //! catalogues written by the ffprobe-based scanner read the same.
 
 use std::fs::File;
@@ -61,6 +61,9 @@ fn probe_other(path: &Path, head: &[u8], file: &mut File, size: u64) -> Option<P
     if head.starts_with(b"OggS") {
         return ogg(head, file, size);
     }
+    if craft_avi::sniff(head) {
+        return avi(path);
+    }
     if craft_mxf::sniff(head) {
         return mxf(path);
     }
@@ -70,7 +73,7 @@ fn probe_other(path: &Path, head: &[u8], file: &mut File, size: u64) -> Option<P
     mpeg_audio(head, size)
 }
 
-/// A file as a positioned byte source for the MPEG-TS and MXF demuxers.
+/// A file as a positioned byte source for the MPEG-TS, AVI and MXF demuxers.
 struct FileSource {
     file: Mutex<File>,
     len: u64,
@@ -93,6 +96,15 @@ impl FileSource {
 }
 
 impl craft_mpegts::ByteSource for FileSource {
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        FileSource::read_at(self, offset, buf)
+    }
+}
+
+impl craft_avi::ByteSource for FileSource {
     fn len(&self) -> u64 {
         self.len
     }
@@ -243,6 +255,144 @@ fn mpeg_ts(path: &Path) -> Option<Probed> {
         .fold(None, |a: Option<f64>, d| Some(a.map_or(d, |a| a.max(d))))
         .and_then(finite);
     (video.is_some() || audio.is_some()).then_some((video, audio, duration))
+}
+
+/// AVI: the video stream's `BITMAPINFOHEADER` and rate, the audio stream's `WAVEFORMATEX`, and
+/// the stream lengths from the stream headers.
+fn avi(path: &Path) -> Option<Probed> {
+    use craft_avi::StreamKind;
+    let src = FileSource::open(path)?;
+    let m = craft_avi::open(&src).ok()?;
+    // Seconds of a stream: its start plus length, in units of scale / rate.
+    let seconds = |s: &craft_avi::Stream, units: u32| {
+        (s.scale > 0 && s.rate > 0)
+            .then(|| f64::from(units) * f64::from(s.scale) / f64::from(s.rate))
+    };
+
+    let video_stream = m
+        .streams
+        .iter()
+        .find(|s| s.kind == StreamKind::Video && s.video.is_some());
+    let video = video_stream.and_then(|s| {
+        let b = s.video.as_ref()?;
+        let (width, height) = match (b.width.unsigned_abs(), b.height.unsigned_abs()) {
+            (0, _) | (_, 0) => (m.header.width, m.header.height),
+            wh => wh,
+        };
+        let fps = if s.scale > 0 && s.rate > 0 {
+            f64::from(s.rate) / f64::from(s.scale)
+        } else if m.header.micro_sec_per_frame > 0 {
+            1e6 / f64::from(m.header.micro_sec_per_frame)
+        } else {
+            0.0
+        };
+        Some(VideoStreamInfo {
+            codec: avi_video_codec(&b.compression),
+            width,
+            height,
+            fps: finite(fps).unwrap_or(0.0),
+            color_space: "Unknown".into(),
+            hdr: false,
+            bit_depth: 8,
+        })
+    });
+    let audio = m
+        .streams
+        .iter()
+        .find(|s| s.kind == StreamKind::Audio && s.audio.is_some())
+        .and_then(|s| {
+            let w = s.audio.as_ref()?;
+            let bits = u8::try_from(w.bits_per_sample).unwrap_or(0);
+            let pcm = matches!(w.format_tag, 1 | 3);
+            Some(AudioStreamInfo {
+                codec: avi_audio_codec(w.format_tag, w.bits_per_sample),
+                sample_rate: w.sample_rate,
+                channels: u8::try_from(w.channels).unwrap_or(u8::MAX),
+                bit_depth: if pcm { bits } else { 0 },
+                bitrate_kbps: (u64::from(w.avg_bytes_per_sec) * 8 / 1000) as u32,
+            })
+        });
+    // The longest stream. A stream with no length falls back to the main header's frame count.
+    let duration = m
+        .streams
+        .iter()
+        .filter(|s| matches!(s.kind, StreamKind::Video | StreamKind::Audio))
+        .filter_map(|s| seconds(s, s.start.saturating_add(s.length)))
+        .filter(|d| *d > 0.0)
+        .fold(None, |a: Option<f64>, d| Some(a.map_or(d, |a| a.max(d))))
+        .or_else(|| {
+            let h = &m.header;
+            (h.micro_sec_per_frame > 0 && h.total_frames > 0)
+                .then(|| f64::from(h.total_frames) * f64::from(h.micro_sec_per_frame) / 1e6)
+        })
+        .and_then(finite);
+    (video.is_some() || audio.is_some()).then_some((video, audio, duration))
+}
+
+/// ffprobe's `codec_name` for an AVI video stream's `biCompression`: a FourCC, or 0 / 3
+/// (`BI_RGB`, `BI_BITFIELDS`) for uncompressed RGB. FourCCs are matched without case. A FourCC
+/// ffprobe has no name for gives `unknown`.
+fn avi_video_codec(compression: &[u8; 4]) -> String {
+    let tag = compression.map(|b| b.to_ascii_lowercase());
+    let name = match &tag {
+        [0 | 3, 0, 0, 0] => "rawvideo",
+        b"mjpg" | b"mjpa" | b"mjpb" | b"jpeg" | b"avri" | b"avrn" | b"ljpg" => "mjpeg",
+        b"h264" | b"x264" | b"avc1" | b"davc" | b"vssh" => "h264",
+        b"hevc" | b"h265" | b"x265" => "hevc",
+        b"mpg2" | b"mp2v" | b"m2v1" | b"pim2" | b"dvr " | b"mx5p" | b"mx3p" => "mpeg2video",
+        b"mpg1" | b"mp1v" | b"pim1" | b"mpeg" => "mpeg1video",
+        b"fmp4" | b"xvid" | b"divx" | b"dx50" | b"mp4v" | b"mp4s" | b"m4s2" | b"dvx1" | b"3ivd"
+        | b"rmp4" | b"fvfw" | b"divf" | b"dxgm" | b"xvix" | b"blz0" => "mpeg4",
+        b"mp43" | b"div3" | b"div4" | b"div5" | b"div6" | b"col1" | b"col0" | b"ap41" | b"mpg3" => {
+            "msmpeg4v3"
+        }
+        b"mp42" | b"div2" => "msmpeg4v2",
+        b"mpg4" | b"mp41" | b"div1" => "msmpeg4v1",
+        b"wmv1" => "wmv1",
+        b"wmv2" => "wmv2",
+        b"wmv3" => "wmv3",
+        b"wvc1" | b"wmva" => "vc1",
+        b"dvsd" | b"dvhd" | b"dvsl" | b"dv25" | b"dv50" | b"dvcs" | b"dvc " | b"dvh1" | b"dvhq"
+        | b"dvh3" | b"dvh4" | b"dvh5" | b"dvh6" | b"cdvc" | b"cdv5" | b"cdvh" | b"dvcp"
+        | b"dvpp" | b"dvp1" | b"dv5p" | b"dv5n" | b"dvhp" | b"dvhn" => "dvvideo",
+        b"hfyu" => "huffyuv",
+        b"ffvh" => "ffvhuff",
+        b"ffv1" => "ffv1",
+        b"vp80" => "vp8",
+        b"vp90" => "vp9",
+        b"cvid" => "cinepak",
+        b"tscc" => "camstudio",
+        b"apch" | b"apcn" | b"apcs" | b"apco" | b"ap4h" | b"ap4x" => "prores",
+        b"v210" => "v210",
+        b"yuy2" | b"yuyv" | b"yuv2" | b"uyvy" | b"yvyu" | b"vyuy" | b"yv12" | b"i420" | b"iyuv"
+        | b"nv12" | b"nv21" | b"yv16" | b"yv24" | b"y800" | b"y8  " | b"y41p" | b"yvu9"
+        | b"y422" | b"dib " | b"raw " | b"2vuy" => "rawvideo",
+        _ => "unknown",
+    };
+    name.into()
+}
+
+/// ffprobe's `codec_name` for a `WAVEFORMATEX` format tag.
+fn avi_audio_codec(format_tag: u16, bits: u16) -> String {
+    match format_tag {
+        1 => pcm_name(false, false, bits),
+        3 => pcm_name(true, false, bits),
+        0x06 => "pcm_alaw".into(),
+        0x07 => "pcm_mulaw".into(),
+        0x02 => "adpcm_ms".into(),
+        0x11 => "adpcm_ima_wav".into(),
+        0x50 => "mp2".into(),
+        0x55 => "mp3".into(),
+        0xFF | 0x706D | 0x1600 => "aac".into(),
+        0x160 => "wmav1".into(),
+        0x161 => "wmav2".into(),
+        0x162 => "wmapro".into(),
+        0x2000 => "ac3".into(),
+        0x2001 => "dts".into(),
+        0x674F | 0x676F | 0x6750 | 0x6770 | 0x6751 | 0x6771 => "vorbis".into(),
+        0xF1AC => "flac".into(),
+        _ => "unknown".into(),
+    }
 }
 
 /// MXF: picture and sound descriptors from the header metadata.
@@ -983,6 +1133,125 @@ mod tests {
         );
         assert_eq!(duration, Some(2.0));
         Ok(())
+    }
+
+    /// An AVI with a 320×240 Motion JPEG stream at 25 fps and a 44.1 kHz stereo PCM stream,
+    /// two seconds long. No frames are stored: the probe reads headers only.
+    #[test]
+    fn avi_through_craft_avi() -> Result<(), String> {
+        fn chunk(id: &[u8; 4], data: &[u8]) -> Vec<u8> {
+            let mut b = id.to_vec();
+            b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            b.extend_from_slice(data);
+            b
+        }
+        fn list(kind: &[u8; 4], content: &[u8]) -> Vec<u8> {
+            let mut data = kind.to_vec();
+            data.extend_from_slice(content);
+            chunk(b"LIST", &data)
+        }
+        fn words(v: &[u32]) -> Vec<u8> {
+            v.iter().flat_map(|w| w.to_le_bytes()).collect()
+        }
+        let strh = |kind: &[u8; 4], handler: &[u8; 4], scale, rate, length, sample_size| {
+            let mut b = [kind.as_slice(), handler.as_slice()].concat();
+            b.extend(words(&[
+                0,
+                0,
+                0,
+                scale,
+                rate,
+                0,
+                length,
+                0,
+                0xFFFF_FFFF,
+                sample_size,
+                0,
+                0,
+            ]));
+            chunk(b"strh", &b)
+        };
+        let mut bmp = words(&[40, 320, 240]);
+        bmp.extend_from_slice(&[1, 0, 24, 0]);
+        bmp.extend_from_slice(b"MJPG");
+        bmp.extend_from_slice(&[0; 20]);
+        let mut wave = Vec::new();
+        for v in [1u16, 2] {
+            wave.extend_from_slice(&v.to_le_bytes());
+        }
+        wave.extend_from_slice(&44_100u32.to_le_bytes());
+        wave.extend_from_slice(&176_400u32.to_le_bytes());
+        wave.extend_from_slice(&4u16.to_le_bytes());
+        wave.extend_from_slice(&16u16.to_le_bytes());
+        let video = list(
+            b"strl",
+            &[strh(b"vids", b"MJPG", 1, 25, 50, 0), chunk(b"strf", &bmp)].concat(),
+        );
+        let audio = list(
+            b"strl",
+            &[
+                strh(b"auds", &[0; 4], 1, 44_100, 88_200, 4),
+                chunk(b"strf", &wave),
+            ]
+            .concat(),
+        );
+        let avih = chunk(
+            b"avih",
+            &words(&[40_000, 0, 0, 0x10, 50, 0, 2, 0, 320, 240, 0, 0, 0, 0]),
+        );
+        let hdrl = list(
+            b"hdrl",
+            &[chunk(b"avih", &avih[8..]), video, audio].concat(),
+        );
+        let movi = list(b"movi", &[]);
+        let riff = list_riff(&[hdrl, movi].concat());
+        fn list_riff(content: &[u8]) -> Vec<u8> {
+            let mut data = b"AVI ".to_vec();
+            data.extend_from_slice(content);
+            chunk(b"RIFF", &data)
+        }
+        let (video, audio, duration) = probe(&write("clip.avi", &riff)).ok_or("not probed")?;
+        let v = video.ok_or("no video")?;
+        assert_eq!((v.codec.as_str(), v.width, v.height), ("mjpeg", 320, 240));
+        assert!((v.fps - 25.0).abs() < 0.001, "{}", v.fps);
+        let a = audio.ok_or("no audio")?;
+        assert_eq!(
+            (
+                a.codec.as_str(),
+                a.sample_rate,
+                a.channels,
+                a.bit_depth,
+                a.bitrate_kbps
+            ),
+            ("pcm_s16le", 44_100, 2, 16, 1411)
+        );
+        assert_eq!(duration, Some(2.0));
+        Ok(())
+    }
+
+    #[test]
+    fn avi_codec_names_follow_ffprobe() {
+        for (tag, name) in [
+            (b"MJPG", "mjpeg"),
+            (b"h264", "h264"),
+            (b"MPG2", "mpeg2video"),
+            (b"FMP4", "mpeg4"),
+            (b"dvsd", "dvvideo"),
+            (b"YUY2", "rawvideo"),
+            (b"\0\0\0\0", "rawvideo"),
+            (b"zzzz", "unknown"),
+        ] {
+            assert_eq!(avi_video_codec(tag), name);
+        }
+        for (tag, bits, name) in [
+            (1, 16, "pcm_s16le"),
+            (1, 8, "pcm_u8"),
+            (3, 32, "pcm_f32le"),
+            (0x55, 0, "mp3"),
+            (0x2000, 0, "ac3"),
+        ] {
+            assert_eq!(avi_audio_codec(tag, bits), name);
+        }
     }
 
     #[test]
