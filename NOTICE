@@ -10,14 +10,15 @@ storytold/craft-libs (see docs/VENDORED.md for the commits):
   Copyright (c) 2026 ArtCraft Team and the craft-libs contributors.
   Licensed under the MIT License or the Apache License, Version 2.0, at your option.
 
-crates/av1, crates/vp9, crates/vp8, crates/dnx, crates/mpeg2v, crates/mpegts, crates/mxf and
-crates/testkit are copied from storytold/filmcraft (see docs/VENDORED.md for the commit), with
-package and crate names changed:
+crates/av1, crates/vp9, crates/vp8, crates/dnx, crates/mpeg2v, crates/mpegts, crates/mxf,
+crates/ac3, crates/avi, crates/time, crates/captions and crates/testkit are copied from
+storytold/filmcraft (see docs/VENDORED.md for the commit), with package and crate names changed:
   Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors.
   Licensed under the MIT License or the Apache License, Version 2.0, at your option.
   Their constant tables are generated from the public specifications named at the top of each
   spec_tables.rs (AV1 Bitstream & Decoding Process Specification, VP9 Bitstream & Decoding
-  Process Specification v0.6, RFC 6386, SMPTE ST 2019-1).
+  Process Specification v0.6, RFC 6386, SMPTE ST 2019-1). crates/captions omits FilmCraft's
+  burn-in module and project-type conversions (docs/VENDORED.md).
 
 crates/raw is copied from storytold/photocraft crates/raw (see docs/VENDORED.md for the commit),
 with the package renamed from photocraft-raw:

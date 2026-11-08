@@ -77,7 +77,7 @@ Rather than designing shared library abstractions in isolation, components are f
 
 ## 3. Workspace Topology
 
-MediaCraft is organized as an integrated cargo workspace containing 39 high-performance, `#![forbid(unsafe_code)]` member crates:
+MediaCraft is organized as an integrated cargo workspace containing 43 high-performance, `#![forbid(unsafe_code)]` member crates:
 
 ```text
 mediacraft/
@@ -94,6 +94,7 @@ mediacraft/
 │   │   └── oracles/            (Synthetic AV sync generator, 1024-sample priming oracle)
 │   │
 │   ├── Clean-Room Audio Infrastructure (Staged for craft-libs):
+│   │   ├── ac3/                (craft-ac3: AC-3 / E-AC-3 decoder, from FilmCraft)
 │   │   ├── aac/                (MPEG-4 AAC-LC encoder & decoder, ADTS parsing, psychoacoustics)
 │   │   ├── flac/               (Lossless FLAC encoder & decoder, LPC prediction, Rice coding)
 │   │   ├── opus/               (Opus audio decoder, Ogg demuxing, SILK/CELT mode parsing)
@@ -117,6 +118,9 @@ mediacraft/
 │   │   ├── matroska/           (Matroska / WebM container parser: EBML header, Cluster parsing)
 │   │   ├── mpegts/             (craft-mpegts: MPEG-2 transport and program stream demuxer, from FilmCraft)
 │   │   ├── mxf/                (craft-mxf: MXF demuxer and writer, from FilmCraft)
+│   │   ├── avi/                (craft-avi: AVI (RIFF) and OpenDML demuxer, from FilmCraft)
+│   │   ├── time/               (craft-time: exact timecode and tick types, from FilmCraft)
+│   │   ├── captions/           (craft-captions: SRT, WebVTT, SCC, MCC, STL, TTML and CEA-608, from FilmCraft)
 │   │   └── media/              (mediacraft-types: stream descriptors, buffer views, errors, rational time; see docs/CRAFT_MEDIA_NAMING.md)
 │   │
 │   ├── Documents, Layered Images & Safe Packaging (Staged for craft-libs):

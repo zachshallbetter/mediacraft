@@ -1,0 +1,18 @@
+[package]
+name = "craft-captions"
+description = "Captions: SRT, WebVTT, SCC, MCC, EBU STL and TTML/IMSC1/DFXP import/export and CEA-608 control codes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+craft-time = { workspace = true }
+thiserror = { workspace = true }
+roxmltree = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

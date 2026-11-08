@@ -36,6 +36,10 @@ members = [
     "crates/mpeg2v",
     "crates/mpegts",
     "crates/mxf",
+    "crates/ac3",
+    "crates/avi",
+    "crates/time",
+    "crates/captions",
     "crates/testkit",
     # Vendored from storytold/craft-libs; see docs/VENDORED.md.
     "crates/atomic",
@@ -99,6 +103,10 @@ craft-dnx = { path = "crates/dnx" }
 craft-mpeg2v = { path = "crates/mpeg2v" }
 craft-mpegts = { path = "crates/mpegts" }
 craft-mxf = { path = "crates/mxf" }
+craft-ac3 = { path = "crates/ac3" }
+craft-avi = { path = "crates/avi" }
+craft-time = { path = "crates/time" }
+craft-captions = { path = "crates/captions" }
 mediacraft-testkit = { path = "crates/testkit" }
 
 # Vendored from storytold/craft-libs (docs/VENDORED.md): MediaCraft builds from this tree alone.
@@ -125,6 +133,7 @@ zune-jpeg = "0.5"
 image = { version = "0.25", default-features = false }
 jpeg-decoder = { version = "0.3", default-features = false }
 quick-xml = "0.41"
+roxmltree = "0.21"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 # Codec hot loops: the spec-vector tests of the vendored FilmCraft decoders are minutes slower in
@@ -142,6 +151,9 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.craft-mpeg2v]
+opt-level = 3
+
+[profile.dev.package.craft-ac3]
 opt-level = 3
 
 # The VP8 encoder's timing test (crates/vp8enc) needs optimised code to see a quadratic slowdown.

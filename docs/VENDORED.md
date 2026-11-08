@@ -18,7 +18,11 @@ into `crates/` rather than fetched as Git dependencies.
 | `craft-mpeg2v` | `crates/mpeg2v` | storytold/filmcraft `crates/mpeg2v` | same | mediacraft-preview, catalog |
 | `craft-mpegts` | `crates/mpegts` | storytold/filmcraft `crates/mpegts` | same | mediacraft-preview, catalog |
 | `craft-mxf` | `crates/mxf` | storytold/filmcraft `crates/mxf` | same | mediacraft-preview, catalog |
-| `mediacraft-testkit` | `crates/testkit` | storytold/filmcraft `crates/testkit` (dev-dependency only) | same | the seven above |
+| `craft-ac3` | `crates/ac3` | storytold/filmcraft `crates/ac3` (`filmcraft-ac3`) | `4a56be9cff419a5a9b16a25259c97dc823ca8bae` | mediacraft-preview |
+| `craft-avi` | `crates/avi` | storytold/filmcraft `crates/avi` (`filmcraft-avi`) | `4a56be9cff419a5a9b16a25259c97dc823ca8bae` | mediacraft-preview, catalog |
+| `craft-time` | `crates/time` | storytold/filmcraft `crates/time` (`filmcraft-time`) | `4a56be9cff419a5a9b16a25259c97dc823ca8bae` | craft-captions |
+| `craft-captions` | `crates/captions` | storytold/filmcraft `crates/captions` (`filmcraft-captions`), with local changes below | `4a56be9cff419a5a9b16a25259c97dc823ca8bae` | nothing yet |
+| `mediacraft-testkit` | `crates/testkit` | storytold/filmcraft `crates/testkit` (dev-dependency only) | `4d571c2a666cace681209a1f617f68cd9cefefed` | the decoders and demuxers above |
 | `craft-raw` | `crates/raw` | storytold/photocraft `crates/raw` (`photocraft-raw`), without `fuzz/` | `3aa1d9f43` | craft-image |
 | `craft-vp8enc` | `crates/vp8enc` | storytold/photocraft `src/codecs/vp8.rs` and `src/codecs/vp8/` | `3aa1d9f43` | craft-image |
 
@@ -44,10 +48,35 @@ upstream to PhotoCraft.
 **FilmCraft crates.** These are renamed `filmcraft-<x>` → `craft-<x>`, matching MediaCraft's
 other codec crates, and `filmcraft-testkit` → `mediacraft-testkit`. Their two internal
 dependencies are repointed: `filmcraft-bitstream` → `mediacraft-bitstream`, which carries the same
-`BitReader`, and the testkit. References in sources and docs are rewritten to match. A
-`rustfmt.toml` with FilmCraft's formatting (`max_width = 160`) is added. Nothing else changes.
+`BitReader` (used by `craft-ac3`), and the testkit. References in sources and docs are rewritten to
+match. A `rustfmt.toml` with FilmCraft's formatting (`max_width = 160`) is added. Nothing else changes.
 The root `Cargo.toml` builds the five decoders at `opt-level = 3` in dev profiles, as FilmCraft
 does, because their spec-vector tests are minutes slower without it.
+
+**FilmCraft captions crate.** `filmcraft-captions` (SRT, WebVTT, SCC, MCC, EBU STL, TTML/IMSC1/DFXP
+and CEA-608) is vendored at `4a56be9c` as `craft-captions` with these changes, because FilmCraft's
+project, text and colour crates are not vendored:
+
+- `src/burn.rs` (caption burn-in) is dropped, with its `filmcraft-project`, `filmcraft-text` and
+  `filmcraft-color` dependencies and the burn-in section of the README.
+- The parts of `src/lib.rs` that convert to and from `filmcraft_project` types are dropped:
+  `track_from_document`, `document_from_track` and `Format::track_format` (the types `Caption`,
+  `CaptionTrack`, `ClipId`, `TrackId` and `CaptionFormat`). `Document` and `Cue` are unchanged.
+- `filmcraft_project::plain_text` is copied into `src/plain_text.rs` (from filmcraft
+  `crates/project/src/caption.rs` at the same commit, with its two tests) and re-exported as
+  `craft_captions::plain_text`. Its three callers (`lib.rs`, `scc.rs`, `mcc.rs`) use it.
+- The test `ttml_and_dfxp_write_the_track_language` is removed: it goes through the caption track.
+  The rest of `tests/it/ttml_language.rs` and all other tests are kept.
+- The package description no longer mentions burn-in. `roxmltree` (MIT or Apache-2.0) is added as a
+  workspace dependency at the version FilmCraft uses.
+
+**FilmCraft AC-3, AVI and time crates.** `craft-avi` and `craft-time` get only the renames and
+`rustfmt.toml` described above. `craft-ac3` also gets a `dev` profile at `opt-level = 3`, and one
+code change: `Bits::read` in `src/lib.rs`. FilmCraft's `filmcraft-bitstream` re-exports craft-libs'
+`BitReader`, whose `peek` accepts widths above 32 bits (returning the low 32 bits of the field);
+`mediacraft-bitstream`'s accepts at most 32 and its debug build asserts. `Bits::read` now steps over
+the bits above the last 32 before peeking, which gives the same values, and the test
+`bits_match_the_old_bit_by_bit_reader` (widths up to 40) passes unchanged.
 
 **craft-libs crates.**
 

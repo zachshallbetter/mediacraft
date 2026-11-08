@@ -559,6 +559,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-ac3"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-bitstream",
+ "mediacraft-testkit",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "craft-archive"
 version = "0.1.0"
 dependencies = [
@@ -593,6 +602,23 @@ dependencies = [
  "mediacraft-testkit",
  "rayon",
  "rustix 1.1.5",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-avi"
+version = "0.1.0"
+dependencies = [
+ "mediacraft-testkit",
+]
+
+[[package]]
+name = "craft-captions"
+version = "0.1.0"
+dependencies = [
+ "craft-time",
+ "proptest",
+ "roxmltree 0.21.2",
  "thiserror 2.0.21",
 ]
 
@@ -813,6 +839,14 @@ dependencies = [
  "serde",
  "tempfile",
  "toml_edit",
+]
+
+[[package]]
+name = "craft-time"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
 ]
 
 [[package]]
@@ -2145,6 +2179,7 @@ dependencies = [
  "chrono",
  "craft-archive",
  "craft-atomic",
+ "craft-avi",
  "craft-h264",
  "craft-hevc",
  "craft-image",
@@ -2228,7 +2263,9 @@ name = "mediacraft-preview"
 version = "0.1.0"
 dependencies = [
  "craft-aac",
+ "craft-ac3",
  "craft-av1",
+ "craft-avi",
  "craft-dnx",
  "craft-flac",
  "craft-h264",
@@ -3259,6 +3296,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
+name = "roxmltree"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9da7f59328b09405b181fee1018925fad50f157afb43c0c0f5c522c256dd5907"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3937,7 +3983,7 @@ dependencies = [
  "kurbo 0.11.3",
  "log",
  "pico-args",
- "roxmltree",
+ "roxmltree 0.20.0",
  "simplecss",
  "siphasher",
  "strict-num",
