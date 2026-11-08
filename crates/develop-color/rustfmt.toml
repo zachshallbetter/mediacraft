@@ -1,0 +1,3 @@
+# LightCraft formatting (vendored crate).
+max_width = 150
+use_small_heuristics = "Max"

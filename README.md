@@ -77,7 +77,7 @@ Rather than designing shared library abstractions in isolation, components are f
 
 ## 3. Workspace Topology
 
-MediaCraft is organized as an integrated cargo workspace containing 43 high-performance, `#![forbid(unsafe_code)]` member crates:
+MediaCraft is organized as an integrated cargo workspace containing 46 high-performance, `#![forbid(unsafe_code)]` member crates:
 
 ```text
 mediacraft/
@@ -128,7 +128,10 @@ mediacraft/
 │   │   ├── archive/            (craft-archive: Safe ZIP/TAR inspection, Zip Slip defense, ResourceBudget)
 │   │   ├── psd/                (craft-psd: PSD/PSB layered raster image decoder)
 │   │   ├── raw/                (craft-raw: camera raw previews and development, from PhotoCraft)
-│   │   └── image/              (craft-image: still-image headers, metadata, colour, thumbnails, renditions)
+│   │   ├── image/              (craft-image: still-image headers, metadata, colour, thumbnails, renditions)
+│   │   ├── develop/            (craft-develop: the non-destructive photo edit model, DevelopSettings, from LightCraft)
+│   │   ├── develop-geom/       (craft-develop-geom: crop, orientation and homography geometry for craft-develop)
+│   │   └── develop-color/      (craft-develop-color: colour maths, curves and white balance for craft-develop)
 │   │
 │   └── Vendored from craft-libs (docs/VENDORED.md):
 │       ├── ui/                 (craft-ui: egui controls, docking, icons, theme)
@@ -151,7 +154,7 @@ mediacraft/
 
 MediaCraft builds from this repository alone. The craft-libs crates it uses (`craft-ui`, `craft-quit`,
 `craft-settings`, `craft-atomic`, `craft-cms`) and FilmCraft's AV1, VP9, VP8, MPEG-2 and DNx decoders
-and MPEG-TS and MXF demuxers are vendored into `crates/` at pinned commits. See
+and MPEG-TS and MXF demuxers, and LightCraft's develop-settings model, are vendored into `crates/` at pinned commits. See
 [`docs/VENDORED.md`](docs/VENDORED.md) for sources, local changes and updating, and
 [`docs/CRAFT_MEDIA_NAMING.md`](docs/CRAFT_MEDIA_NAMING.md) for what independence still needs.
 Dependency licences follow [`docs/LICENSING.md`](docs/LICENSING.md) (permissive, plus MPL-2.0

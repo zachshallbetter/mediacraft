@@ -1,0 +1,27 @@
+[package]
+name = "craft-develop-geom"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "LightCraft geom (L0)"
+
+# LightCraft's own lint set (its workspace [workspace.lints]), kept as-is for the vendored code.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+wildcard_imports = "deny"
+dbg_macro = "warn"
+todo = "warn"
+needless_range_loop = "allow"
+type_complexity = "allow"
+excessive_precision = "allow"
+
+[dependencies]
+serde = { workspace = true, features = ["rc"] }
+
+[dev-dependencies]
+proptest = { workspace = true }

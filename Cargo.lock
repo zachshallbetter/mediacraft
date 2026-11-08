@@ -631,6 +631,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-develop"
+version = "0.1.0"
+dependencies = [
+ "craft-develop-color",
+ "craft-develop-geom",
+ "miniz_oxide 0.9.1",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "craft-develop-color"
+version = "0.1.0"
+dependencies = [
+ "craft-develop-geom",
+ "proptest",
+ "serde",
+]
+
+[[package]]
+name = "craft-develop-geom"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+]
+
+[[package]]
 name = "craft-dnx"
 version = "0.1.0"
 dependencies = [

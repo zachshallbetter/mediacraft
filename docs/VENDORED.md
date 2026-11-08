@@ -25,6 +25,9 @@ into `crates/` rather than fetched as Git dependencies.
 | `mediacraft-testkit` | `crates/testkit` | storytold/filmcraft `crates/testkit` (dev-dependency only) | `4d571c2a666cace681209a1f617f68cd9cefefed` | the decoders and demuxers above |
 | `craft-raw` | `crates/raw` | storytold/photocraft `crates/raw` (`photocraft-raw`), without `fuzz/` | `3aa1d9f43` | craft-image |
 | `craft-vp8enc` | `crates/vp8enc` | storytold/photocraft `src/codecs/vp8.rs` and `src/codecs/vp8/` | `3aa1d9f43` | craft-image |
+| `craft-develop` | `crates/develop` | storytold/lightcraft `crates/develop` (`lightcraft-develop`), with local changes below | `b3b49987d` | nothing yet |
+| `craft-develop-geom` | `crates/develop-geom` | storytold/lightcraft `crates/geom` (`lightcraft-geom`) | `b3b49987d` | craft-develop, craft-develop-color |
+| `craft-develop-color` | `crates/develop-color` | storytold/lightcraft `crates/color` (`lightcraft-color`) | `b3b49987d` | craft-develop |
 
 The first four craft-libs crates are the commit MediaCraft was already pinned to. `craft-cms` is from craft-libs
 `main` on 2026-11-07.
@@ -44,6 +47,33 @@ reconstructed luma plane for every macroblock, making encoding quadratic in the 
 2560 px rendition took 12 to 16 seconds). It now saves only the macroblock's 16×16 block. The output
 is byte-identical, and `encode_time_is_linear_in_the_pixel_count` guards it. This should go
 upstream to PhotoCraft.
+
+**LightCraft develop crates.** `lightcraft-develop` (`DevelopSettings`, the non-destructive edit model,
+with its control specs, presets and segmentation masks), `lightcraft-geom` and `lightcraft-color` are
+vendored from LightCraft `origin/main` at `b3b49987d` as `craft-develop`, `craft-develop-geom` and
+`craft-develop-color`. The `develop-` prefix on the two small crates keeps the generic names
+`craft-geom` and `craft-color` free for craft-libs. Only rendering is out of scope here: the pipeline
+and LightCraft's raw decoder are not vendored. The changes:
+
+- **Renames:** the three package names, the two internal dependencies, and the `lightcraft_geom` and
+  `lightcraft_color` paths in the sources (`craft_develop_geom`, `craft_develop_color`). Comments that
+  name LightCraft crates that are not vendored (`lightcraft_pipeline`, `lightcraft_raw`,
+  `lightcraft-segment`) are left as they are.
+- **`rustfmt.toml`:** LightCraft's own (`max_width = 150`, `use_small_heuristics = "Max"`) in each crate.
+- **`Cargo.toml` of each crate:** `[lints] workspace = true` becomes LightCraft's own lint table
+  (`unsafe_code = "deny"`, `cognitive_complexity`, `too_many_arguments` and `wildcard_imports` denied),
+  because MediaCraft's workspace lints are looser on those. `serde` takes the `rc` feature and `serde_json`
+  the `float_roundtrip` feature, as in LightCraft's workspace; the latter keeps parsed floats exact, which
+  canonical bytes rely on. `rust-version` is inherited, as in the other crates.
+- **Workspace:** the three crates are members and path dependencies, and `miniz_oxide = "0.9"` (MIT,
+  Zlib or Apache-2.0) is a workspace dependency, the version LightCraft uses.
+- **`crates/develop/src/canonical.rs`** (new) and two lines in `src/lib.rs` (`pub mod canonical;` and its
+  re-exports). Hermit stores settings as RFC 8785 (JCS) bytes. `validate_canonical` rejects a NaN or
+  infinity, an integer beyond 2^53, and a map whose keys are not in a stable order; it checks the serialisation
+  itself, because `serde_json::to_value` turns a NaN into `null`. `to_canonical_json` validates and writes the
+  JCS bytes with a small clean-room writer (keys sorted by UTF-16 code units, ECMAScript number format, minimal
+  string escapes; no extra dependency), tested against the RFC's examples. LightCraft's JSON omits `process`
+  at V1; the canonical bytes always state it, and `version`. Nothing else in the vendored files changes.
 
 **FilmCraft crates.** These are renamed `filmcraft-<x>` → `craft-<x>`, matching MediaCraft's
 other codec crates, and `filmcraft-testkit` → `mediacraft-testkit`. Their two internal

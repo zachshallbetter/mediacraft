@@ -1,0 +1,31 @@
+[package]
+name = "craft-develop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "LightCraft develop settings: the non-destructive edit model, control specs, presets (L1)"
+
+# LightCraft's own lint set (its workspace [workspace.lints]), kept as-is for the vendored code.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+wildcard_imports = "deny"
+dbg_macro = "warn"
+todo = "warn"
+needless_range_loop = "allow"
+type_complexity = "allow"
+excessive_precision = "allow"
+
+[dependencies]
+craft-develop-geom = { workspace = true }
+craft-develop-color = { workspace = true }
+serde = { workspace = true, features = ["rc"] }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+miniz_oxide = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
