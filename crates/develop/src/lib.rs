@@ -6,11 +6,13 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod canonical;
 pub mod controls;
 pub mod presets;
 pub mod segmask;
 pub mod settings;
 
+pub use canonical::{CanonicalError, to_canonical_json, validate_canonical};
 pub use controls::{CONTROLS, ControlSpec, Section, Track};
 pub use presets::{Preset, SettingsGroup, apply_partial, extract_groups};
 pub use segmask::{SegMask, with_grid_interner};
