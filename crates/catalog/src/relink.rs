@@ -174,6 +174,7 @@ mod tests {
             is_offline: true,
             document: None,
             archive: None,
+            image: None,
         };
 
         // Initially offline

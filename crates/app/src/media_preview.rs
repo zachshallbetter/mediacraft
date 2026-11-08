@@ -246,20 +246,26 @@ fn decode_preview(path: &Path, kind: MediaKind, seek_ms: u32) -> Option<ColorIma
     }
 }
 
+/// Still images through `craft-image`: upright (EXIF orientation applied), converted to sRGB
+/// from the embedded profile, and resampled in linear light. Formats it cannot decode (HEIF,
+/// AVIF, camera raw) return `None` and fall back to ffmpeg.
 fn decode_image_file(path: &Path) -> Option<ColorImage> {
     let metadata = std::fs::metadata(path).ok()?;
     if !metadata.is_file() || metadata.len() > MAX_IMAGE_BYTES {
         return None;
     }
-
-    let reader = ImageReader::open(path).ok()?.with_guessed_format().ok()?;
-    let (width, height) = reader.into_dimensions().ok()?;
-    if width > MAX_SOURCE_EDGE || height > MAX_SOURCE_EDGE {
-        return None;
-    }
-    let mut reader = ImageReader::open(path).ok()?.with_guessed_format().ok()?;
-    reader.limits(preview_limits());
-    to_color_image(reader.decode().ok()?)
+    let bytes = std::fs::read(path).ok()?;
+    let opts = craft_image::ThumbnailOptions {
+        limits: craft_image::Limits {
+            max_pixels: u64::from(MAX_SOURCE_EDGE) * u64::from(MAX_SOURCE_EDGE),
+            max_alloc: 256 * 1024 * 1024,
+            max_input_bytes: MAX_IMAGE_BYTES,
+        },
+        ..craft_image::ThumbnailOptions::new(MAX_PREVIEW_EDGE)
+    };
+    let thumb = craft_image::thumbnail(&bytes, &opts).ok()?;
+    let size = [thumb.image.width() as usize, thumb.image.height() as usize];
+    Some(ColorImage::from_rgba_unmultiplied(size, thumb.image.data()))
 }
 
 fn decode_video_frame(path: &Path, seek_ms: u32) -> Option<ColorImage> {

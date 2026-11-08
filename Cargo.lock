@@ -382,6 +382,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "cipher"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,6 +612,23 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "craft-image"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "craft-cms",
+ "craft-psd",
+ "flate2",
+ "image",
+ "jpeg-decoder",
+ "proptest",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1623,6 +1649,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "jpeg-decoder"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00810f1d8b74be64b13dbf3db89ac67740615d6c891f0e7b6179326533011a07"
+
+[[package]]
 name = "js-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1787,6 +1819,7 @@ name = "mediacraft-app"
 version = "0.1.0"
 dependencies = [
  "craft-atomic",
+ "craft-image",
  "craft-quit",
  "craft-settings",
  "craft-ui",
@@ -1820,6 +1853,7 @@ version = "0.1.0"
 dependencies = [
  "craft-archive",
  "craft-atomic",
+ "craft-image",
  "craft-pdf",
  "mediacraft-bitstream",
  "mediacraft-protocol",

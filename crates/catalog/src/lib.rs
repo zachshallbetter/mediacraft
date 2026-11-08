@@ -113,6 +113,35 @@ pub struct ArchiveInfo {
     pub has_encrypted_entries: bool,
 }
 
+/// Technical and descriptive still-image metadata, read by `craft-image` from the file's
+/// headers, EXIF, XMP, IPTC and ICC profile without decoding pixels.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ImageInfo {
+    /// Container format, e.g. "JPEG", "HEIF".
+    pub format: String,
+    /// Width as displayed (orientation applied).
+    pub width: u32,
+    /// Height as displayed (orientation applied).
+    pub height: u32,
+    /// EXIF orientation value 1–8 of the stored pixels.
+    pub orientation: u16,
+    pub bit_depth: Option<u8>,
+    pub has_alpha: Option<bool>,
+    pub animated: bool,
+    /// The embedded ICC profile's description, e.g. "Display P3".
+    pub color_profile: Option<String>,
+    pub lens: Option<String>,
+    /// e.g. "1/250 s · f/2.8 · ISO 400 · 50 mm".
+    pub exposure: Option<String>,
+    pub title: Option<String>,
+    pub caption: Option<String>,
+    pub alt_text: Option<String>,
+    pub creators: Vec<String>,
+    pub copyright: Option<String>,
+    /// Whether this build can decode the pixels for previews and renditions.
+    pub decodable: bool,
+}
+
 /// An indexed media asset in the MediaCraft workspace.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MediaAsset {
@@ -138,6 +167,8 @@ pub struct MediaAsset {
     pub document: Option<DocumentInfo>,
     #[serde(default)]
     pub archive: Option<ArchiveInfo>,
+    #[serde(default)]
+    pub image: Option<ImageInfo>,
 }
 
 impl Default for MediaAsset {
@@ -162,6 +193,7 @@ impl Default for MediaAsset {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         }
     }
 }
@@ -368,6 +400,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "B002_C014".to_string(),
@@ -403,6 +436,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "C003_C007".to_string(),
@@ -432,6 +466,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "IMG_8342".to_string(),
@@ -453,6 +488,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Surf_001".to_string(),
@@ -482,6 +518,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Podcast_Interview".to_string(),
@@ -509,6 +546,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Motion_Graphics".to_string(),
@@ -538,6 +576,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Drone_003".to_string(),
@@ -567,6 +606,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Color_Bars".to_string(),
@@ -602,6 +642,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Ski_Day_01".to_string(),
@@ -631,6 +672,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Waterfall_Exr".to_string(),
@@ -652,6 +694,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Interview_B_Roll".to_string(),
@@ -681,6 +724,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Product_Shot".to_string(),
@@ -702,6 +746,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Aerial_Utah".to_string(),
@@ -731,6 +776,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Car_Commercial".to_string(),
@@ -766,6 +812,7 @@ impl MediaCatalog {
                 is_offline: false,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Offline_Take_04".to_string(),
@@ -795,6 +842,7 @@ impl MediaCatalog {
                 is_offline: true,
                 document: None,
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "CueSheet_Final".to_string(),
@@ -827,6 +875,7 @@ impl MediaCatalog {
                     is_encrypted: false,
                 }),
                 archive: None,
+                image: None,
             },
             MediaAsset {
                 id: "Deliverables_Package".to_string(),
@@ -859,6 +908,7 @@ impl MediaCatalog {
                     uncompressed_bytes: 890_000_000,
                     has_encrypted_entries: false,
                 }),
+                image: None,
             },
         ];
 

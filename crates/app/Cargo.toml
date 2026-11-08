@@ -29,7 +29,9 @@ egui = { workspace = true }
 eframe = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "tiff", "gif", "bmp", "exr"] }
+craft-image = { workspace = true }
+# Still images go through craft-image; `image` remains for the app icon and ffmpeg's PNG frames.
+image = { workspace = true, features = ["png", "jpeg", "webp", "tiff", "gif", "bmp", "exr"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { version = "0.21", default-features = false }

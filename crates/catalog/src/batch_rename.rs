@@ -286,6 +286,7 @@ mod tests {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         };
 
         let asset2 = MediaAsset {
@@ -308,6 +309,7 @@ mod tests {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         };
 
         let plan = planner.plan(&[asset1, asset2]);

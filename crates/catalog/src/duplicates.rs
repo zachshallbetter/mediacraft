@@ -296,6 +296,7 @@ mod tests {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         };
 
         let a2 = MediaAsset {
@@ -318,6 +319,7 @@ mod tests {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         };
 
         let a3 = MediaAsset {
@@ -340,6 +342,7 @@ mod tests {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         };
 
         let finder = DuplicateFinder::new();
@@ -383,6 +386,7 @@ mod tests {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         };
 
         let a2 = MediaAsset {
@@ -413,6 +417,7 @@ mod tests {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         };
 
         let finder = DuplicateFinder::new();

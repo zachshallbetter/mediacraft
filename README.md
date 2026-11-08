@@ -50,6 +50,15 @@ Rather than designing shared library abstractions in isolation, components are f
   - *`craft-pdf`*: Pure-Rust ISO 32000 COS object graph, stream filters (Flate, LZW, ASCII85), crypt security handlers (RC4, AES-128/256), and metadata inspection.
   - *`craft-archive`*: Safe multi-format unarchiver (ZIP, TAR, TAR.GZ) with `ResourceBudget` decompression limits, path containment, and Zip Slip traversal prevention.
   - *`craft-psd`*: Layered raster image decoder for multi-app asset ingestion.
+  - *`craft-image`*: Still images for asset pipelines. It covers:
+    - format sniffing and header reads without decoding pixels;
+    - EXIF, XMP, IPTC and ICC extraction, merged into one view;
+    - orientation;
+    - sRGB conversion through `craft-cms`;
+    - linear-light thumbnails and renditions with a location-safe metadata policy.
+
+    The catalogue's image probing and the app's still previews run on it. See
+    [`crates/image/README.md`](crates/image/README.md).
 
 ### 4. Creative File Format & Conversion Reference ([`FORMAT_COMPATIBILITY_REFERENCE.md`](../FORMAT_COMPATIBILITY_REFERENCE.md))
 
@@ -68,7 +77,7 @@ Rather than designing shared library abstractions in isolation, components are f
 
 ## 3. Workspace Topology
 
-MediaCraft is organized as an integrated cargo workspace containing 22 high-performance, `#![forbid(unsafe_code)]` member crates:
+MediaCraft is organized as an integrated cargo workspace containing 23 high-performance, `#![forbid(unsafe_code)]` member crates:
 
 ```text
 mediacraft/
@@ -104,7 +113,8 @@ mediacraft/
 │   └── Documents, Layered Images & Safe Packaging (Staged for craft-libs):
 │       ├── pdf/                (craft-pdf: Clean-room ISO 32000 PDF COS parser, filters, crypt, content)
 │       ├── archive/            (craft-archive: Safe ZIP/TAR inspection, Zip Slip defense, ResourceBudget)
-│       └── psd/                (craft-psd: PSD/PSB layered raster image decoder)
+│       ├── psd/                (craft-psd: PSD/PSB layered raster image decoder)
+│       └── image/              (craft-image: still-image headers, metadata, colour, thumbnails, renditions)
 └── docs/
     ├── INTERFACE.md            (UI Screen Map: 5 workspaces, 20 screens, 14 panels)
     ├── MEDIA_INFRASTRUCTURE_SPEC.md (Shared media library architecture)
@@ -141,7 +151,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 
 # Verify WebAssembly target compilation on staged library crates
-cargo check --target wasm32-unknown-unknown -p craft-pdf -p craft-archive -p craft-psd -p craft-matroska -p craft-isobmff -p craft-aac -p craft-flac -p craft-opus
+cargo check --target wasm32-unknown-unknown -p craft-pdf -p craft-archive -p craft-psd -p craft-image -p craft-matroska -p craft-isobmff -p craft-aac -p craft-flac -p craft-opus
 
 # Run AV sync and priming delay verification oracle
 cargo run -p mediacraft-cli -- oracle-test

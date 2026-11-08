@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::{
-    ArchiveInfo, AudioStreamInfo, DocumentInfo, MediaAsset, MediaCatalog, MediaKind,
+    ArchiveInfo, AudioStreamInfo, DocumentInfo, ImageInfo, MediaAsset, MediaCatalog, MediaKind,
     VideoStreamInfo,
 };
 
@@ -211,6 +211,14 @@ pub fn probe_file(path: &Path) -> Option<MediaAsset> {
         _ => (None, None),
     };
 
+    let still = match kind {
+        MediaKind::Image | MediaKind::RawDng => {
+            craft_image::probe_file(path, craft_image::DEFAULT_PROBE_BYTES).ok()
+        }
+        _ => None,
+    };
+    let m = still.as_ref().map(|s| &s.metadata);
+
     Some(MediaAsset {
         id,
         path: path.to_path_buf(),
@@ -221,17 +229,99 @@ pub fn probe_file(path: &Path) -> Option<MediaAsset> {
         timecode_start: "00:00:00:00".to_string(),
         video,
         audio,
-        camera_model: None,
-        date_created: modified,
-        geo_location: None,
-        rating: 0,
-        tags: Vec::new(),
+        camera_model: m.and_then(camera_name),
+        date_created: m.and_then(|m| m.capture_time.clone()).unwrap_or(modified),
+        geo_location: m
+            .and_then(|m| m.gps)
+            .map(|g| format!("{:.5}, {:.5}", g.latitude, g.longitude)),
+        rating: m
+            .and_then(|m| m.rating)
+            .map_or(0, |r| u8::try_from(r.max(0)).unwrap_or(0)),
+        tags: m.map(|m| m.keywords.clone()).unwrap_or_default(),
         has_proxy: false,
         needs_transcode: false,
         is_offline: false,
         document,
         archive,
+        image: still.as_ref().map(image_info),
     })
+}
+
+/// The catalogue's view of a `craft-image` probe.
+fn image_info(p: &craft_image::ImageInfo) -> ImageInfo {
+    let (width, height) = p.header.display_size();
+    let m = &p.metadata;
+    ImageInfo {
+        format: p.header.format.to_string(),
+        width,
+        height,
+        orientation: p.header.orientation.to_exif(),
+        bit_depth: p.header.bit_depth,
+        has_alpha: p.header.has_alpha,
+        animated: p.header.animated,
+        color_profile: p.icc.as_ref().and_then(|i| i.description.clone()),
+        lens: m.lens.clone(),
+        exposure: exposure_summary(m),
+        title: m.title.clone(),
+        caption: m.caption.clone(),
+        alt_text: m.alt_text.clone(),
+        creators: m.creators.clone(),
+        copyright: m.copyright.clone(),
+        decodable: p.decodable,
+    }
+}
+
+/// "Canon EOS R5" rather than "Canon Canon EOS R5": most makers repeat the make in the model.
+fn camera_name(m: &craft_image::Metadata) -> Option<String> {
+    let make = m
+        .camera_make
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let model = m
+        .camera_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match (make, model) {
+        (Some(make), Some(model)) => {
+            // "NIKON CORPORATION" + "NIKON Z 6" → "NIKON Z 6".
+            let brand = make
+                .split_whitespace()
+                .next()
+                .unwrap_or(make)
+                .to_ascii_lowercase();
+            if model.to_ascii_lowercase().starts_with(&brand) {
+                Some(model.to_string())
+            } else {
+                Some(format!("{make} {model}"))
+            }
+        }
+        (None, Some(one)) | (Some(one), None) => Some(one.to_string()),
+        (None, None) => None,
+    }
+}
+
+/// "1/250 s · f/2.8 · ISO 400 · 50 mm", from whichever parts are known.
+fn exposure_summary(m: &craft_image::Metadata) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(t) = m.exposure_time.filter(|t| t.is_finite() && *t > 0.0) {
+        parts.push(if t < 1.0 {
+            format!("1/{} s", (1.0 / t).round())
+        } else {
+            format!("{} s", (t * 10.0).round() / 10.0)
+        });
+    }
+    if let Some(f) = m.f_number {
+        parts.push(format!("f/{}", (f * 10.0).round() / 10.0));
+    }
+    if let Some(iso) = m.iso {
+        parts.push(format!("ISO {iso}"));
+    }
+    if let Some(fl) = m.focal_length {
+        parts.push(format!("{} mm", fl.round()));
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
 fn probe_pdf(path: &Path) -> Option<DocumentInfo> {
@@ -579,6 +669,82 @@ impl MediaCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A little-endian EXIF block: Make, Model and Orientation 6 (rotate 90° clockwise).
+    fn camera_exif() -> Vec<u8> {
+        let mut b = b"II*\0\x08\0\0\0".to_vec();
+        b.extend_from_slice(&3u16.to_le_bytes());
+        let entry = |b: &mut Vec<u8>, tag: u16, typ: u16, count: u32, value: u32| {
+            b.extend_from_slice(&tag.to_le_bytes());
+            b.extend_from_slice(&typ.to_le_bytes());
+            b.extend_from_slice(&count.to_le_bytes());
+            b.extend_from_slice(&value.to_le_bytes());
+        };
+        // Strings follow the IFD, which ends at 8 + 2 + 3 × 12 + 4 = 50.
+        entry(&mut b, 0x010F, 2, 6, 50);
+        entry(&mut b, 0x0110, 2, 13, 56);
+        entry(&mut b, 0x0112, 3, 1, 6);
+        b.extend_from_slice(&0u32.to_le_bytes());
+        b.extend_from_slice(b"Canon\0Canon EOS R5\0");
+        b
+    }
+
+    #[test]
+    fn probe_image_reads_header_and_exif_through_craft_image()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let dir = std::env::temp_dir().join(format!("mc_scan_image_test_{}", std::process::id()));
+        fs::create_dir_all(&dir)?;
+        let pixels = craft_image::Rgba8Image::filled(30, 20, [200, 120, 40, 255])?;
+        let opts = craft_image::EncodeOptions {
+            exif: Some(camera_exif()),
+            ..Default::default()
+        };
+        let jpeg = craft_image::encode(
+            &pixels,
+            craft_image::OutputFormat::Jpeg { quality: 80 },
+            &opts,
+        )?;
+        let path = dir.join("portrait.jpg");
+        fs::write(&path, jpeg)?;
+
+        let asset = probe_file(&path).ok_or("the JPEG was not indexed")?;
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(asset.kind, MediaKind::Image);
+        assert_eq!(asset.camera_model.as_deref(), Some("Canon EOS R5"));
+        let image = asset.image.ok_or("no image metadata")?;
+        assert_eq!(image.format, "JPEG");
+        // Stored 30×20, displayed upright as 20×30.
+        assert_eq!((image.width, image.height, image.orientation), (20, 30, 6));
+        assert!(image.decodable);
+        Ok(())
+    }
+
+    #[test]
+    fn exposure_and_camera_names_read_naturally() {
+        let m = craft_image::Metadata {
+            camera_make: Some("NIKON CORPORATION".into()),
+            camera_model: Some("NIKON Z 6".into()),
+            exposure_time: Some(0.004),
+            f_number: Some(2.8),
+            iso: Some(400),
+            focal_length: Some(50.0),
+            ..Default::default()
+        };
+        assert_eq!(camera_name(&m).as_deref(), Some("NIKON Z 6"));
+        assert_eq!(
+            exposure_summary(&m).as_deref(),
+            Some("1/250 s · f/2.8 · ISO 400 · 50 mm")
+        );
+        let m = craft_image::Metadata {
+            camera_make: Some("FUJIFILM".into()),
+            camera_model: Some("X-T5".into()),
+            exposure_time: Some(2.0),
+            ..Default::default()
+        };
+        assert_eq!(camera_name(&m).as_deref(), Some("FUJIFILM X-T5"));
+        assert_eq!(exposure_summary(&m).as_deref(), Some("2 s"));
+        assert_eq!(exposure_summary(&craft_image::Metadata::default()), None);
+    }
 
     #[test]
     fn scan_temp_directory_detects_files() {

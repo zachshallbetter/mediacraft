@@ -1,0 +1,30 @@
+[package]
+name = "craft-image"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Still images for asset pipelines: format sniffing, headers, EXIF/XMP/IPTC/ICC metadata, orientation, colour-managed thumbnails and renditions"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Pixel codecs. `image` is the decoder and encoder for the raster formats; jpeg-decoder adds
+# DCT-domain downscaling, which `image` does not expose, for fast JPEG thumbnails.
+image = { workspace = true, features = ["jpeg", "png", "webp", "tiff", "gif", "bmp"] }
+jpeg-decoder = { workspace = true }
+# ICC profile parsing and transforms, shared with the rest of the Craft suite.
+craft-cms = { workspace = true }
+quick-xml = { workspace = true }
+# Layered PSD/PSB composites and their image resources, from this workspace.
+craft-psd = { workspace = true }
+chrono = { workspace = true }
+flate2 = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }

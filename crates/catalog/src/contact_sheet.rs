@@ -183,6 +183,7 @@ mod tests {
             is_offline: false,
             document: None,
             archive: None,
+            image: None,
         }];
 
         let html = ContactSheetGenerator::generate_html(&assets, &ContactSheetOptions::default());
