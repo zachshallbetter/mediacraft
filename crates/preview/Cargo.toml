@@ -1,0 +1,27 @@
+[package]
+name = "mediacraft-preview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Poster frames and audio waveforms from MediaCraft's own demuxers and decoders, without ffmpeg"
+
+[lints]
+workspace = true
+
+[dependencies]
+craft-isobmff = { workspace = true }
+craft-matroska = { workspace = true }
+craft-h264 = { workspace = true }
+craft-hevc = { workspace = true }
+craft-prores = { workspace = true }
+craft-aac = { workspace = true }
+craft-flac = { workspace = true }
+craft-opus = { workspace = true }
+craft-image = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+craft-h264enc = { workspace = true }
+mediacraft-bitstream = { workspace = true }

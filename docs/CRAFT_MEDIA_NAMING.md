@@ -39,14 +39,14 @@ here depends on upstream `craft-media`.
 
 ### Processes MediaCraft starts
 
-| Where | Runs | For | In-tree replacement |
-|---|---|---|---|
-| `catalog/src/scanner.rs` (`probe_media_streams`) | `ffprobe` | Video and audio stream info when indexing | `craft-isobmff` and `craft-matroska` demuxers plus codec config parsing |
-| `app/src/media_preview.rs` | `ffmpeg` | Video poster frames | `craft-isobmff`/`craft-matroska` demux plus `craft-h264`/`craft-hevc`/`craft-prores` decode |
-| `app/src/media_preview.rs` | `ffmpeg` | HEIC, AVIF and camera raw stills | HEIF decode (LightCraft/PhotoCraft `heif`) and a raw developer (LightCraft/PhotoCraft `raw`) |
-| `app/src/media_preview.rs` | `ffmpeg` | Audio waveforms | `craft-aac`, `craft-flac`, `craft-opus` and WAV decode plus peak extraction |
+| Where | Was | Now |
+|---|---|---|
+| Catalogue indexing (`catalog/src/av_probe.rs`) | `ffprobe` for every video and audio file | In-tree: `craft-isobmff`, `craft-matroska` and header parsers. Agrees with ffprobe on 299 local files (see the commit). No ffprobe call remains. |
+| Still previews (`app/src/media_preview.rs`) | `image` crate, ffmpeg fallback | `craft-image`. ffmpeg only for HEIC, AVIF and camera raw. |
+| Video poster frames | `ffmpeg` | `mediacraft-preview` (MP4/MOV/MKV with H.264, HEVC, ProRes). ffmpeg only for VP9, AV1 and MPEG-4 Part 2. |
+| Audio waveforms | `ffmpeg` | `mediacraft-preview` (WAV, AIFF, MP4/MKV PCM, AAC, Opus, Ogg Opus). ffmpeg only for FLAC, MP3, Vorbis, E-AC-3 and raw ADTS. |
 
-Still images no longer need ffmpeg on the `feat/craft-image` branch, except HEIC, AVIF and raw.
+The app runs without ffmpeg installed; files in the "only" columns then show no preview.
 
 ### Code that lived outside this repository
 
@@ -76,10 +76,11 @@ against `craft-bitstream` with few changes.
 
 ## Order of work
 
-1. Replace `ffprobe` in the catalogue with in-tree probing. Indexing is the path every asset
-   takes, and the demuxers are already here.
-2. Replace `ffmpeg` poster frames with in-tree demux and decode (H.264, HEVC, ProRes first).
+1. ~~Replace `ffprobe` in the catalogue.~~ Done.
+2. ~~Replace `ffmpeg` poster frames and waveforms for the codecs in this tree.~~ Done.
 3. Bring the FilmCraft decoders in (VP9, AV1, VP8, then MXF, MPEG-TS, MPEG-2 and DNx), each as
    its own crate with its tests and an origin note.
-4. Bring HEIF decode in, so iPhone photos need no ffmpeg.
-5. ~~Vendor the craft-libs Git dependencies.~~ Done; see `docs/VENDORED.md`.
+4. Bring HEIF decode in (HEVC intra is already here in `craft-hevc`), so iPhone photos need no
+   ffmpeg.
+5. Audio decoders for FLAC, MP3 and Vorbis, and ADTS framing for raw AAC files.
+6. ~~Vendor the craft-libs Git dependencies.~~ Done; see `docs/VENDORED.md`.

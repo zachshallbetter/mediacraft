@@ -30,6 +30,7 @@ eframe = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 craft-image = { workspace = true }
+mediacraft-preview = { workspace = true }
 # Still images go through craft-image; `image` remains for the app icon and ffmpeg's PNG frames.
 image = { workspace = true, features = ["png", "jpeg", "webp", "tiff", "gif", "bmp", "exr"] }
 

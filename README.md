@@ -77,7 +77,7 @@ Rather than designing shared library abstractions in isolation, components are f
 
 ## 3. Workspace Topology
 
-MediaCraft is organized as an integrated cargo workspace containing 28 high-performance, `#![forbid(unsafe_code)]` member crates:
+MediaCraft is organized as an integrated cargo workspace containing 29 high-performance, `#![forbid(unsafe_code)]` member crates:
 
 ```text
 mediacraft/
@@ -86,6 +86,7 @@ mediacraft/
 │   ├── Application & Service Layer:
 │   │   ├── app/                (Desktop workspace UI using craft-ui docking, theme & craft-quit)
 │   │   ├── catalog/            (Digital Asset Management engine: audio, video, image, doc, archive facets)
+│   │   ├── preview/            (mediacraft-preview: poster frames and waveforms from in-tree decoders, no ffmpeg)
 │   │   ├── daemon/             (Priority transcode queue, state machine, playback hook)
 │   │   ├── client/             (High-level async client library connecting over domain sockets)
 │   │   ├── protocol/           (Typed IPC messages, job descriptors, encoding presets)

@@ -24,6 +24,7 @@ members = [
     "crates/pdf",
     "crates/archive",
     "crates/image",
+    "crates/preview",
     # Vendored from storytold/craft-libs; see docs/VENDORED.md.
     "crates/atomic",
     "crates/settings",
@@ -74,6 +75,7 @@ craft-psd = { path = "crates/psd" }
 craft-pdf = { path = "crates/pdf" }
 craft-archive = { path = "crates/archive" }
 craft-image = { path = "crates/image" }
+mediacraft-preview = { path = "crates/preview" }
 
 # Vendored from storytold/craft-libs (docs/VENDORED.md): MediaCraft builds from this tree alone.
 craft-ui = { path = "crates/ui" }

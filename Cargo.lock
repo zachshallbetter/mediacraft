@@ -1831,6 +1831,7 @@ dependencies = [
  "mediacraft-client",
  "mediacraft-daemon",
  "mediacraft-oracles",
+ "mediacraft-preview",
  "mediacraft-protocol",
  "muda",
  "proptest",
@@ -1923,6 +1924,24 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "mediacraft-preview"
+version = "0.1.0"
+dependencies = [
+ "craft-aac",
+ "craft-flac",
+ "craft-h264",
+ "craft-h264enc",
+ "craft-hevc",
+ "craft-image",
+ "craft-isobmff",
+ "craft-matroska",
+ "craft-opus",
+ "craft-prores",
+ "mediacraft-bitstream",
  "thiserror 2.0.21",
 ]
 

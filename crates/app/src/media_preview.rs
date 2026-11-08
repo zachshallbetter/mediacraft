@@ -236,14 +236,40 @@ fn cover_uv(texture_size: [usize; 2], target: Rect) -> Rect {
     }
 }
 
+/// Previews come from MediaCraft's own decoders. ffmpeg is used only when it is installed and
+/// the in-tree path has no decoder for the file yet (VP9, AV1 and MPEG-4 Part 2 video, HEIC,
+/// AVIF and raw stills, FLAC, MP3 and Vorbis audio); without it those files show no preview.
 fn decode_preview(path: &Path, kind: MediaKind, seek_ms: u32) -> Option<ColorImage> {
     match kind {
         MediaKind::Image => decode_image_file(path).or_else(|| decode_ffmpeg_still(path)),
-        MediaKind::Video => decode_video_frame(path, seek_ms),
-        MediaKind::Audio => decode_audio_waveform(path),
+        MediaKind::Video => {
+            decode_video_in_tree(path, seek_ms).or_else(|| decode_video_frame(path, seek_ms))
+        }
+        MediaKind::Audio => decode_waveform_in_tree(path).or_else(|| decode_audio_waveform(path)),
         MediaKind::RawDng => decode_ffmpeg_still(path),
         _ => None,
     }
+}
+
+/// A poster frame through `mediacraft-preview` (MP4/MOV/MKV with H.264, HEVC or ProRes).
+fn decode_video_in_tree(path: &Path, seek_ms: u32) -> Option<ColorImage> {
+    let opts = mediacraft_preview::FrameOptions {
+        max_edge: MAX_PREVIEW_EDGE,
+        ..mediacraft_preview::FrameOptions::at(f64::from(seek_ms) / 1000.0)
+    };
+    let frame = mediacraft_preview::poster_frame(path, &opts).ok()?;
+    let size = [frame.image.width() as usize, frame.image.height() as usize];
+    Some(ColorImage::from_rgba_unmultiplied(size, frame.image.data()))
+}
+
+/// The opening twelve seconds' peaks through `mediacraft-preview`.
+fn decode_waveform_in_tree(path: &Path) -> Option<ColorImage> {
+    let opts = mediacraft_preview::WaveformOptions {
+        columns: WAVEFORM_WIDTH,
+        max_seconds: 12.0,
+    };
+    let w = mediacraft_preview::waveform(path, &opts).ok()?;
+    draw_waveform(&w.peaks)
 }
 
 /// Still images through `craft-image`: upright (EXIF orientation applied), converted to sRGB
@@ -419,31 +445,50 @@ fn run_ffmpeg(mut command: Command, max_output_bytes: usize) -> Option<Vec<u8>> 
     Some(bytes)
 }
 
+const WAVEFORM_WIDTH: usize = 640;
+const WAVEFORM_HEIGHT: usize = 180;
+
+/// ffmpeg's s16le mono samples as column peaks.
 fn waveform_image(bytes: &[u8]) -> Option<ColorImage> {
     let sample_count = bytes.len() / 2;
     if sample_count == 0 {
         return None;
     }
+    let peaks: Vec<f32> = (0..WAVEFORM_WIDTH)
+        .map(|x| {
+            let start = x * sample_count / WAVEFORM_WIDTH;
+            let end = ((x + 1) * sample_count / WAVEFORM_WIDTH)
+                .max(start + 1)
+                .min(sample_count);
+            (start..end)
+                .filter_map(|i| bytes.get(i * 2..i * 2 + 2))
+                .map(|b| {
+                    f32::from(i16::from_le_bytes([b[0], b[1]]).unsigned_abs()) / f32::from(i16::MAX)
+                })
+                .fold(0.0, f32::max)
+        })
+        .collect();
+    draw_waveform(&peaks)
+}
 
-    const WIDTH: usize = 640;
-    const HEIGHT: usize = 180;
-    let center = HEIGHT / 2;
-    let mut image = ColorImage::filled([WIDTH, HEIGHT], Color32::from_rgb(16, 20, 26));
-    for x in 0..WIDTH {
-        let start = x * sample_count / WIDTH;
-        let end = ((x + 1) * sample_count / WIDTH)
-            .max(start + 1)
-            .min(sample_count);
-        let peak = (start..end)
-            .map(|sample| {
-                let offset = sample * 2;
-                i16::from_le_bytes([bytes[offset], bytes[offset + 1]]).unsigned_abs() as usize
-            })
-            .max()
-            .unwrap_or_default();
-        let amplitude = (peak * (center - 3) / i16::MAX as usize).max(1);
-        for y in center.saturating_sub(amplitude)..=(center + amplitude).min(HEIGHT - 1) {
-            image.pixels[y * WIDTH + x] = Color32::from_rgb(33, 205, 198);
+/// Draw column peaks (0.0–1.0) as a centred bar per column.
+fn draw_waveform(peaks: &[f32]) -> Option<ColorImage> {
+    if peaks.is_empty() {
+        return None;
+    }
+    let center = WAVEFORM_HEIGHT / 2;
+    let mut image = ColorImage::filled(
+        [WAVEFORM_WIDTH, WAVEFORM_HEIGHT],
+        Color32::from_rgb(16, 20, 26),
+    );
+    for x in 0..WAVEFORM_WIDTH {
+        let peak = peaks
+            .get(x * peaks.len() / WAVEFORM_WIDTH)
+            .copied()
+            .unwrap_or(0.0);
+        let amplitude = ((peak.clamp(0.0, 1.0) * (center - 3) as f32) as usize).max(1);
+        for y in center.saturating_sub(amplitude)..=(center + amplitude).min(WAVEFORM_HEIGHT - 1) {
+            image.pixels[y * WAVEFORM_WIDTH + x] = Color32::from_rgb(33, 205, 198);
         }
     }
     Some(image)
