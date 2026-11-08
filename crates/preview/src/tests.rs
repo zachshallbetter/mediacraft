@@ -133,6 +133,7 @@ fn rotation_turns_the_frame_upright() {
         },
         0.0,
         "h264",
+        None,
     )
     .unwrap();
     // 4×2 turned 90° clockwise is 2×4; the stored left (black) half is now on top.

@@ -45,6 +45,9 @@ pub(crate) struct Source {
     /// Sample times are stored (decode) positions, not presentation times: MXF whose index has
     /// no temporal offsets. Presentation order then comes from the decoder's output order.
     pub decode_order_times: bool,
+    /// The container's colour description (H.273 primaries, transfer), for streams whose own
+    /// leaves them unspecified or, like VP9, cannot carry the transfer.
+    pub colour: Option<(u8, u8)>,
 }
 
 /// A file as a positioned byte source for the MPEG-TS and MXF demuxers.
@@ -157,7 +160,23 @@ fn mp4(path: &Path) -> Result<Source> {
         .map_or(Crop::None, Crop::CleanAperture);
     let quarter_turns = t.display_rotation().unwrap_or(0);
     let ticks_per_second = f64::from(t.timescale.max(1));
+    let colour = t.video().and_then(|v| match v.color {
+        Some(
+            craft_isobmff::ColorInfo::Nclx {
+                primaries,
+                transfer,
+                ..
+            }
+            | craft_isobmff::ColorInfo::Nclc {
+                primaries,
+                transfer,
+                ..
+            },
+        ) => Some((u8::try_from(primaries).ok()?, u8::try_from(transfer).ok()?)),
+        _ => None,
+    });
     Ok(Source {
+        colour,
         decoder,
         samples,
         ticks_per_second,
@@ -200,7 +219,12 @@ fn mkv(path: &Path) -> Result<Source> {
         .as_ref()
         .and_then(|v| v.display_rotation())
         .unwrap_or(0);
+    let colour = t.video.as_ref().and_then(|v| v.colour.as_ref()).map(|c| {
+        let code = |v: Option<u64>| v.and_then(|v| u8::try_from(v).ok()).unwrap_or(2);
+        (code(c.primaries), code(c.transfer_characteristics))
+    });
     Ok(Source {
+        colour,
         decoder,
         samples,
         ticks_per_second: den / num,
@@ -237,6 +261,7 @@ fn ts(path: &Path) -> Result<Source> {
     let first = raw.iter().map(|(p, _)| *p).min().unwrap_or(0);
     let samples = raw.into_iter().map(|(p, k)| (p - first, k)).collect();
     Ok(Source {
+        colour: None,
         decoder,
         samples,
         ticks_per_second: 90_000.0,
@@ -271,6 +296,7 @@ fn mxf(path: &Path) -> Result<Source> {
     let samples = t.samples.iter().map(|s| (s.pts - first, s.key)).collect();
     let rate = f64::from(t.edit_rate.num) / f64::from(t.edit_rate.den.max(1));
     Ok(Source {
+        colour: None,
         decoder,
         samples,
         ticks_per_second: if rate > 0.0 { rate } else { 25.0 },

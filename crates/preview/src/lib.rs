@@ -9,7 +9,9 @@
 //!
 //! A poster frame seeks to the sync sample before the requested time and decodes forward only
 //! to that time, at most [`FrameOptions::max_decode_frames`] frames. It converts Y′CbCr to RGB
-//! with the stream's own matrix and range, turns the frame upright by the track's display
+//! with the stream's own matrix and range (HDR, PQ or HLG, is tone mapped and BT.2020 converted
+//! to sRGB, with the container's colour description filling in what the stream leaves
+//! unspecified), turns the frame upright by the track's display
 //! matrix, and fits it within [`FrameOptions::max_edge`] through `craft-image`'s linear-light
 //! resampler.
 //!
@@ -178,6 +180,7 @@ pub fn poster_frame(path: &Path, opts: &FrameOptions) -> Result<PosterFrame> {
         opts,
         seconds.max(0.0),
         src.decoder.name(),
+        src.colour,
     )
 }
 
@@ -274,8 +277,9 @@ fn finish(
     opts: &FrameOptions,
     seconds: f64,
     codec: &'static str,
+    colour: Option<(u8, u8)>,
 ) -> Result<PosterFrame> {
-    let rgba = pic.to_rgba().ok_or(Error::Decode(
+    let rgba = pic.to_rgba(colour).ok_or(Error::Decode(
         "decoded picture has inconsistent planes".into(),
     ))?;
     let (source_width, source_height) = pic.size();

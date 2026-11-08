@@ -177,6 +177,7 @@ fn planes8or16(
     matrix: u8,
     full_range: bool,
     rgb: bool,
+    display: yuv::Display,
 ) -> Option<Rgba8Image> {
     match (y.0, u.0, v.0) {
         (Some(y8), Some(u8_), Some(v8)) => {
@@ -186,9 +187,9 @@ fn planes8or16(
                 plane(v8, sizes[2]),
             );
             if rgb {
-                yuv::rgb_to_rgba(a, b, c, None, bits, full_range)
+                yuv::rgb_to_rgba_display(a, b, c, None, bits, full_range, display)
             } else {
-                yuv::to_rgba(a, b, c, None, bits, matrix, full_range)
+                yuv::to_rgba_display(a, b, c, None, bits, matrix, full_range, display)
             }
         }
         _ => {
@@ -198,11 +199,22 @@ fn planes8or16(
                 plane(v.1?, sizes[2]),
             );
             if rgb {
-                yuv::rgb_to_rgba(a, b, c, None, bits, full_range)
+                yuv::rgb_to_rgba_display(a, b, c, None, bits, full_range, display)
             } else {
-                yuv::to_rgba(a, b, c, None, bits, matrix, full_range)
+                yuv::to_rgba_display(a, b, c, None, bits, matrix, full_range, display)
             }
         }
+    }
+}
+
+/// A stream's signalled primaries and transfer, with the container's filling in what the stream
+/// leaves unspecified (0, 2): BT.2020 is converted and PQ and HLG tone mapped to sRGB.
+fn display(primaries: u8, transfer: u8, container: Option<(u8, u8)>) -> yuv::Display {
+    let unset = |v: u8| matches!(v, 0 | 2);
+    let (cp, ct) = container.unwrap_or((2, 2));
+    yuv::Display {
+        primaries: if unset(primaries) { cp } else { primaries },
+        transfer: if unset(transfer) { ct } else { transfer },
     }
 }
 
@@ -255,7 +267,10 @@ impl Picture {
         }
     }
 
-    pub(crate) fn to_rgba(&self) -> Option<Rgba8Image> {
+    /// `container` is the container's (primaries, transfer), used where the stream leaves them
+    /// unspecified.
+    pub(crate) fn to_rgba(&self, container: Option<(u8, u8)>) -> Option<Rgba8Image> {
+        let display = |primaries: u8, transfer: u8| display(primaries, transfer, container);
         match self {
             Picture::H264(p) => {
                 let c = |d| Plane {
@@ -270,7 +285,7 @@ impl Picture {
                     width: p.width,
                     height: p.height,
                 };
-                yuv::to_rgba(
+                yuv::to_rgba_display(
                     y,
                     c(&p.u[..]),
                     c(&p.v[..]),
@@ -278,6 +293,7 @@ impl Picture {
                     8,
                     p.color.matrix,
                     p.color.full_range,
+                    display(p.color.primaries, p.color.transfer),
                 )
             }
             Picture::Hevc(p) => planes8or16(
@@ -293,6 +309,7 @@ impl Picture {
                 p.color.matrix,
                 p.color.full_range,
                 false,
+                display(p.color.primaries, p.color.transfer),
             ),
             Picture::Vp9(p) => {
                 let matrix = vp9_matrix(p.color.color_space);
@@ -309,6 +326,8 @@ impl Picture {
                     matrix.unwrap_or(0),
                     p.color.full_range,
                     matrix.is_none(),
+                    // VP9 signals BT.2020 but not its transfer; the container may.
+                    display(if p.color.color_space == 5 { 9 } else { 2 }, 2),
                 )
             }
             Picture::Av1(p) => {
@@ -334,10 +353,11 @@ impl Picture {
                 };
                 let bits = u32::from(p.bit_depth);
                 // Matrix 0 is the identity: planes hold G, B, R.
+                let d = display(p.color_primaries, p.transfer_characteristics);
                 if p.matrix_coefficients == 0 && !p.mono_chrome {
-                    yuv::rgb_to_rgba(y, c(u), c(v), None, bits, p.full_range)
+                    yuv::rgb_to_rgba_display(y, c(u), c(v), None, bits, p.full_range, d)
                 } else {
-                    yuv::to_rgba(
+                    yuv::to_rgba_display(
                         y,
                         c(u),
                         c(v),
@@ -345,6 +365,7 @@ impl Picture {
                         bits,
                         p.matrix_coefficients,
                         p.full_range,
+                        d,
                     )
                 }
             }
@@ -449,5 +470,47 @@ impl Picture {
             }
             Picture::Rgba(i, _) => Some(i.clone()),
         }
+    }
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+
+    #[test]
+    fn the_container_fills_in_what_the_stream_leaves_unspecified() {
+        let pq_2020 = Some((9, 16));
+        // x265 often writes transfer 0 while the container says PQ.
+        assert_eq!(
+            display(9, 0, pq_2020),
+            yuv::Display {
+                primaries: 9,
+                transfer: 16
+            }
+        );
+        assert_eq!(
+            display(2, 2, pq_2020),
+            yuv::Display {
+                primaries: 9,
+                transfer: 16
+            }
+        );
+        // A stream's own values win.
+        assert_eq!(
+            display(1, 1, pq_2020),
+            yuv::Display {
+                primaries: 1,
+                transfer: 1
+            }
+        );
+        assert_eq!(
+            display(9, 18, pq_2020),
+            yuv::Display {
+                primaries: 9,
+                transfer: 18
+            }
+        );
+        // Nothing anywhere: shown as it is.
+        assert!(!display(2, 2, None).is_hdr());
     }
 }
