@@ -4,8 +4,10 @@
 pub(crate) mod bmff;
 pub(crate) mod bmp;
 pub(crate) mod dds;
+pub(crate) mod dicom;
 pub(crate) mod dpx;
 pub(crate) mod exr;
+pub(crate) mod fits;
 pub(crate) mod gif;
 pub(crate) mod hdr;
 pub(crate) mod ico;
