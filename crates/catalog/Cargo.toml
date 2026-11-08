@@ -19,6 +19,7 @@ craft-mpeg2v = { workspace = true }
 craft-h264 = { workspace = true }
 craft-hevc = { workspace = true }
 craft-atomic = { workspace = true }
+chrono = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

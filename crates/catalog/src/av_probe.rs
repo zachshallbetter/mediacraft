@@ -12,6 +12,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 
+use crate::movie_meta::{self, MovieTags};
 use crate::{AudioStreamInfo, VideoStreamInfo};
 
 pub(crate) type Probed = (
@@ -26,7 +27,13 @@ const HEAD: usize = 256 * 1024;
 const TAIL: u64 = 64 * 1024;
 
 /// Probe a video or audio file. `None` when the format is not recognised or is damaged.
+#[cfg(test)]
 pub(crate) fn probe(path: &Path) -> Option<Probed> {
+    probe_with_tags(path).map(|(p, _)| p)
+}
+
+/// [`probe`], plus the capture metadata MP4 and QuickTime movies carry.
+pub(crate) fn probe_with_tags(path: &Path) -> Option<(Probed, MovieTags)> {
     let mut file = File::open(path).ok()?;
     let size = file.metadata().ok()?.len();
     let mut head = Vec::new();
@@ -34,28 +41,33 @@ pub(crate) fn probe(path: &Path) -> Option<Probed> {
     if is_bmff(&head) {
         return mp4(File::open(path).ok()?);
     }
+    let probed = probe_other(path, &head, &mut file, size)?;
+    Some((probed, MovieTags::default()))
+}
+
+fn probe_other(path: &Path, head: &[u8], file: &mut File, size: u64) -> Option<Probed> {
     if head.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
         return mkv(File::open(path).ok()?, size);
     }
     if head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WAVE") {
-        return wav(&head);
+        return wav(head);
     }
     if head.starts_with(b"FORM") && matches!(head.get(8..12), Some(b"AIFF" | b"AIFC")) {
-        return aiff(&head);
+        return aiff(head);
     }
     if head.starts_with(b"fLaC") {
-        return flac(&head);
+        return flac(head);
     }
     if head.starts_with(b"OggS") {
-        return ogg(&head, &mut file, size);
+        return ogg(head, file, size);
     }
-    if craft_mxf::sniff(&head) {
+    if craft_mxf::sniff(head) {
         return mxf(path);
     }
-    if craft_mpegts::sniff(&head).is_some() {
+    if craft_mpegts::sniff(head).is_some() {
         return mpeg_ts(path);
     }
-    mpeg_audio(&head, size)
+    mpeg_audio(head, size)
 }
 
 /// A file as a positioned byte source for the MPEG-TS and MXF demuxers.
@@ -333,7 +345,7 @@ fn is_hdr_transfer(t: u64) -> bool {
     matches!(t, 16 | 18)
 }
 
-fn mp4(file: File) -> Option<Probed> {
+fn mp4(file: File) -> Option<(Probed, MovieTags)> {
     use craft_isobmff::{CodecConfig, ColorInfo, TrackKind};
     let m = craft_isobmff::open(file).ok()?;
     let secs = |dur: u64, scale: u32| (scale > 0).then(|| dur as f64 / f64::from(scale));
@@ -425,7 +437,8 @@ fn mp4(file: File) -> Option<Probed> {
             .fold(None, |a: Option<f64>, s| Some(a.map_or(s, |a| a.max(s))))
             .and_then(finite)
     });
-    (video.is_some() || audio.is_some()).then_some((video, audio, duration))
+    (video.is_some() || audio.is_some())
+        .then(|| ((video, audio, duration), movie_meta::from_mp4(&m)))
 }
 
 /// The codec name, falling back to the sample entry's four-character code when the codec

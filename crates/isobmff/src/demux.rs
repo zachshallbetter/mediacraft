@@ -210,6 +210,8 @@ pub struct Mp4File {
     pub timescale: u32,
     /// Movie duration in the movie timescale (`mvhd`; for fragmented files, the longest track).
     pub duration: u64,
+    /// Creation time (`mvhd`), in seconds since 1904-01-01 00:00 UTC; 0 when not set.
+    pub creation_time: u64,
     pub tracks: Vec<Track>,
     pub metadata: Metadata,
     /// File uses movie fragments (`mvex` present).
@@ -319,6 +321,7 @@ pub fn open<S: ByteSource>(src: S) -> Result<Mp4File> {
         compatible_brands: Vec::new(),
         is_quicktime: true,
         timescale: 0,
+        creation_time: 0,
         duration: 0,
         tracks: Vec::new(),
         metadata: Metadata::default(),
@@ -345,11 +348,13 @@ pub fn open<S: ByteSource>(src: S) -> Result<Mp4File> {
                 let mut c = Cur::new(b.payload, "mvhd");
                 let (v, _) = c.full_header()?;
                 if v == 1 {
-                    c.skip(16)?;
+                    file.creation_time = c.u64()?;
+                    c.skip(8)?;
                     file.timescale = c.u32()?;
                     file.duration = c.u64()?;
                 } else {
-                    c.skip(8)?;
+                    file.creation_time = u64::from(c.u32()?);
+                    c.skip(4)?;
                     file.timescale = c.u32()?;
                     file.duration = c.u32()? as u64;
                 }

@@ -9,6 +9,7 @@ pub mod collections;
 pub mod contact_sheet;
 pub mod delivery_report;
 pub mod duplicates;
+mod movie_meta;
 pub mod relink;
 pub mod scanner;
 pub mod sidecar;

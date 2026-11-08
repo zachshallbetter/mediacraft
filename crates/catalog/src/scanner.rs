@@ -178,11 +178,11 @@ pub fn probe_file(path: &Path) -> Option<MediaAsset> {
         .unwrap_or_else(|| "Unknown".to_string());
 
     // Video and audio stream details come from MediaCraft's own demuxers and parsers.
-    let (video, audio, duration_secs) = match kind {
-        MediaKind::Video | MediaKind::Audio => crate::av_probe::probe(path),
+    let ((video, audio, duration_secs), movie) = match kind {
+        MediaKind::Video | MediaKind::Audio => crate::av_probe::probe_with_tags(path),
         _ => None,
     }
-    .unwrap_or((None, None, None));
+    .unwrap_or_default();
 
     let (document, archive) = match kind {
         MediaKind::Document if ext == "pdf" => (probe_pdf(path), None),
@@ -208,11 +208,18 @@ pub fn probe_file(path: &Path) -> Option<MediaAsset> {
         timecode_start: "00:00:00:00".to_string(),
         video,
         audio,
-        camera_model: m.and_then(camera_name),
-        date_created: m.and_then(|m| m.capture_time.clone()).unwrap_or(modified),
+        camera_model: m
+            .and_then(camera_name)
+            .or_else(|| camera_from(movie.make.as_deref(), movie.model.as_deref())),
+        date_created: m
+            .and_then(|m| m.capture_time.clone())
+            .or(movie.created)
+            .unwrap_or(modified),
         geo_location: m
             .and_then(|m| m.gps)
-            .map(|g| format!("{:.5}, {:.5}", g.latitude, g.longitude)),
+            .map(|g| (g.latitude, g.longitude))
+            .or(movie.location)
+            .map(|(lat, lon)| format!("{lat:.5}, {lon:.5}")),
         rating: m
             .and_then(|m| m.rating)
             .map_or(0, |r| u8::try_from(r.max(0)).unwrap_or(0)),
@@ -252,16 +259,13 @@ fn image_info(p: &craft_image::ImageInfo) -> ImageInfo {
 
 /// "Canon EOS R5" rather than "Canon Canon EOS R5": most makers repeat the make in the model.
 fn camera_name(m: &craft_image::Metadata) -> Option<String> {
-    let make = m
-        .camera_make
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let model = m
-        .camera_model
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    camera_from(m.camera_make.as_deref(), m.camera_model.as_deref())
+}
+
+/// The camera's name from a make and model, either of which may be missing.
+fn camera_from(make: Option<&str>, model: Option<&str>) -> Option<String> {
+    let make = make.map(str::trim).filter(|s| !s.is_empty());
+    let model = model.map(str::trim).filter(|s| !s.is_empty());
     match (make, model) {
         (Some(make), Some(model)) => {
             // "NIKON CORPORATION" + "NIKON Z 6" → "NIKON Z 6".

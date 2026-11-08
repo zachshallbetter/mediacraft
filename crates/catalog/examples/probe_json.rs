@@ -10,6 +10,7 @@ fn main() {
         let row = match mediacraft_catalog::scanner::probe_file(&path) {
             Some(a) => serde_json::json!({
                 "path": path, "video": a.video, "audio": a.audio, "duration": a.duration_secs,
+                "camera": a.camera_model, "created": a.date_created, "location": a.geo_location,
             }),
             None => {
                 serde_json::json!({ "path": path, "video": null, "audio": null, "duration": null })

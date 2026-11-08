@@ -2142,6 +2142,7 @@ dependencies = [
 name = "mediacraft-catalog"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "craft-archive",
  "craft-atomic",
  "craft-h264",
