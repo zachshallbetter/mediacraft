@@ -42,7 +42,10 @@ pub fn read_header(bytes: &[u8]) -> Result<Header> {
         Format::WebP => formats::webp::header(bytes)?,
         Format::Gif => formats::gif::header(bytes)?,
         Format::Bmp => formats::bmp::header(bytes)?,
-        Format::Tiff | Format::Raw => formats::tiff_file::header(bytes, format)?,
+        Format::Tiff => formats::tiff_file::header(bytes, format)?,
+        // CR3, RAF, ORF and RW2 are not classic TIFF; their size is the embedded preview's.
+        Format::Raw => formats::tiff_file::header(bytes, format)
+            .or_else(|e| crate::raw::header(bytes).ok_or(e))?,
         Format::Psd => formats::psd::header(bytes)?,
         Format::Heif | Format::Avif => formats::bmff::header(bytes, format)?,
         Format::Jxl => {

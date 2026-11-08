@@ -72,7 +72,6 @@ impl Format {
     pub fn not_decodable(self) -> Option<&'static str> {
         match self {
             Format::Jxl => Some("JPEG XL decoding is not in this build"),
-            Format::Raw => Some("camera raw needs a raw developer"),
             _ => None,
         }
     }

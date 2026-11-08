@@ -19,6 +19,11 @@ package and crate names changed:
   spec_tables.rs (AV1 Bitstream & Decoding Process Specification, VP9 Bitstream & Decoding
   Process Specification v0.6, RFC 6386, SMPTE ST 2019-1).
 
+crates/raw is copied from storytold/photocraft crates/raw (see docs/VENDORED.md for the commit),
+with the package renamed from photocraft-raw:
+  Copyright (c) 2026 ArtCraft Team and the PhotoCraft contributors.
+  Licensed under the MIT License or the Apache License, Version 2.0, at your option.
+
 crates/vp8enc is PhotoCraft's VP8 encoder module (storytold/photocraft, see docs/VENDORED.md for
 the commit), made a crate of its own:
   Copyright (c) 2026 ArtCraft Team and the PhotoCraft contributors.

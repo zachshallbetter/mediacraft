@@ -4,7 +4,9 @@ use crate::container::embedded;
 use crate::exif::parse_exif;
 use crate::icc::ColorConversion;
 use crate::resize::{ResizeOptions, resize_to_fit};
-use crate::{DecodeOptions, Format, Limits, Orientation, Result, Rgba8Image, decode, sniff};
+use crate::{
+    DecodeOptions, Format, Limits, Orientation, RawMode, Result, Rgba8Image, decode, sniff,
+};
 use serde::{Deserialize, Serialize};
 
 /// Thumbnail request.
@@ -76,6 +78,7 @@ pub fn thumbnail(bytes: &[u8], opts: &ThumbnailOptions) -> Result<Thumbnail> {
         &DecodeOptions {
             limits: opts.limits,
             fit: Some((max_edge, max_edge)),
+            raw: RawMode::Preview,
         },
     )?;
     let source = if (d.image.width(), d.image.height()) == (d.source_width, d.source_height) {
@@ -108,6 +111,7 @@ fn embedded_preview(bytes: &[u8], max_edge: u32, opts: &ThumbnailOptions) -> Opt
         &DecodeOptions {
             limits: opts.limits,
             fit: None,
+            raw: RawMode::Preview,
         },
     )
     .ok()?;

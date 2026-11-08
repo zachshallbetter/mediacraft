@@ -77,7 +77,7 @@ Rather than designing shared library abstractions in isolation, components are f
 
 ## 3. Workspace Topology
 
-MediaCraft is organized as an integrated cargo workspace containing 38 high-performance, `#![forbid(unsafe_code)]` member crates:
+MediaCraft is organized as an integrated cargo workspace containing 39 high-performance, `#![forbid(unsafe_code)]` member crates:
 
 ```text
 mediacraft/
@@ -123,6 +123,7 @@ mediacraft/
 │   │   ├── pdf/                (craft-pdf: Clean-room ISO 32000 PDF COS parser, filters, crypt, content)
 │   │   ├── archive/            (craft-archive: Safe ZIP/TAR inspection, Zip Slip defense, ResourceBudget)
 │   │   ├── psd/                (craft-psd: PSD/PSB layered raster image decoder)
+│   │   ├── raw/                (craft-raw: camera raw previews and development, from PhotoCraft)
 │   │   └── image/              (craft-image: still-image headers, metadata, colour, thumbnails, renditions)
 │   │
 │   └── Vendored from craft-libs (docs/VENDORED.md):

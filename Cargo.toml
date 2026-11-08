@@ -27,6 +27,7 @@ members = [
     "crates/preview",
     # Vendored from storytold/photocraft; see docs/VENDORED.md.
     "crates/vp8enc",
+    "crates/raw",
     # Vendored from storytold/filmcraft; see docs/VENDORED.md.
     "crates/av1",
     "crates/vp9",
@@ -88,6 +89,7 @@ craft-archive = { path = "crates/archive" }
 craft-image = { path = "crates/image" }
 mediacraft-preview = { path = "crates/preview" }
 craft-vp8enc = { path = "crates/vp8enc" }
+craft-raw = { path = "crates/raw" }
 
 # Vendored from storytold/filmcraft (docs/VENDORED.md).
 craft-av1 = { path = "crates/av1" }
@@ -118,6 +120,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 proptest = "1"
 rayon = "1"
+zune-core = "0.5"
+zune-jpeg = "0.5"
 image = { version = "0.25", default-features = false }
 jpeg-decoder = { version = "0.3", default-features = false }
 quick-xml = "0.41"

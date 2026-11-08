@@ -238,7 +238,7 @@ fn cover_uv(texture_size: [usize; 2], target: Rect) -> Rect {
 
 /// Previews come from MediaCraft's own decoders. ffmpeg is used only when it is installed and
 /// the in-tree path has no decoder for the file yet (MPEG-4 Part 2, DV and JPEG 2000 video,
-/// camera raw and JPEG XL stills, FLAC, MP3 and Vorbis audio); without it those files show no
+/// camera raws craft-raw cannot read, JPEG XL stills, FLAC, MP3 and Vorbis audio); without it those files show no
 /// preview.
 fn decode_preview(path: &Path, kind: MediaKind, seek_ms: u32) -> Option<ColorImage> {
     match kind {
@@ -247,7 +247,7 @@ fn decode_preview(path: &Path, kind: MediaKind, seek_ms: u32) -> Option<ColorIma
             decode_video_in_tree(path, seek_ms).or_else(|| decode_video_frame(path, seek_ms))
         }
         MediaKind::Audio => decode_waveform_in_tree(path).or_else(|| decode_audio_waveform(path)),
-        MediaKind::RawDng => decode_ffmpeg_still(path),
+        MediaKind::RawDng => decode_image_file(path).or_else(|| decode_ffmpeg_still(path)),
         _ => None,
     }
 }

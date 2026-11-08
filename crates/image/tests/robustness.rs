@@ -70,6 +70,7 @@ fn exercise(bytes: &[u8]) {
         &DecodeOptions {
             limits,
             fit: Some((8, 8)),
+            ..DecodeOptions::default()
         },
     );
     let _ = thumbnail(

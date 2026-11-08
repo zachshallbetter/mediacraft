@@ -17,6 +17,20 @@ pub struct DecodeOptions {
     /// (JPEG's DCT scaling) return the smallest one at least this large in both dimensions;
     /// others ignore it. In stored orientation.
     pub fit: Option<(u32, u32)>,
+    /// How to read camera raws.
+    pub raw: RawMode,
+}
+
+/// How [`decode`] turns a camera raw into pixels.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum RawMode {
+    /// The camera's own embedded JPEG rendering (the largest one), which is what the photographer
+    /// saw and is fast. Raws without a preview are developed.
+    #[default]
+    Preview,
+    /// Develop the sensor data with `craft-raw` (demosaic, white balance, camera colour, tone).
+    /// Slower; formats it cannot develop fall back to the embedded preview.
+    Develop,
 }
 
 /// Decoded pixels in stored orientation and source colour space.
@@ -94,6 +108,25 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
             }
             img
         }
+        Format::Raw => {
+            let r = guarded(format, || {
+                crate::raw::decode(bytes, header.width, header.height, opts)
+            })?;
+            // The raw's own container profile (rare) does not describe these pixels.
+            return Ok(Decoded {
+                image: r.image,
+                format,
+                source_width: header.width,
+                source_height: header.height,
+                orientation: if r.upright {
+                    Orientation::Identity
+                } else {
+                    header.orientation
+                },
+                adobe_rgb_hint: r.adobe_rgb_hint,
+                icc: r.icc,
+            });
+        }
         Format::Psd => {
             let (img, profile) = psd(bytes)?;
             if icc.is_none() {
@@ -149,6 +182,19 @@ fn full(bytes: &[u8], format: Format, limits: &Limits) -> Result<Rgba8Image> {
         let (w, h) = rgba.dimensions();
         Rgba8Image::new(w, h, rgba.into_raw())
     })
+}
+
+/// A JPEG stream, DCT-scaled toward `fit` when that is smaller.
+pub(crate) fn jpeg(bytes: &[u8], fit: Option<(u32, u32)>, limits: &Limits) -> Result<Rgba8Image> {
+    let header = read_header(bytes)?;
+    limits.check_size(header.width, header.height)?;
+    match fit {
+        Some((w, h)) if w < header.width || h < header.height => {
+            guarded(Format::Jpeg, || jpeg_scaled(bytes, w, h, limits))
+                .or_else(|_| full(bytes, Format::Jpeg, limits))
+        }
+        _ => full(bytes, Format::Jpeg, limits),
+    }
 }
 
 /// DCT-domain downscaled JPEG decode (1/2, 1/4 or 1/8). Grayscale and RGB only; CMYK and
@@ -262,7 +308,7 @@ mod tests {
                 max_pixels: 1000,
                 ..Limits::default()
             },
-            fit: None,
+            ..DecodeOptions::default()
         };
         assert!(matches!(decode(&bytes, &opts), Err(Error::TooLarge { .. })));
         let opts = DecodeOptions {
@@ -270,7 +316,7 @@ mod tests {
                 max_input_bytes: 10,
                 ..Limits::default()
             },
-            fit: None,
+            ..DecodeOptions::default()
         };
         assert!(matches!(
             decode(&bytes, &opts),

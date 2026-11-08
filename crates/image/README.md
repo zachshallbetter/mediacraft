@@ -43,7 +43,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | PSD / PSB | yes | EXIF, XMP, ICC, IPTC | merged composite via `craft-psd` | no |
 | HEIC / HEIF | yes (`ispe`, `irot`, `imir`, `pixi`) | EXIF, XMP, ICC (items, `colr`) | yes, `craft-hevc`; tiled grids; 8/10-bit | no |
 | AVIF | yes | EXIF, XMP, ICC | yes, `craft-av1`; 8/10/12-bit, alpha | no |
-| TIFF-based raw (DNG, NEF, ARW, …) | yes | EXIF | no | no |
+| Camera raw (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2, …) | yes (CR3, RAF, ORF, RW2 from the preview) | EXIF | yes, `craft-raw`: the full-frame embedded preview, else developed (see below) | no |
 | JPEG XL | detected only | no | no | no |
 
 ## Design
@@ -89,12 +89,26 @@ The format sniffing, TIFF/IFD walking and thumbnail strategy are refined from Li
 working space, HDR gain maps, proofing and print. It uses `craft-cms` where LightCraft bundles
 `moxcms`.
 
+## Camera raw
+
+`DecodeOptions::raw` (and `RenditionSpec::raw`) choose how a raw becomes pixels:
+
+* `RawMode::Preview` (the default) uses the camera's own embedded JPEG: the largest preview that
+  shows the whole frame. Cameras also store crops, such as Sony's 16:9 preview of a 3:2 sensor,
+  and those are skipped. When no full-frame preview exists, or the preview is smaller than the
+  size asked for, the raw is developed.
+* `RawMode::Develop` develops the sensor data with `craft-raw` into ProPhoto RGB, which then
+  converts to sRGB like any tagged image. A file without colour calibration (most non-DNG
+  raws) gets a colour matrix and tone curve fitted to the camera's own JPEG. A cropped preview is
+  matched against the same crop of the sensor, and the full frame is developed.
+
 ## Not yet
 
 * **HEIC alpha:** HEIF stores alpha as a monochrome (4:0:0) HEVC image, which `craft-hevc` does
   not decode yet; such images decode opaque, with correct colour. AVIF alpha is decoded.
 * **JPEG XL:** headers and decoding.
-* **Camera raw:** development (headers and EXIF are read).
+* **Camera raw:** formats `craft-raw` cannot develop (Sony compressed RAW 2, compressed ORF and
+  PEF, newer RW2) fall back to the embedded preview, which may be cropped or small.
 * **Extended XMP:** JPEG packets split across several APP1 segments.
 * **Encoding:** AVIF output; EXIF in lossless WebP.
 * **Large images:** non-JPEG sources decode at full size before resizing. `Limits::max_pixels`

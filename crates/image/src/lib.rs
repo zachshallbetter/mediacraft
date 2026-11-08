@@ -56,6 +56,7 @@ mod iptc;
 mod metadata;
 mod orientation;
 mod pixels;
+mod raw;
 mod rendition;
 mod resize;
 mod thumbnail;
@@ -64,7 +65,7 @@ mod xmp;
 pub mod yuv;
 
 pub use container::{Embedded, embedded};
-pub use decode::{DecodeOptions, Decoded, decode};
+pub use decode::{DecodeOptions, Decoded, RawMode, decode};
 pub use encode::{EncodeOptions, OutputFormat, encode, encode_plain};
 pub use error::{Error, Result};
 pub use exif::{Exif, Gps, parse_exif};

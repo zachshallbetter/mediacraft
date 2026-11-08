@@ -19,12 +19,17 @@ into `crates/` rather than fetched as Git dependencies.
 | `craft-mpegts` | `crates/mpegts` | storytold/filmcraft `crates/mpegts` | same | mediacraft-preview, catalog |
 | `craft-mxf` | `crates/mxf` | storytold/filmcraft `crates/mxf` | same | mediacraft-preview, catalog |
 | `mediacraft-testkit` | `crates/testkit` | storytold/filmcraft `crates/testkit` (dev-dependency only) | same | the seven above |
+| `craft-raw` | `crates/raw` | storytold/photocraft `crates/raw` (`photocraft-raw`), without `fuzz/` | `3aa1d9f43` | craft-image |
 | `craft-vp8enc` | `crates/vp8enc` | storytold/photocraft `src/codecs/vp8.rs` and `src/codecs/vp8/` | `3aa1d9f43` | craft-image |
 
 The first four craft-libs crates are the commit MediaCraft was already pinned to. `craft-cms` is from craft-libs
 `main` on 2026-11-07.
 
 ## Local changes
+
+**PhotoCraft raw crate.** `photocraft-raw` is renamed `craft-raw` (package name and
+`photocraft_raw` references only) and gets PhotoCraft's `rustfmt.toml`. Its `fuzz/` directory is
+left out. Its opt-in corpus tests look for `../../corpus/pixls`, which MediaCraft does not carry.
 
 **PhotoCraft VP8 encoder.** PhotoCraft's `codecs::vp8` module becomes the crate root of
 `craft-vp8enc`: `vp8.rs` is `src/lib.rs` and its submodules sit beside it unchanged. The only

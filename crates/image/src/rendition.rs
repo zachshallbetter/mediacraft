@@ -6,7 +6,9 @@ use crate::encode::{EncodeOptions, OutputFormat, encode};
 use crate::exif::minimal_exif;
 use crate::icc::{ColorConversion, srgb_profile};
 use crate::resize::{ResizeOptions, fit_within, resize};
-use crate::{DecodeOptions, Format, Limits, Metadata, Orientation, Result, decode, read_header};
+use crate::{
+    DecodeOptions, Format, Limits, Metadata, Orientation, RawMode, Result, decode, read_header,
+};
 use serde::{Deserialize, Serialize};
 
 /// Which metadata a rendition keeps. GPS, camera serials and the EXIF thumbnail are never
@@ -41,6 +43,9 @@ pub struct RenditionSpec {
     pub limits: Limits,
     /// Background for flattening transparency into JPEG.
     pub background: [u8; 3],
+    /// How to read camera raws. The embedded preview by default; it is developed instead when
+    /// the preview is smaller than the rendition.
+    pub raw: RawMode,
 }
 
 impl RenditionSpec {
@@ -55,6 +60,7 @@ impl RenditionSpec {
             resize: ResizeOptions::default(),
             limits: Limits::default(),
             background: [255, 255, 255],
+            raw: RawMode::default(),
         }
     }
 }
@@ -93,6 +99,7 @@ pub fn render(bytes: &[u8], spec: &RenditionSpec) -> Result<Rendition> {
         &DecodeOptions {
             limits: spec.limits,
             fit: Some((sw, sh)),
+            raw: spec.raw,
         },
     )?;
     let mut sized = resize(&d.image, sw, sh, &spec.resize)?;
