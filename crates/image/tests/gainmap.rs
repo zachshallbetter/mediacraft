@@ -272,13 +272,9 @@ fn heic_corpus() -> Vec<PathBuf> {
             }
         }
     }
-    let root = std::env::var_os("MEDIACRAFT_HEIC_CORPUS")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|h| {
-                PathBuf::from(h).join("Pictures/Photos Library.photoslibrary/scopes/syndication")
-            })
-        });
+    // Opt-in only: point MEDIACRAFT_HEIC_CORPUS at a folder of iPhone HEICs. Never read a
+    // personal library by default.
+    let root = std::env::var_os("MEDIACRAFT_HEIC_CORPUS").map(PathBuf::from);
     let mut out = Vec::new();
     if let Some(r) = root {
         walk(&r, &mut out, 0);

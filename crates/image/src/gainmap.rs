@@ -16,6 +16,19 @@
 //!   and sometimes the headroom; otherwise the headroom comes from the EXIF maker note, by
 //!   Apple's published sample formula. Newer files add an ISO 21496-1 `tmap`, which wins.
 //!
+//! **Verification status.**
+//!
+//! * **Detection** (whether a file has a gain map, and its source and headroom) is checked on 397
+//!   real iPhone HEICs against an independent byte search.
+//! * **Ultra HDR** parsing and [`apply_gain_map`] are checked only on synthetic files written by
+//!   this crate's tests.
+//! * **The ISO 21496-1 bit layout, Apple's maker-note headroom formula and Apple's gain curve**
+//!   were written from public descriptions, not checked against reference files or a reference
+//!   decoder. The ISO round trip only tests our own writer against our own reader.
+//! * **Apple gain-map pixels** don't decode yet: craft-hevc lacks monochrome (4:0:0).
+//!
+//! Treat applied HDR output as unverified until reference files exist (hermit-cms #339).
+//!
 //! Everything here is opt-in: [`decode`](crate::decode), [`thumbnail`](crate::thumbnail) and
 //! [`render`](crate::render) still produce the SDR base. [`apply_gain_map`] is for HDR
 //! renditions, which are not wired in yet.
