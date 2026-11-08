@@ -29,6 +29,7 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | Resize | `resize`, `resize_to_fit` | Linear light, premultiplied alpha, box prefilter then Lanczos-3 |
 | Thumbnail | `thumbnail` | Embedded EXIF preview when big enough, else scaled decode |
 | Rendition | `render` | Fit, sRGB, upright, encode, metadata policy |
+| Gain map (HDR) | `gain_map`, `apply_gain_map`, `ImageInfo::gain_map` | Ultra HDR / Android JPEG (MPF + `hdrgm:` XMP), ISO 21496-1 (JPEG APP2, HEIF/AVIF `tmap`) and Apple HEIC `hdrgainmap` auxiliary images: parameters and headroom from `probe`; `apply_gain_map` makes linear HDR at a display headroom. Renditions stay SDR |
 | Encode | `encode` | JPEG, PNG, lossy WebP (`craft-vp8enc`) and lossless WebP; ICC and EXIF embedding |
 
 ### Formats
@@ -182,6 +183,10 @@ font stack is tracked in #24.
 * **SVG text:** needs the shared font stack (#24).
 * **HEIC alpha:** HEIF stores alpha as a monochrome (4:0:0) HEVC image, which `craft-hevc` does
   not decode yet; such images decode opaque, with correct colour. AVIF alpha is decoded.
+* **HEIC gain-map pixels:** Apple's gain map is a monochrome (4:0:0) HEVC image, so it is
+  detected and its parameters reported, but `GainMap::image` is `None` (with the reason) until
+  `craft-hevc` decodes 4:0:0. Ultra HDR and ISO JPEG gain maps decode. A HEIF/AVIF whose primary
+  item is a `tmap` is not decoded as a base image yet.
 * **JPEG XL:** headers and decoding.
 * **Camera raw:** formats `craft-raw` cannot develop (Sony compressed RAW 2, compressed ORF and
   PEF, newer RW2) fall back to the embedded preview, which may be cropped or small.

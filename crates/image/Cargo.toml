@@ -96,6 +96,10 @@ name = "formats_extra"
 required-features = ["png", "ico", "pnm", "qoi", "tga", "hdr", "exr", "dds", "jxl", "dpx", "pcx", "fits", "dicom"]
 
 [[test]]
+name = "gainmap"
+required-features = ["png", "jpeg", "webp", "heic"]
+
+[[test]]
 name = "heif"
 required-features = ["png", "heic", "avif"]
 

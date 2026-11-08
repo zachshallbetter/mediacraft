@@ -671,3 +671,57 @@ fn av1_rgba(p: &craft_av1::Picture, nclx: Option<Nclx>) -> Option<Rgba8Image> {
         )
     }
 }
+
+/// The item graph, as far as gain maps (`crate::gainmap`) need it.
+impl<'a> Heif<'a> {
+    pub(crate) fn primary_id(&self) -> u32 {
+        self.primary
+    }
+
+    /// Ids of items of one type (`tmap`, …), in file order.
+    pub(crate) fn items_of_type(&self, ty: &[u8; 4]) -> Vec<u32> {
+        self.items
+            .iter()
+            .filter(|i| &i.ty == ty)
+            .map(|i| i.id)
+            .collect()
+    }
+
+    /// Auxiliary images (`auxl`) of `id` with the type URN `urn` (compared without the
+    /// terminating NUL).
+    pub(crate) fn aux_with_urn(&self, id: u32, urn: &[u8]) -> Vec<u32> {
+        self.refs_to(b"auxl", id)
+            .into_iter()
+            .filter(|&a| {
+                self.props(a)
+                    .iter()
+                    .any(|p| matches!(p, Prop::AuxC(u) if cstr(u).0 == urn))
+            })
+            .collect()
+    }
+
+    /// The inputs of a derived image (`dimg`), in order.
+    pub(crate) fn derived_inputs(&self, id: u32) -> Vec<u32> {
+        self.refs_from(b"dimg", id)
+    }
+
+    /// XMP packets (`application/rdf+xml` items) that describe item `id` (`cdsc`).
+    pub(crate) fn xmp_describing(&self, id: u32) -> Vec<Cow<'a, [u8]>> {
+        self.items
+            .iter()
+            .filter(|i| &i.ty == b"mime" && i.content_type == "application/rdf+xml")
+            .filter(|i| self.refs_from(b"cdsc", i.id).contains(&id))
+            .filter_map(|i| self.item_data(i.id).ok())
+            .collect()
+    }
+
+    /// An item's payload bytes.
+    pub(crate) fn payload(&self, id: u32) -> Result<Cow<'a, [u8]>> {
+        self.item_data(id)
+    }
+
+    /// Decode a coded image item (no alpha, no transforms).
+    pub(crate) fn decode_coded(&self, id: u32, limits: &Limits) -> Result<Rgba8Image> {
+        self.decode_item(id, self.nclx(self.primary), limits, 0)
+    }
+}

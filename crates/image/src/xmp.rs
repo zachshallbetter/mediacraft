@@ -82,7 +82,7 @@ pub enum XmpError {
 }
 
 /// One property value: its `xml:lang` (for `rdf:Alt` items) and text.
-type Item = (Option<String>, String);
+pub(crate) type Item = (Option<String>, String);
 
 /// A property being read: namespace, local name, and the items or text collected so far.
 struct Open {
@@ -156,7 +156,7 @@ pub fn parse_xmp(packet: &[u8]) -> Result<Xmp, XmpError> {
 }
 
 /// Every top-level property of every `rdf:Description`: `(namespace, local name, values)`.
-fn properties(packet: &[u8]) -> Result<Vec<(String, String, Vec<Item>)>, XmpError> {
+pub(crate) fn properties(packet: &[u8]) -> Result<Vec<(String, String, Vec<Item>)>, XmpError> {
     let text = String::from_utf8_lossy(packet);
     let mut reader = quick_xml::Reader::from_str(&text);
     reader.config_mut().check_end_names = false;

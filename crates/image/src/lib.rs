@@ -66,6 +66,7 @@ mod error;
 mod exif;
 mod format;
 mod formats;
+mod gainmap;
 mod header;
 mod heif;
 mod icc;
@@ -91,6 +92,10 @@ pub use encode::{EncodeOptions, OutputFormat, encode, encode_plain};
 pub use error::{Error, Result};
 pub use exif::{Exif, Gps, parse_exif};
 pub use format::{Format, sniff};
+pub use gainmap::{
+    GainCurve, GainMap, GainMapParams, GainMapSource, GainMapSummary, LinearRgbF32, apply_gain_map,
+    gain_map, gain_map_summary,
+};
 pub use header::{Header, read_header};
 pub use icc::{ColorConversion, IccInfo, icc_info};
 pub use iptc::{Iptc, parse_iptc};
@@ -126,6 +131,10 @@ pub struct ImageInfo {
     pub has_embedded_thumbnail: bool,
     /// Whether this build can decode the pixels.
     pub decodable: bool,
+    /// A gain map (HDR) the file carries, and its headroom. The pixels decode to the SDR base
+    /// regardless; see [`gain_map`] and [`apply_gain_map`].
+    #[serde(default)]
+    pub gain_map: Option<GainMapSummary>,
     /// Blocks that could not be read. The rest of the result is still valid.
     pub warnings: Vec<String>,
 }
@@ -146,8 +155,16 @@ pub fn probe(bytes: &[u8]) -> Result<ImageInfo> {
         .exif
         .as_ref()
         .is_some_and(|x| x.thumbnail.is_some());
+    let gain_map = match gain_map_summary(bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            warnings.push(format!("gain map: {e}"));
+            None
+        }
+    };
     Ok(ImageInfo {
         decodable: header.format.can_decode(),
+        gain_map,
         header,
         metadata,
         icc,

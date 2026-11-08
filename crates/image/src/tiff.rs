@@ -48,6 +48,15 @@ impl<'a> Tiff<'a> {
         (t.u16_at(2)? == 42).then_some(t)
     }
 
+    /// A structure with an explicit byte order and no header check, for vendor blocks (Apple's
+    /// maker note) that lay out IFDs like TIFF but start with their own signature.
+    pub fn with_order(data: &'a [u8], little_endian: bool) -> Self {
+        Tiff {
+            data,
+            le: little_endian,
+        }
+    }
+
     pub fn data(&self) -> &'a [u8] {
         self.data
     }
