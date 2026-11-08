@@ -1,0 +1,3 @@
+# craft-libs formatting, so this vendored crate stays byte-identical to upstream.
+max_width = 150
+use_small_heuristics = "Max"

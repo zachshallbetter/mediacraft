@@ -1,0 +1,6 @@
+# Production code may not unwrap, expect or panic (each crate root denies them). Tests may:
+# a failing assertion is how a test reports. Same settings as storytold/craft-libs.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
