@@ -200,7 +200,7 @@ pub fn poster_frame(path: &Path, opts: &FrameOptions) -> Result<PosterFrame> {
             .map_or(src.samples.len(), |(i, _)| {
                 (i + usize::try_from(leading(i)).unwrap_or(0)).min(src.samples.len())
             });
-        let pic = nth_output(&mut src.decoder, start, end, needed, |i| read(i))?;
+        let pic = nth_output(&mut src.decoder, start, end, needed, read)?;
         let shown = start_pts + i64::try_from(needed).unwrap_or(0);
         (pic, shown as f64 / src.ticks_per_second)
     } else {

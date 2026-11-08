@@ -2181,6 +2181,7 @@ dependencies = [
  "chrono",
  "craft-archive",
  "craft-atomic",
+ "craft-avi",
  "craft-h264",
  "craft-hevc",
  "craft-image",
@@ -2264,7 +2265,9 @@ name = "mediacraft-preview"
 version = "0.1.0"
 dependencies = [
  "craft-aac",
+ "craft-ac3",
  "craft-av1",
+ "craft-avi",
  "craft-dnx",
  "craft-flac",
  "craft-h264",
