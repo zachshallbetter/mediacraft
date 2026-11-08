@@ -73,6 +73,7 @@ pub fn sanitize_svg_with(bytes: &[u8], limits: &SanitizeLimits) -> Result<Vec<u8
     let raw = inflate_if_gzip(bytes, limits.max_bytes)?;
     let text =
         std::str::from_utf8(strip_bom(&raw)).map_err(|_| bad("the document is not UTF-8 text"))?;
+    check_entity_expansion(text, limits.max_bytes)?;
     let opts = ParsingOptions {
         // Internal entities are expanded by the parser (with its own loop and fan-out limits);
         // external ones have no resolver, so a reference to one is an error.
@@ -96,7 +97,45 @@ pub fn sanitize_svg_with(bytes: &[u8], limits: &SanitizeLimits) -> Result<Vec<u8
 
     let mut out = String::with_capacity(text.len().min(limits.max_bytes) / 2 + 128);
     write_element(root, 0, limits, true, &mut out)?;
+    if out.len() > limits.max_bytes {
+        return Err(bad("the sanitised document is over the size limit"));
+    }
     Ok(out.into_bytes())
+}
+
+/// Refuse a document whose entity references could expand past `max` bytes. The parser limits
+/// nesting and fan-out, but not how often one long entity is referenced from the text, so a few
+/// kilobytes of source could otherwise become gigabytes.
+fn check_entity_expansion(text: &str, max: usize) -> Result<()> {
+    let mut longest = 0usize;
+    let mut nested = false;
+    let mut rest = text;
+    let mut declared = false;
+    while let Some(i) = rest.find("<!ENTITY") {
+        declared = true;
+        rest = &rest[i + 8..];
+        let Some(q) = rest.find(['"', '\'']) else {
+            break;
+        };
+        let quote = rest[q..].chars().next().unwrap_or('"');
+        let value = &rest[q + 1..];
+        let Some(end) = value.find(quote) else {
+            break;
+        };
+        longest = longest.max(end);
+        nested |= value[..end].contains('&');
+        rest = &value[end + 1..];
+    }
+    if !declared {
+        return Ok(());
+    }
+    let refs = text.matches('&').count();
+    // Nested entities fan out up to 255 references each, which the parser then allows.
+    let fan = if nested { 255 } else { 1 };
+    if refs.saturating_mul(longest).saturating_mul(fan) > max {
+        return Err(bad("entity references expand to more than the size limit"));
+    }
+    Ok(())
 }
 
 fn bad(why: &str) -> Error {

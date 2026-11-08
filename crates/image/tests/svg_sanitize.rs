@@ -75,7 +75,7 @@ fn squash(s: &str) -> String {
 #[test]
 fn foreign_object_with_html_is_removed() {
     let out = clean(&svg(
-        r#"<foreignObject width="8" height="8"><body xmlns="http://www.w3.org/1999/xhtml"><iframe src="https://evil.test"/><img src=x onerror="alert(1)"/></body></foreignObject><circle r="2"/>"#,
+        r#"<foreignObject width="8" height="8"><body xmlns="http://www.w3.org/1999/xhtml"><iframe src="https://evil.test"/><img src="x" onerror="alert(1)"/></body></foreignObject><circle r="2"/>"#,
     ));
     let l = lower(&out);
     assert!(!l.contains("foreignobject") && !l.contains("iframe") && !l.contains("onerror"));
@@ -96,8 +96,9 @@ fn style_with_external_targets_is_removed() {
         "@font-face{font-family:f;src:url(https://evil.test/f.woff)}",
         "rect{fill:/* c */url(//evil.test/x)}",
     ] {
+        let escaped = css.replace('<', "&lt;");
         let out = clean(&svg(&format!(
-            "<style>{css}</style><rect width='1' height='1'/>"
+            "<style>{escaped}</style><rect width='1' height='1'/>"
         )));
         assert!(
             !out.contains("evil")
