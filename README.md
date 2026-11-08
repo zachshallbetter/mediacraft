@@ -154,6 +154,8 @@ MediaCraft builds from this repository alone. The craft-libs crates it uses (`cr
 and MPEG-TS and MXF demuxers are vendored into `crates/` at pinned commits. See
 [`docs/VENDORED.md`](docs/VENDORED.md) for sources, local changes and updating, and
 [`docs/CRAFT_MEDIA_NAMING.md`](docs/CRAFT_MEDIA_NAMING.md) for what independence still needs.
+Dependency licences follow [`docs/LICENSING.md`](docs/LICENSING.md) (permissive, plus MPL-2.0
+behind optional features), enforced by `cargo deny check licenses`.
 
 ---
 
