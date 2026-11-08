@@ -134,6 +134,14 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
             }
             img
         }
+        Format::Jxl => {
+            let (img, profile) = jxl(bytes, &opts.limits)?;
+            if icc.is_none() {
+                icc = profile;
+            }
+            img
+        }
+        Format::Exr | Format::Hdr => float(bytes, format, &opts.limits)?,
         _ => full(bytes, format, &opts.limits)?,
     };
     Ok(Decoded {
@@ -149,7 +157,7 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
 
 /// Run a third-party decoder, turning an escaped panic into an error. Our own code does not
 /// panic; this guards the dependencies on targets that unwind.
-fn guarded<T>(format: Format, f: impl FnOnce() -> Result<T>) -> Result<T> {
+pub(crate) fn guarded<T>(format: Format, f: impl FnOnce() -> Result<T>) -> Result<T> {
     catch_unwind(AssertUnwindSafe(f))
         .unwrap_or_else(|_| Err(Error::Decode(format, "decoder panicked".into())))
 }
@@ -162,6 +170,13 @@ fn image_format(format: Format) -> Option<image::ImageFormat> {
         Format::WebP => image::ImageFormat::WebP,
         Format::Tiff => image::ImageFormat::Tiff,
         Format::Bmp => image::ImageFormat::Bmp,
+        Format::Exr => image::ImageFormat::OpenExr,
+        Format::Hdr => image::ImageFormat::Hdr,
+        Format::Dds => image::ImageFormat::Dds,
+        Format::Ico => image::ImageFormat::Ico,
+        Format::Pnm => image::ImageFormat::Pnm,
+        Format::Qoi => image::ImageFormat::Qoi,
+        Format::Tga => image::ImageFormat::Tga,
         _ => return None,
     })
 }
@@ -182,6 +197,87 @@ fn full(bytes: &[u8], format: Format, limits: &Limits) -> Result<Rgba8Image> {
         let (w, h) = rgba.dimensions();
         Rgba8Image::new(w, h, rgba.into_raw())
     })
+}
+
+/// Decode through `image`, keeping the samples as `f32`.
+fn float_image(bytes: &[u8], format: Format, limits: &Limits) -> Result<image::Rgba32FImage> {
+    let fmt =
+        image_format(format).ok_or(Error::Unsupported(format, "no decoder for this format"))?;
+    let header = read_header(bytes)?;
+    // Four f32 samples per pixel are held at once, before the 8-bit copy.
+    let bytes_needed = u64::from(header.width) * u64::from(header.height) * 16;
+    if bytes_needed > limits.max_alloc {
+        return Err(Error::TooLarge {
+            width: header.width,
+            height: header.height,
+            max_pixels: limits.max_alloc / 16,
+        });
+    }
+    guarded(format, || {
+        let mut reader = image::ImageReader::with_format(Cursor::new(bytes), fmt);
+        let mut l = image::Limits::default();
+        l.max_alloc = Some(limits.max_alloc);
+        reader.limits(l);
+        let img = reader
+            .decode()
+            .map_err(|e| Error::Decode(format, e.to_string()))?;
+        Ok(img.into_rgba32f())
+    })
+}
+
+/// Floating-point formats (OpenEXR, Radiance HDR) to 8-bit sRGB.
+///
+/// This is a plain clamp, not a tone map: linear values are clamped to `[0, 1]` and encoded with
+/// the sRGB transfer function (IEC 61966-2-1), so everything above 1.0 is white. Alpha is
+/// clamped and scaled linearly. NaN becomes 0.
+fn float(bytes: &[u8], format: Format, limits: &Limits) -> Result<Rgba8Image> {
+    let img = float_image(bytes, format, limits)?;
+    let (w, h) = img.dimensions();
+    let mut out = Vec::with_capacity(img.as_raw().len());
+    for p in img.as_raw().as_chunks::<4>().0 {
+        out.extend_from_slice(&[
+            srgb_oetf_u8(p[0]),
+            srgb_oetf_u8(p[1]),
+            srgb_oetf_u8(p[2]),
+            unit_u8(p[3]),
+        ]);
+    }
+    Rgba8Image::new(w, h, out)
+}
+
+/// Clamp to `[0, 1]` (NaN to 0) and scale to a byte.
+fn unit_u8(v: f32) -> u8 {
+    if v.is_nan() {
+        return 0;
+    }
+    (v.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+/// The sRGB opto-electronic transfer function on a linear value, clamped first.
+fn srgb_oetf_u8(linear: f32) -> u8 {
+    if linear.is_nan() {
+        return 0;
+    }
+    let l = linear.clamp(0.0, 1.0);
+    let e = if l <= 0.003_130_8 {
+        12.92 * l
+    } else {
+        1.055 * l.powf(1.0 / 2.4) - 0.055
+    };
+    unit_u8(e)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn jxl(bytes: &[u8], limits: &Limits) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
+    crate::formats::jxl::decode(bytes, limits)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn jxl(_bytes: &[u8], _limits: &Limits) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
+    Err(Error::Unsupported(
+        Format::Jxl,
+        "JPEG XL decoding is not in the browser build",
+    ))
 }
 
 /// A JPEG stream, DCT-scaled toward `fit` when that is smaller.
@@ -285,6 +381,19 @@ mod tests {
     }
 
     #[test]
+    fn srgb_encoding_of_linear_values() {
+        assert_eq!(srgb_oetf_u8(0.0), 0);
+        assert_eq!(srgb_oetf_u8(1.0), 255);
+        assert_eq!(srgb_oetf_u8(7.5), 255, "above 1.0 clamps");
+        assert_eq!(srgb_oetf_u8(-3.0), 0);
+        assert_eq!(srgb_oetf_u8(f32::NAN), 0);
+        // Linear 0.5 is 188 in sRGB; the linear toe is 12.92 × l.
+        assert_eq!(srgb_oetf_u8(0.5), 188);
+        assert_eq!(srgb_oetf_u8(0.002), 7);
+        assert_eq!(unit_u8(0.5), 128);
+    }
+
+    #[test]
     fn jpeg_fit_uses_dct_scaling() {
         let bytes = encode_plain(&gradient(800, 600), OutputFormat::Jpeg { quality: 90 }).unwrap();
         let d = decode(
@@ -326,10 +435,8 @@ mod tests {
 
     #[test]
     fn undecodable_formats_say_why() {
-        assert!(matches!(
-            decode(b"\xFF\x0A\xFA\x7F\0\0\0\0", &DecodeOptions::default()),
-            Err(Error::Unsupported(Format::Jxl, _))
-        ));
+        // A bare JPEG XL signature with nothing behind it is damaged, not unsupported.
+        assert!(decode(b"\xFF\x0A\xFA\x7F\0\0\0\0", &DecodeOptions::default()).is_err());
         // A HEIF with no items is malformed, not undecodable.
         assert!(
             decode(

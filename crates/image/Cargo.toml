@@ -13,7 +13,7 @@ workspace = true
 [dependencies]
 # Pixel codecs. `image` is the decoder and encoder for the raster formats; jpeg-decoder adds
 # DCT-domain downscaling, which `image` does not expose, for fast JPEG thumbnails.
-image = { workspace = true, features = ["jpeg", "png", "webp", "tiff", "gif", "bmp"] }
+image = { workspace = true, features = ["jpeg", "png", "webp", "tiff", "gif", "bmp", "exr", "hdr", "dds", "ico", "pnm", "qoi", "tga"] }
 jpeg-decoder = { workspace = true }
 # ICC profile parsing and transforms, shared with the rest of the Craft suite.
 craft-cms = { workspace = true }
@@ -30,6 +30,11 @@ chrono = { workspace = true }
 flate2 = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+
+# JPEG XL stills. Same exact pin as craft-raw (it parses untrusted files); native only, because
+# the browser build has a hard wasm size cap (see craft-raw's Cargo.toml).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+jxl-oxide = { version = "=0.12.6", default-features = false, features = ["rayon"] }
 
 [dev-dependencies]
 craft-raw = { workspace = true, features = ["testgen"] }

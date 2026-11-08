@@ -48,12 +48,14 @@ pub fn read_header(bytes: &[u8]) -> Result<Header> {
             .or_else(|e| crate::raw::header(bytes).ok_or(e))?,
         Format::Psd => formats::psd::header(bytes)?,
         Format::Heif | Format::Avif => formats::bmff::header(bytes, format)?,
-        Format::Jxl => {
-            return Err(Error::Unsupported(
-                format,
-                "JPEG XL headers are not read yet",
-            ));
-        }
+        Format::Jxl => jxl_header(bytes)?,
+        Format::Exr => formats::exr::header(bytes)?,
+        Format::Hdr => formats::hdr::header(bytes)?,
+        Format::Dds => formats::dds::header(bytes)?,
+        Format::Ico => formats::ico::header(bytes)?,
+        Format::Pnm => formats::pnm::header(bytes)?,
+        Format::Qoi => formats::qoi::header(bytes)?,
+        Format::Tga => formats::tga::header(bytes)?,
     };
     // HEIF's own transform properties are authoritative and its EXIF orientation is
     // informational only (ISO/IEC 23008-12 §A.2.1); TIFF tag 274 is the EXIF value itself.
@@ -75,4 +77,17 @@ pub fn read_header(bytes: &[u8]) -> Result<Header> {
         animated: raw.animated,
         orientation,
     })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn jxl_header(bytes: &[u8]) -> Result<RawHeader> {
+    formats::jxl::header(bytes)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn jxl_header(_bytes: &[u8]) -> Result<RawHeader> {
+    Err(Error::Unsupported(
+        Format::Jxl,
+        "JPEG XL headers are not read in the browser build",
+    ))
 }
