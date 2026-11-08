@@ -3,6 +3,7 @@
 //! Provides filesystem-native asset indexing, technical stream metadata models,
 //! faceted searching, and immutable derivative relationship tracking (originals -> proxies/deliveries).
 
+mod av_probe;
 pub mod batch_rename;
 pub mod collections;
 pub mod contact_sheet;

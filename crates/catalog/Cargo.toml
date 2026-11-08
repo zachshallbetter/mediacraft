@@ -8,14 +8,19 @@ description = "Digital asset catalog, filesystem indexing, stream inspection, an
 
 [dependencies]
 mediacraft-protocol = { workspace = true }
-mediacraft-bitstream = { workspace = true }
 craft-pdf = { workspace = true }
 craft-archive = { workspace = true }
 craft-image = { workspace = true }
+craft-isobmff = { workspace = true }
+craft-matroska = { workspace = true }
 craft-atomic = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+# Synthetic MP4 fixtures for the probe tests.
+mediacraft-bitstream = { workspace = true }
 
 [lints.rust]
 unsafe_code = "forbid"
