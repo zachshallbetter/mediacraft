@@ -138,10 +138,12 @@ pub fn render(bytes: &[u8], spec: &RenditionSpec) -> Result<Rendition> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "png")]
     use crate::encode::encode_plain;
     use crate::{Rgba8Image, parse_exif};
 
     /// A 300×200 JPEG whose EXIF says "rotate 90° clockwise", with camera, GPS and rights.
+    #[cfg(feature = "jpeg")]
     fn rotated_camera_jpeg() -> Vec<u8> {
         let mut d = Vec::new();
         for _y in 0..200u32 {
@@ -167,6 +169,7 @@ mod tests {
         .unwrap()
     }
 
+    #[cfg(feature = "jpeg")]
     #[test]
     fn renders_upright_fitted_and_without_location() {
         let src = rotated_camera_jpeg();
@@ -196,6 +199,7 @@ mod tests {
         assert_eq!(x.copyright.as_deref(), Some("(c) 2024 Ada"));
     }
 
+    #[cfg(all(feature = "png", feature = "webp"))]
     #[test]
     fn strip_policy_writes_no_exif_and_small_sources_are_not_enlarged() {
         let src = encode_plain(
@@ -215,6 +219,7 @@ mod tests {
         assert!(embedded(&r.bytes).exif.is_none());
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn embeds_srgb_when_asked() {
         let src = encode_plain(

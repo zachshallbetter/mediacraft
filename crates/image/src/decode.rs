@@ -108,25 +108,7 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
             }
             img
         }
-        Format::Raw => {
-            let r = guarded(format, || {
-                crate::raw::decode(bytes, header.width, header.height, opts)
-            })?;
-            // The raw's own container profile (rare) does not describe these pixels.
-            return Ok(Decoded {
-                image: r.image,
-                format,
-                source_width: header.width,
-                source_height: header.height,
-                orientation: if r.upright {
-                    Orientation::Identity
-                } else {
-                    header.orientation
-                },
-                adobe_rgb_hint: r.adobe_rgb_hint,
-                icc: r.icc,
-            });
-        }
+        Format::Raw => return decode_raw(bytes, &header, opts),
         Format::Psd => {
             let (img, profile) = psd(bytes)?;
             if icc.is_none() {
@@ -157,6 +139,33 @@ pub fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
         adobe_rgb_hint: icc.is_none() && exif.as_ref().is_some_and(|x| x.adobe_rgb_hint()),
         icc,
     })
+}
+
+/// A camera raw (`raw` feature): its pixels are already upright when developed.
+#[cfg(feature = "raw")]
+fn decode_raw(bytes: &[u8], header: &crate::Header, opts: &DecodeOptions) -> Result<Decoded> {
+    let r = guarded(Format::Raw, || {
+        crate::raw::decode(bytes, header.width, header.height, opts)
+    })?;
+    // The raw's own container profile (rare) does not describe these pixels.
+    Ok(Decoded {
+        image: r.image,
+        format: Format::Raw,
+        source_width: header.width,
+        source_height: header.height,
+        orientation: if r.upright {
+            Orientation::Identity
+        } else {
+            header.orientation
+        },
+        adobe_rgb_hint: r.adobe_rgb_hint,
+        icc: r.icc,
+    })
+}
+
+#[cfg(not(feature = "raw"))]
+fn decode_raw(_: &[u8], _: &crate::Header, _: &DecodeOptions) -> Result<Decoded> {
+    Err(Format::Raw.unsupported())
 }
 
 /// Run a third-party decoder, turning an escaped panic into an error. Our own code does not
@@ -271,20 +280,18 @@ fn srgb_oetf_u8(linear: f32) -> u8 {
     unit_u8(e)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "jxl", not(target_arch = "wasm32")))]
 fn jxl(bytes: &[u8], limits: &Limits) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
     crate::formats::jxl::decode(bytes, limits)
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(all(feature = "jxl", not(target_arch = "wasm32"))))]
 fn jxl(_bytes: &[u8], _limits: &Limits) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
-    Err(Error::Unsupported(
-        Format::Jxl,
-        "JPEG XL decoding is not in the browser build",
-    ))
+    Err(Format::Jxl.unsupported())
 }
 
 /// A JPEG stream, DCT-scaled toward `fit` when that is smaller.
+#[cfg(feature = "raw")]
 pub(crate) fn jpeg(bytes: &[u8], fit: Option<(u32, u32)>, limits: &Limits) -> Result<Rgba8Image> {
     let header = read_header(bytes)?;
     limits.check_size(header.width, header.height)?;
@@ -299,6 +306,7 @@ pub(crate) fn jpeg(bytes: &[u8], fit: Option<(u32, u32)>, limits: &Limits) -> Re
 
 /// DCT-domain downscaled JPEG decode (1/2, 1/4 or 1/8). Grayscale and RGB only; CMYK and
 /// 16-bit lossless JPEGs fall back to [`full`].
+#[cfg(feature = "jpeg")]
 fn jpeg_scaled(bytes: &[u8], w: u32, h: u32, limits: &Limits) -> Result<Rgba8Image> {
     let err = |e: jpeg_decoder::Error| Error::Decode(Format::Jpeg, e.to_string());
     let mut d = jpeg_decoder::Decoder::new(Cursor::new(bytes));
@@ -333,7 +341,13 @@ fn jpeg_scaled(bytes: &[u8], w: u32, h: u32, limits: &Limits) -> Result<Rgba8Ima
     Rgba8Image::new(u32::from(sw), u32::from(sh), out)
 }
 
+#[cfg(not(feature = "jpeg"))]
+fn jpeg_scaled(_: &[u8], _: u32, _: u32, _: &Limits) -> Result<Rgba8Image> {
+    Err(Format::Jpeg.unsupported())
+}
+
 /// The merged composite of a PSD/PSB and its ICC profile, through `craft-psd`.
+#[cfg(feature = "psd")]
 fn psd(bytes: &[u8]) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
     let file = craft_psd::PsdFile::from_bytes(bytes)
         .map_err(|e| Error::Decode(Format::Psd, e.to_string()))?;
@@ -344,11 +358,18 @@ fn psd(bytes: &[u8]) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
     Ok((img, file.icc_profile().map(<[u8]>::to_vec)))
 }
 
+#[cfg(not(feature = "psd"))]
+fn psd(_: &[u8]) -> Result<(Rgba8Image, Option<Vec<u8>>)> {
+    Err(Format::Psd.unsupported())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "png", feature = "jpeg"))]
     use crate::encode::{OutputFormat, encode_plain};
 
+    #[cfg(any(feature = "png", feature = "jpeg"))]
     fn gradient(w: u32, h: u32) -> Rgba8Image {
         let mut d = Vec::new();
         for y in 0..h {
@@ -364,6 +385,7 @@ mod tests {
         Rgba8Image::new(w, h, d).unwrap()
     }
 
+    #[cfg(all(feature = "png", feature = "jpeg", feature = "webp"))]
     #[test]
     fn decodes_every_writable_format() {
         let img = gradient(40, 30);
@@ -384,6 +406,43 @@ mod tests {
         }
     }
 
+    /// A format whose feature is off is refused with `Unsupported`, never a panic, and its
+    /// header is still readable.
+    #[test]
+    fn formats_built_out_are_unsupported_not_fatal() {
+        let samples: [(&[u8], Format, bool); 4] = [
+            (
+                b"8BPS\0\x01\0\0\0\0\0\0",
+                Format::Psd,
+                cfg!(feature = "psd"),
+            ),
+            (
+                b"qoif\0\0\0\x02\0\0\0\x02\x04\0",
+                Format::Qoi,
+                cfg!(feature = "qoi"),
+            ),
+            (
+                b"GIF89a\x02\0\x02\0\0\0\0;",
+                Format::Gif,
+                cfg!(feature = "gif"),
+            ),
+            (b"v/1\x01\x02\0\0\0", Format::Exr, cfg!(feature = "exr")),
+        ];
+        for (bytes, format, built) in samples {
+            assert_eq!(sniff(bytes), Some(format));
+            assert_eq!(format.can_decode(), built, "{format}");
+            if !built {
+                assert!(
+                    matches!(
+                        decode(bytes, &DecodeOptions::default()),
+                        Err(Error::Unsupported(f, _)) if f == format
+                    ),
+                    "{format}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn srgb_encoding_of_linear_values() {
         assert_eq!(srgb_oetf_u8(0.0), 0);
@@ -397,6 +456,7 @@ mod tests {
         assert_eq!(unit_u8(0.5), 128);
     }
 
+    #[cfg(feature = "jpeg")]
     #[test]
     fn jpeg_fit_uses_dct_scaling() {
         let bytes = encode_plain(&gradient(800, 600), OutputFormat::Jpeg { quality: 90 }).unwrap();
@@ -413,6 +473,7 @@ mod tests {
         assert_eq!((d.source_width, d.source_height), (800, 600));
     }
 
+    #[cfg(feature = "png")]
     #[test]
     fn limits_refuse_before_decoding() {
         let bytes = encode_plain(&gradient(64, 64), OutputFormat::Png).unwrap();
@@ -455,6 +516,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "psd")]
     #[test]
     fn psd_composites_through_craft_psd() {
         let mut b = craft_psd::PsdBuilder::new(2, 1);

@@ -57,6 +57,45 @@ let web = render(&bytes, &RenditionSpec::new(1280, 1280, OutputFormat::Jpeg { qu
 | DICOM | yes | none | uncompressed transfer syntaxes only, grey (window or min/max) and RGB; compressed syntaxes are refused | no |
 | TGA | yes (v2 footer, else a strict header check) | none | yes, including RLE and colour-mapped | no |
 
+## Cargo features
+
+Every format family is a feature, and all are on by default (`default = ["full"]`), so MediaCraft's
+own crates are unchanged. A consumer that wants a small dependency tree turns defaults off and
+names the formats it needs. Hermit CMS, for example:
+
+```toml
+craft-image = { version = "0.1", default-features = false, features = ["png", "jpeg", "webp", "heic", "avif"] }
+```
+
+What stays on whatever you choose: `sniff`, `read_header`, `embedded` and `probe` (so a catalogue
+can still identify a file it cannot decode), the colour, EXIF, XMP, IPTC, resize and orientation
+code, and the `Format` and `OutputFormat` enums with all their variants. A feature only adds
+pixels. Decoding a format whose feature is off returns `Error::Unsupported` (and `probe` reports
+`decodable: false`); encoding an `OutputFormat` whose feature is off returns `Error::Encode`
+(`OutputFormat::can_encode` tells you first). Two headers do need their feature: JPEG XL (`jxl`)
+and the size of non-TIFF raws such as CR3 (`raw`).
+
+| Feature | Adds | Outside dependencies it brings |
+|---|---|---|
+| `jpeg` | JPEG decode (DCT-scaled) and encode | `image` codec (`zune-jpeg`, `zune-core`), `jpeg-decoder` |
+| `png` | PNG decode and encode | `png` (`fdeflate`, `miniz_oxide`, `crc32fast`, `bitflags`) |
+| `webp` | WebP decode, lossless encode, lossy encode | `image-webp`, `craft-vp8enc` (in this workspace, no dependencies) |
+| `gif` | GIF decode | `gif`, `color_quant` |
+| `bmp` | BMP decode | none beyond `image` |
+| `tiff` | TIFF / BigTIFF decode | `tiff` |
+| `psd` | PSD / PSB composite | `craft-psd` (`tracing`) |
+| `heic` | HEIC decode | `craft-hevc` (`rayon`, `tracing`, `craft-bitstream`) |
+| `avif` | AVIF decode | `craft-av1` (`tracing`, `craft-bitstream`) |
+| `jxl` | JPEG XL decode (native targets only) | `jxl-oxide` |
+| `raw` | Camera raw preview and development; turns on `jpeg` | `craft-raw` (`zune-jpeg`, `jxl-oxide`, `rayon`) |
+| `exr` | OpenEXR decode | `exr` |
+| `hdr`, `dds`, `ico`, `pnm`, `qoi`, `tga` | Decode through `image` | none beyond `image` (`ico` uses `image`'s own BMP and PNG; `qoi` adds `qoi`) |
+| `dpx`, `pcx`, `fits`, `dicom` | Decode, written in this crate | none |
+| `full` | All of the above (the default) | all of the above |
+
+Always present: `image` (the resampler; with no codec it adds `moxcms`, `bytemuck`, `byteorder-lite`
+and `num-traits`), `craft-cms` (with `rayon`), `quick-xml`, `chrono`, `flate2`, `serde` and `thiserror`.
+
 ## Design
 
 * **Untrusted input is the normal case.** Sizes are checked against `Limits` before any pixel

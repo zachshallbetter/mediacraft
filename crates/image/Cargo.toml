@@ -10,22 +10,67 @@ description = "Still images for asset pipelines: format sniffing, headers, EXIF/
 [lints]
 workspace = true
 
+[features]
+# Everything on by default, so MediaCraft's own crates see no change. A consumer that wants a
+# small dependency tree turns defaults off and names the formats it reads and writes:
+# `craft-image = { default-features = false, features = ["png", "jpeg", "webp"] }`.
+# Sniffing, headers and metadata work for every format whatever is enabled; a feature only adds
+# pixel decoding (and, for JPEG, PNG and WebP, encoding). Pixels of a format whose feature is off
+# come back as `Error::Unsupported`.
+default = ["full"]
+full = [
+    "jpeg", "png", "webp", "gif", "bmp", "tiff", "psd", "heic", "avif", "jxl", "raw", "exr", "hdr",
+    "dds", "ico", "pnm", "qoi", "tga", "dpx", "pcx", "fits", "dicom",
+]
+# JPEG decoding (with DCT-domain downscaling) and encoding.
+jpeg = ["image/jpeg", "dep:jpeg-decoder"]
+# PNG decoding and encoding.
+png = ["image/png"]
+# WebP decoding, lossless encoding, and the lossy VP8 key-frame encoder (craft-vp8enc).
+webp = ["image/webp", "dep:craft-vp8enc"]
+gif = ["image/gif"]
+bmp = ["image/bmp"]
+tiff = ["image/tiff"]
+# Layered PSD/PSB composites (craft-psd).
+psd = ["dep:craft-psd"]
+# HEIC stills (craft-hevc). The ISO BMFF item reader is always built: headers and metadata need it.
+heic = ["dep:craft-hevc"]
+# AVIF stills (craft-av1).
+avif = ["dep:craft-av1"]
+# JPEG XL (jxl-oxide). Native targets only; the browser build never has it.
+jxl = ["dep:jxl-oxide"]
+# Camera raws (craft-raw). Raw previews are JPEGs, so this turns `jpeg` on.
+raw = ["dep:craft-raw", "jpeg"]
+exr = ["image/exr"]
+hdr = ["image/hdr"]
+dds = ["image/dds"]
+ico = ["image/ico"]
+pnm = ["image/pnm"]
+qoi = ["image/qoi"]
+tga = ["image/tga"]
+# Decoders written in this crate: no dependencies, the feature only switches decoding on.
+dpx = []
+pcx = []
+fits = []
+dicom = []
+
 [dependencies]
-# Pixel codecs. `image` is the decoder and encoder for the raster formats; jpeg-decoder adds
-# DCT-domain downscaling, which `image` does not expose, for fast JPEG thumbnails.
-image = { workspace = true, features = ["jpeg", "png", "webp", "tiff", "gif", "bmp", "exr", "hdr", "dds", "ico", "pnm", "qoi", "tga"] }
-jpeg-decoder = { workspace = true }
+# Pixel codecs. `image` is the decoder and encoder for the raster formats (each codec is behind
+# the matching feature above) and supplies the resampler; jpeg-decoder adds DCT-domain
+# downscaling, which `image` does not expose, for fast JPEG thumbnails.
+image = { workspace = true }
+jpeg-decoder = { workspace = true, optional = true }
 # ICC profile parsing and transforms, shared with the rest of the Craft suite.
 craft-cms = { workspace = true }
 quick-xml = { workspace = true }
 # Layered PSD/PSB composites and their image resources, from this workspace.
-craft-psd = { workspace = true }
+craft-psd = { workspace = true, optional = true }
 # HEIC and AVIF stills, from this workspace.
-craft-hevc = { workspace = true }
-craft-av1 = { workspace = true, default-features = false }
+craft-hevc = { workspace = true, optional = true }
+craft-av1 = { workspace = true, default-features = false, optional = true }
 # Lossy WebP: a VP8 key-frame encoder, from this workspace.
-craft-vp8enc = { workspace = true }
-craft-raw = { workspace = true }
+craft-vp8enc = { workspace = true, optional = true }
+craft-raw = { workspace = true, optional = true }
 chrono = { workspace = true }
 flate2 = { workspace = true }
 serde = { workspace = true }
@@ -34,7 +79,28 @@ thiserror = { workspace = true }
 # JPEG XL stills. Same exact pin as craft-raw (it parses untrusted files); native only, because
 # the browser build has a hard wasm size cap (see craft-raw's Cargo.toml).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-jxl-oxide = { version = "=0.12.6", default-features = false, features = ["rayon"] }
+jxl-oxide = { version = "=0.12.6", default-features = false, features = ["rayon"], optional = true }
+
+# Tests that need formats the default build has but a trimmed one may not.
+[[test]]
+name = "formats_extra"
+required-features = ["png", "ico", "pnm", "qoi", "tga", "hdr", "exr", "dds", "jxl", "dpx", "pcx", "fits", "dicom"]
+
+[[test]]
+name = "heif"
+required-features = ["png", "heic", "avif"]
+
+[[test]]
+name = "raw"
+required-features = ["raw"]
+
+[[test]]
+name = "robustness"
+required-features = ["png", "jpeg", "webp"]
+
+[[example]]
+name = "thumbs"
+required-features = ["png"]
 
 [dev-dependencies]
 craft-raw = { workspace = true, features = ["testgen"] }

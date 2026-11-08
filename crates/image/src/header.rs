@@ -44,8 +44,9 @@ pub fn read_header(bytes: &[u8]) -> Result<Header> {
         Format::Bmp => formats::bmp::header(bytes)?,
         Format::Tiff => formats::tiff_file::header(bytes, format)?,
         // CR3, RAF, ORF and RW2 are not classic TIFF; their size is the embedded preview's.
-        Format::Raw => formats::tiff_file::header(bytes, format)
-            .or_else(|e| crate::raw::header(bytes).ok_or(e))?,
+        Format::Raw => {
+            formats::tiff_file::header(bytes, format).or_else(|e| raw_header(bytes).ok_or(e))?
+        }
         Format::Psd => formats::psd::header(bytes)?,
         Format::Heif | Format::Avif => formats::bmff::header(bytes, format)?,
         Format::Jxl => jxl_header(bytes)?,
@@ -83,17 +84,30 @@ pub fn read_header(bytes: &[u8]) -> Result<Header> {
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "jxl", not(target_arch = "wasm32")))]
 fn jxl_header(bytes: &[u8]) -> Result<RawHeader> {
     formats::jxl::header(bytes)
 }
 
-#[cfg(target_arch = "wasm32")]
+/// Without the decoder the header is not read either: it lives in the image metadata, which
+/// only `jxl-oxide` parses.
+#[cfg(not(all(feature = "jxl", not(target_arch = "wasm32"))))]
 fn jxl_header(_bytes: &[u8]) -> Result<RawHeader> {
     Err(Error::Unsupported(
         Format::Jxl,
-        "JPEG XL headers are not read in the browser build",
+        "JPEG XL headers are read only by builds with the `jxl` feature (not the browser build)",
     ))
+}
+
+/// Size and orientation of a non-TIFF raw from its largest embedded preview.
+#[cfg(feature = "raw")]
+fn raw_header(bytes: &[u8]) -> Option<RawHeader> {
+    crate::raw::header(bytes)
+}
+
+#[cfg(not(feature = "raw"))]
+fn raw_header(_bytes: &[u8]) -> Option<RawHeader> {
+    None
 }
 
 /// The error for a header reader that only says "no".

@@ -1,8 +1,8 @@
 //! Encoding 8-bit RGBA to delivery formats, with optional ICC and EXIF blocks.
 
+#[cfg(feature = "jpeg")]
 use crate::formats::jpeg::segment;
 use crate::{Error, Format, Result, Rgba8Image};
-use image::ImageEncoder;
 use serde::{Deserialize, Serialize};
 
 /// Delivery formats.
@@ -35,6 +35,16 @@ impl OutputFormat {
             OutputFormat::Webp { .. } | OutputFormat::WebpLossless => Format::WebP,
         }
     }
+
+    /// Whether this build can encode the format: the `jpeg`, `png` or `webp` feature is on.
+    /// [`encode`] returns [`Error::Encode`] when it is not.
+    pub fn can_encode(self) -> bool {
+        match self {
+            OutputFormat::Jpeg { .. } => cfg!(feature = "jpeg"),
+            OutputFormat::Png => cfg!(feature = "png"),
+            OutputFormat::Webp { .. } | OutputFormat::WebpLossless => cfg!(feature = "webp"),
+        }
+    }
 }
 
 /// Blocks to embed and how to flatten alpha.
@@ -65,70 +75,117 @@ pub fn encode_plain(img: &Rgba8Image, format: OutputFormat) -> Result<Vec<u8>> {
 
 /// Encode an image.
 pub fn encode(img: &Rgba8Image, format: OutputFormat, opts: &EncodeOptions) -> Result<Vec<u8>> {
-    let f = format.format();
+    match format {
+        OutputFormat::Jpeg { quality } => encode_jpeg(img, quality, opts),
+        OutputFormat::Png => encode_png(img, opts),
+        OutputFormat::Webp { quality } => encode_webp_lossy(img, quality, opts),
+        OutputFormat::WebpLossless => encode_webp_lossless(img, opts),
+    }
+}
+
+/// The error for an encoder whose cargo feature is off.
+#[cfg(not(all(feature = "jpeg", feature = "png", feature = "webp")))]
+fn not_built(format: OutputFormat, feature: &str) -> Error {
+    Error::Encode(
+        format.format(),
+        format!("this build cannot encode it: the `{feature}` feature is off"),
+    )
+}
+
+#[cfg(feature = "jpeg")]
+fn encode_jpeg(img: &Rgba8Image, quality: u8, opts: &EncodeOptions) -> Result<Vec<u8>> {
+    use image::ImageEncoder;
+    let f = Format::Jpeg;
+    let (w, h) = (img.width(), img.height());
+    let mut out = Vec::new();
+    let rgb = flatten(img, opts.background);
+    let mut enc =
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality.clamp(1, 100));
+    if let Some(icc) = &opts.icc {
+        enc.set_icc_profile(icc.clone())
+            .map_err(|e| Error::Encode(f, e.to_string()))?;
+    }
+    enc.write_image(&rgb, w, h, image::ExtendedColorType::Rgb8)
+        .map_err(|e| Error::Encode(f, e.to_string()))?;
+    if let Some(exif) = &opts.exif {
+        out = insert_jpeg_exif(out, exif)?;
+    }
+    Ok(out)
+}
+
+#[cfg(not(feature = "jpeg"))]
+fn encode_jpeg(_: &Rgba8Image, quality: u8, _: &EncodeOptions) -> Result<Vec<u8>> {
+    Err(not_built(OutputFormat::Jpeg { quality }, "jpeg"))
+}
+
+#[cfg(feature = "png")]
+fn encode_png(img: &Rgba8Image, opts: &EncodeOptions) -> Result<Vec<u8>> {
+    use image::ImageEncoder;
+    let f = Format::Png;
     let err = |e: image::ImageError| Error::Encode(f, e.to_string());
     let (w, h) = (img.width(), img.height());
     let mut out = Vec::new();
-    match format {
-        OutputFormat::Jpeg { quality } => {
-            let rgb = flatten(img, opts.background);
-            let mut enc =
-                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality.clamp(1, 100));
-            if let Some(icc) = &opts.icc {
-                enc.set_icc_profile(icc.clone())
-                    .map_err(|e| Error::Encode(f, e.to_string()))?;
-            }
-            enc.write_image(&rgb, w, h, image::ExtendedColorType::Rgb8)
-                .map_err(err)?;
-            if let Some(exif) = &opts.exif {
-                out = insert_jpeg_exif(out, exif)?;
-            }
-        }
-        OutputFormat::Png => {
-            let mut enc = image::codecs::png::PngEncoder::new_with_quality(
-                &mut out,
-                image::codecs::png::CompressionType::Default,
-                image::codecs::png::FilterType::Adaptive,
-            );
-            if let Some(icc) = &opts.icc {
-                enc.set_icc_profile(icc.clone())
-                    .map_err(|e| Error::Encode(f, e.to_string()))?;
-            }
-            if img.is_opaque() {
-                enc.write_image(
-                    &flatten(img, [0, 0, 0]),
-                    w,
-                    h,
-                    image::ExtendedColorType::Rgb8,
-                )
-                .map_err(err)?;
-            } else {
-                enc.write_image(img.data(), w, h, image::ExtendedColorType::Rgba8)
-                    .map_err(err)?;
-            }
-            if let Some(exif) = &opts.exif {
-                out = insert_png_chunk(out, b"eXIf", exif)?;
-            }
-        }
-        OutputFormat::Webp { quality } => {
-            out = encode_webp_lossy(img, quality, opts)?;
-        }
-        OutputFormat::WebpLossless => {
-            let mut enc = image::codecs::webp::WebPEncoder::new_lossless(&mut out);
-            if let Some(icc) = &opts.icc {
-                enc.set_icc_profile(icc.clone())
-                    .map_err(|e| Error::Encode(f, e.to_string()))?;
-            }
-            enc.write_image(img.data(), w, h, image::ExtendedColorType::Rgba8)
-                .map_err(err)?;
-        }
+    let mut enc = image::codecs::png::PngEncoder::new_with_quality(
+        &mut out,
+        image::codecs::png::CompressionType::Default,
+        image::codecs::png::FilterType::Adaptive,
+    );
+    if let Some(icc) = &opts.icc {
+        enc.set_icc_profile(icc.clone())
+            .map_err(|e| Error::Encode(f, e.to_string()))?;
+    }
+    if img.is_opaque() {
+        enc.write_image(
+            &flatten(img, [0, 0, 0]),
+            w,
+            h,
+            image::ExtendedColorType::Rgb8,
+        )
+        .map_err(err)?;
+    } else {
+        enc.write_image(img.data(), w, h, image::ExtendedColorType::Rgba8)
+            .map_err(err)?;
+    }
+    if let Some(exif) = &opts.exif {
+        out = insert_png_chunk(out, b"eXIf", exif)?;
     }
     Ok(out)
+}
+
+#[cfg(not(feature = "png"))]
+fn encode_png(_: &Rgba8Image, _: &EncodeOptions) -> Result<Vec<u8>> {
+    Err(not_built(OutputFormat::Png, "png"))
+}
+
+#[cfg(feature = "webp")]
+fn encode_webp_lossless(img: &Rgba8Image, opts: &EncodeOptions) -> Result<Vec<u8>> {
+    use image::ImageEncoder;
+    let f = Format::WebP;
+    let mut out = Vec::new();
+    let mut enc = image::codecs::webp::WebPEncoder::new_lossless(&mut out);
+    if let Some(icc) = &opts.icc {
+        enc.set_icc_profile(icc.clone())
+            .map_err(|e| Error::Encode(f, e.to_string()))?;
+    }
+    enc.write_image(
+        img.data(),
+        img.width(),
+        img.height(),
+        image::ExtendedColorType::Rgba8,
+    )
+    .map_err(|e| Error::Encode(f, e.to_string()))?;
+    Ok(out)
+}
+
+#[cfg(not(feature = "webp"))]
+fn encode_webp_lossless(_: &Rgba8Image, _: &EncodeOptions) -> Result<Vec<u8>> {
+    Err(not_built(OutputFormat::WebpLossless, "webp"))
 }
 
 /// Lossy WebP (RFC 9649): the colour as a VP8 key frame and, when any pixel is translucent, the
 /// alpha plane as an uncompressed `ALPH` chunk. The extended (`VP8X`) form is written whenever
 /// there is alpha, ICC or EXIF, with chunks in the order the specification gives.
+#[cfg(feature = "webp")]
 fn encode_webp_lossy(img: &Rgba8Image, quality: u8, opts: &EncodeOptions) -> Result<Vec<u8>> {
     let f = Format::WebP;
     let (w, h) = (img.width(), img.height());
@@ -197,7 +254,13 @@ fn encode_webp_lossy(img: &Rgba8Image, quality: u8, opts: &EncodeOptions) -> Res
     Ok(out)
 }
 
+#[cfg(not(feature = "webp"))]
+fn encode_webp_lossy(_: &Rgba8Image, quality: u8, _: &EncodeOptions) -> Result<Vec<u8>> {
+    Err(not_built(OutputFormat::Webp { quality }, "webp"))
+}
+
 /// RGB bytes with alpha composited onto `bg`.
+#[cfg(any(feature = "jpeg", feature = "png"))]
 fn flatten(img: &Rgba8Image, bg: [u8; 3]) -> Vec<u8> {
     let mut rgb = Vec::with_capacity(img.data().len() / 4 * 3);
     for p in img.data().as_chunks::<4>().0.iter() {
@@ -211,6 +274,7 @@ fn flatten(img: &Rgba8Image, bg: [u8; 3]) -> Vec<u8> {
 }
 
 /// Put an `Exif\0\0` APP1 after SOI and any APP0 (JFIF wants APP0 first).
+#[cfg(feature = "jpeg")]
 fn insert_jpeg_exif(jpeg: Vec<u8>, exif: &[u8]) -> Result<Vec<u8>> {
     let mut payload = b"Exif\0\0".to_vec();
     payload.extend_from_slice(exif);
@@ -235,6 +299,7 @@ fn insert_jpeg_exif(jpeg: Vec<u8>, exif: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// Put a chunk before the first IDAT.
+#[cfg(feature = "png")]
 fn insert_png_chunk(png: Vec<u8>, ty: &[u8; 4], data: &[u8]) -> Result<Vec<u8>> {
     let mut p = 8usize;
     let at = loop {
@@ -265,7 +330,7 @@ fn insert_png_chunk(png: Vec<u8>, ty: &[u8; 4], data: &[u8]) -> Result<Vec<u8>> 
     Ok(out)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "jpeg", feature = "png"))]
 mod tests {
     use super::*;
     use crate::{Orientation, embedded, exif::minimal_exif, parse_exif, read_header};
@@ -316,7 +381,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "webp"))]
 mod webp_tests {
     use super::*;
     use crate::{

@@ -157,6 +157,7 @@ fn assemble_icc(mut parts: Vec<(u8, &[u8])>, count: u8) -> Option<Cow<'_, [u8]>>
 }
 
 /// Encode one marker segment (`FF`, marker, length, payload); `None` past the 65533-byte limit.
+#[cfg(any(feature = "jpeg", test))]
 pub(crate) fn segment(marker: u8, payload: &[u8]) -> Option<Vec<u8>> {
     let len = u16::try_from(payload.len() + 2).ok()?;
     let mut s = vec![0xFF, marker];

@@ -21,7 +21,7 @@ pub(crate) mod tga;
 pub(crate) mod tiff_file;
 pub(crate) mod webp;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "jxl", not(target_arch = "wasm32")))]
 pub(crate) mod jxl;
 
 use crate::Orientation;

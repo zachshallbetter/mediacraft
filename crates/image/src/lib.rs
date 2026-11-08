@@ -18,7 +18,23 @@
 //! buffer is allocated, every offset read from a file is bounds-checked, recursion is bounded,
 //! and third-party decoders run behind a panic guard.
 //!
+//! # Cargo features
+//!
+//! Each format family is a feature, all on by default (`full`). Turn defaults off to keep the
+//! dependency tree to the formats you read and write. [`sniff`], [`read_header`], [`embedded`]
+//! and [`probe`] work for every [`Format`] whatever is enabled (the exceptions need a decoder to
+//! read at all: JPEG XL headers need `jxl`, and the size of a raw that is not TIFF-structured,
+//! such as CR3, needs `raw`). Pixels of a format whose feature is off come back as
+//! [`Error::Unsupported`] and [`ImageInfo::decodable`] is false; an [`OutputFormat`] whose
+//! feature is off gives [`Error::Encode`] (see [`OutputFormat::can_encode`]).
+//!
+//! ```toml
+//! craft-image = { default-features = false, features = ["png", "jpeg", "webp", "heic", "avif"] }
 //! ```
+//!
+//! ```
+//! # #[cfg(all(feature = "png", feature = "jpeg"))]
+//! # {
 //! use craft_image::{OutputFormat, RenditionSpec, Rgba8Image, encode_plain, probe, render};
 //!
 //! let original = encode_plain(&Rgba8Image::filled(400, 300, [40, 90, 200, 255])?, OutputFormat::Png)?;
@@ -27,6 +43,7 @@
 //!
 //! let web = render(&original, &RenditionSpec::new(200, 200, OutputFormat::Jpeg { quality: 82 }))?;
 //! assert_eq!((web.width, web.height, web.mime), (200, 150, "image/jpeg"));
+//! # }
 //! # Ok::<(), craft_image::Error>(())
 //! ```
 #![forbid(unsafe_code)]
@@ -56,6 +73,7 @@ mod iptc;
 mod metadata;
 mod orientation;
 mod pixels;
+#[cfg(feature = "raw")]
 mod raw;
 mod rendition;
 mod resize;
@@ -145,6 +163,7 @@ pub fn probe_file(path: &Path, max_bytes: u64) -> Result<ImageInfo> {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "jpeg")]
     #[test]
     fn probe_reports_header_metadata_and_profile() {
         let img = Rgba8Image::filled(30, 20, [1, 2, 3, 255]).unwrap();
@@ -170,6 +189,23 @@ mod tests {
         assert_eq!(back.metadata.camera_model, info.metadata.camera_model);
     }
 
+    /// Headers are read whatever is compiled in; `decodable` says whether the pixels are.
+    #[test]
+    fn probe_identifies_formats_it_may_not_decode() {
+        let qoi = b"qoif\0\0\0\x07\0\0\0\x05\x04\0";
+        let info = probe(qoi).unwrap();
+        assert_eq!(info.header.format, Format::Qoi);
+        assert_eq!((info.header.width, info.header.height), (7, 5));
+        assert_eq!(info.decodable, cfg!(feature = "qoi"));
+        if !info.decodable {
+            assert!(matches!(
+                decode(qoi, &DecodeOptions::default()),
+                Err(Error::Unsupported(Format::Qoi, _))
+            ));
+        }
+    }
+
+    #[cfg(feature = "png")]
     #[test]
     fn probe_file_reads_a_prefix() {
         let img = Rgba8Image::filled(30, 20, [1, 2, 3, 255]).unwrap();

@@ -1,5 +1,6 @@
 //! Format detection from leading bytes.
 
+use crate::Error;
 use crate::formats;
 use crate::tiff::Tiff;
 use serde::{Deserialize, Serialize};
@@ -113,15 +114,48 @@ impl Format {
     }
 
     /// Why this build cannot decode the format's pixels, `None` when it can. Headers and
-    /// metadata of every format are still read.
+    /// metadata are read wherever they need no optional dependency, so a catalogue can still
+    /// identify a file it cannot decode.
     pub fn not_decodable(self) -> Option<&'static str> {
-        match self {
-            // The decoder is left out of the browser build to keep its wasm under the size cap.
-            Format::Jxl if cfg!(target_arch = "wasm32") => {
-                Some("JPEG XL decoding is not in the browser build")
-            }
-            _ => None,
+        // The decoder is left out of the browser build to keep its wasm under the size cap.
+        if self == Format::Jxl && cfg!(target_arch = "wasm32") {
+            return Some("JPEG XL decoding is not in the browser build");
         }
+        // Whether the cargo feature that provides the decoder is on.
+        let (built, why) = match self {
+            Format::Jpeg => (cfg!(feature = "jpeg"), "the `jpeg` feature is off"),
+            Format::Png => (cfg!(feature = "png"), "the `png` feature is off"),
+            Format::Gif => (cfg!(feature = "gif"), "the `gif` feature is off"),
+            Format::WebP => (cfg!(feature = "webp"), "the `webp` feature is off"),
+            Format::Tiff => (cfg!(feature = "tiff"), "the `tiff` feature is off"),
+            Format::Bmp => (cfg!(feature = "bmp"), "the `bmp` feature is off"),
+            Format::Psd => (cfg!(feature = "psd"), "the `psd` feature is off"),
+            Format::Heif => (cfg!(feature = "heic"), "the `heic` feature is off"),
+            Format::Avif => (cfg!(feature = "avif"), "the `avif` feature is off"),
+            Format::Jxl => (cfg!(feature = "jxl"), "the `jxl` feature is off"),
+            Format::Exr => (cfg!(feature = "exr"), "the `exr` feature is off"),
+            Format::Hdr => (cfg!(feature = "hdr"), "the `hdr` feature is off"),
+            Format::Dds => (cfg!(feature = "dds"), "the `dds` feature is off"),
+            Format::Ico => (cfg!(feature = "ico"), "the `ico` feature is off"),
+            Format::Pnm => (cfg!(feature = "pnm"), "the `pnm` feature is off"),
+            Format::Qoi => (cfg!(feature = "qoi"), "the `qoi` feature is off"),
+            Format::Tga => (cfg!(feature = "tga"), "the `tga` feature is off"),
+            Format::Dpx => (cfg!(feature = "dpx"), "the `dpx` feature is off"),
+            Format::Pcx => (cfg!(feature = "pcx"), "the `pcx` feature is off"),
+            Format::Fits => (cfg!(feature = "fits"), "the `fits` feature is off"),
+            Format::Dicom => (cfg!(feature = "dicom"), "the `dicom` feature is off"),
+            Format::Raw => (cfg!(feature = "raw"), "the `raw` feature is off"),
+        };
+        (!built).then_some(why)
+    }
+
+    /// The error for pixels this build cannot decode.
+    pub(crate) fn unsupported(self) -> Error {
+        Error::Unsupported(
+            self,
+            self.not_decodable()
+                .unwrap_or("no decoder is built for this format"),
+        )
     }
 
     /// Whether [`crate::decode`] can decode this format.
@@ -467,12 +501,20 @@ mod tests {
     }
 
     #[test]
-    fn decodability_is_reported() {
-        assert!(Format::Jpeg.can_decode());
-        assert!(Format::Psd.can_decode());
-        assert!(Format::Heif.can_decode() && Format::Avif.can_decode());
-        assert_eq!(Format::Jxl.can_decode(), !cfg!(target_arch = "wasm32"));
-        assert!(Format::Exr.can_decode() && Format::Tga.can_decode());
+    fn decodability_follows_the_features() {
+        assert_eq!(Format::Jpeg.can_decode(), cfg!(feature = "jpeg"));
+        assert_eq!(Format::Png.can_decode(), cfg!(feature = "png"));
+        assert_eq!(Format::Psd.can_decode(), cfg!(feature = "psd"));
+        assert_eq!(Format::Heif.can_decode(), cfg!(feature = "heic"));
+        assert_eq!(Format::Avif.can_decode(), cfg!(feature = "avif"));
+        assert_eq!(
+            Format::Jxl.can_decode(),
+            cfg!(feature = "jxl") && !cfg!(target_arch = "wasm32")
+        );
+        assert_eq!(Format::Exr.can_decode(), cfg!(feature = "exr"));
+        assert_eq!(Format::Tga.can_decode(), cfg!(feature = "tga"));
+        assert_eq!(Format::Dicom.can_decode(), cfg!(feature = "dicom"));
+        assert_eq!(Format::Raw.can_decode(), cfg!(feature = "raw"));
         assert_eq!(Format::WebP.mime(), "image/webp");
         assert_eq!(Format::Jxl.to_string(), "JPEG XL");
     }

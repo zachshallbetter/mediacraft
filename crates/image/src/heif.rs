@@ -7,6 +7,7 @@
 use crate::bytes::{be_u16, be_u32};
 use crate::container::{Embedded, exif_payload};
 use crate::formats::bmff::{boxes, ipma_for};
+#[cfg(any(feature = "heic", feature = "avif"))]
 use crate::yuv::{self, Plane};
 use crate::{Error, Format, Limits, Result, Rgba8Image};
 use std::borrow::Cow;
@@ -35,12 +36,16 @@ struct Reference {
     to: Vec<u32>,
 }
 
+// The colour fields are read only when a codec is built.
+#[cfg_attr(not(any(feature = "heic", feature = "avif")), allow(dead_code))]
 #[derive(Clone, Copy)]
 struct Nclx {
     matrix: u8,
     full_range: bool,
 }
 
+// Each codec property is read only when its decoder is built.
+#[cfg_attr(not(all(feature = "heic", feature = "avif")), allow(dead_code))]
 enum Prop<'a> {
     Hvcc(&'a [u8]),
     Av1c(&'a [u8]),
@@ -272,61 +277,68 @@ impl<'a> Heif<'a> {
         let nclx = self.nclx(id).or(inherited);
         match &item.ty {
             b"grid" if depth == 0 => self.decode_grid(id, nclx, limits),
-            b"hvc1" => {
-                let hvcc = self.props(id).into_iter().find_map(|p| {
-                    if let Prop::Hvcc(d) = p {
-                        Some(*d)
-                    } else {
-                        None
-                    }
-                });
-                let hvcc = hvcc.ok_or_else(|| {
-                    Error::Malformed(self.format, "HEVC item without hvcC".into())
-                })?;
-                let data = self.item_data(id)?;
-                let err = |e: craft_hevc::Error| Error::Decode(Format::Heif, e.to_string());
-                let mut dec = craft_hevc::Decoder::from_hvcc(hvcc).map_err(err)?;
-                let mut pics = dec.decode(&data, 0).map_err(err)?;
-                pics.extend(dec.flush());
-                let pic = pics
-                    .first()
-                    .ok_or_else(|| Error::Decode(Format::Heif, "no picture in the item".into()))?;
-                limits.check_size(pic.width, pic.height)?;
-                hevc_rgba(pic, nclx).ok_or_else(|| {
-                    Error::Decode(Format::Heif, "inconsistent picture planes".into())
-                })
-            }
-            b"av01" => {
-                let av1c = self.props(id).into_iter().find_map(|p| {
-                    if let Prop::Av1c(d) = p {
-                        Some(*d)
-                    } else {
-                        None
-                    }
-                });
-                let data = self.item_data(id)?;
-                let err = |e: craft_av1::Error| Error::Decode(Format::Avif, e.to_string());
-                let mut dec = craft_av1::Decoder::new();
-                // av1C: four header bytes, then configuration OBUs (a sequence header).
-                if let Some(obus) = av1c.and_then(|c| c.get(4..)).filter(|o| !o.is_empty()) {
-                    dec.decode(obus).map_err(err)?;
-                }
-                let mut pics = dec.decode(&data).map_err(err)?;
-                pics.extend(dec.flush());
-                let pic = pics
-                    .first()
-                    .ok_or_else(|| Error::Decode(Format::Avif, "no picture in the item".into()))?;
-                limits.check_size(pic.width, pic.height)?;
-                av1_rgba(pic, nclx).ok_or_else(|| {
-                    Error::Decode(Format::Avif, "inconsistent picture planes".into())
-                })
-            }
+            #[cfg(feature = "heic")]
+            b"hvc1" => self.decode_hevc(id, nclx, limits),
+            #[cfg(feature = "avif")]
+            b"av01" => self.decode_av1(id, nclx, limits),
             b"grid" => Err(Error::Unsupported(self.format, "nested grids")),
             _ => Err(Error::Unsupported(
                 self.format,
                 "this item type is not decoded",
             )),
         }
+    }
+
+    /// An HEVC-coded item (HEIC), through `craft-hevc`.
+    #[cfg(feature = "heic")]
+    fn decode_hevc(&self, id: u32, nclx: Option<Nclx>, limits: &Limits) -> Result<Rgba8Image> {
+        let hvcc = self.props(id).into_iter().find_map(|p| {
+            if let Prop::Hvcc(d) = p {
+                Some(*d)
+            } else {
+                None
+            }
+        });
+        let hvcc =
+            hvcc.ok_or_else(|| Error::Malformed(self.format, "HEVC item without hvcC".into()))?;
+        let data = self.item_data(id)?;
+        let err = |e: craft_hevc::Error| Error::Decode(Format::Heif, e.to_string());
+        let mut dec = craft_hevc::Decoder::from_hvcc(hvcc).map_err(err)?;
+        let mut pics = dec.decode(&data, 0).map_err(err)?;
+        pics.extend(dec.flush());
+        let pic = pics
+            .first()
+            .ok_or_else(|| Error::Decode(Format::Heif, "no picture in the item".into()))?;
+        limits.check_size(pic.width, pic.height)?;
+        hevc_rgba(pic, nclx)
+            .ok_or_else(|| Error::Decode(Format::Heif, "inconsistent picture planes".into()))
+    }
+
+    /// An AV1-coded item (AVIF), through `craft-av1`.
+    #[cfg(feature = "avif")]
+    fn decode_av1(&self, id: u32, nclx: Option<Nclx>, limits: &Limits) -> Result<Rgba8Image> {
+        let av1c = self.props(id).into_iter().find_map(|p| {
+            if let Prop::Av1c(d) = p {
+                Some(*d)
+            } else {
+                None
+            }
+        });
+        let data = self.item_data(id)?;
+        let err = |e: craft_av1::Error| Error::Decode(Format::Avif, e.to_string());
+        let mut dec = craft_av1::Decoder::new();
+        // av1C: four header bytes, then configuration OBUs (a sequence header).
+        if let Some(obus) = av1c.and_then(|c| c.get(4..)).filter(|o| !o.is_empty()) {
+            dec.decode(obus).map_err(err)?;
+        }
+        let mut pics = dec.decode(&data).map_err(err)?;
+        pics.extend(dec.flush());
+        let pic = pics
+            .first()
+            .ok_or_else(|| Error::Decode(Format::Avif, "no picture in the item".into()))?;
+        limits.check_size(pic.width, pic.height)?;
+        av1_rgba(pic, nclx)
+            .ok_or_else(|| Error::Decode(Format::Avif, "inconsistent picture planes".into()))
     }
 
     /// A `grid` derived image: tiles (its `dimg` references, row-major) pasted onto a canvas of
@@ -553,6 +565,7 @@ fn parse_prop(ty: [u8; 4], d: &[u8]) -> Prop<'_> {
     }
 }
 
+#[cfg(any(feature = "heic", feature = "avif"))]
 fn plane<T>(data: &[T], stride: usize, width: u32, height: u32) -> Plane<'_, T> {
     Plane {
         data,
@@ -562,6 +575,7 @@ fn plane<T>(data: &[T], stride: usize, width: u32, height: u32) -> Plane<'_, T> 
     }
 }
 
+#[cfg(feature = "heic")]
 fn hevc_rgba(p: &craft_hevc::Picture, nclx: Option<Nclx>) -> Option<Rgba8Image> {
     let (matrix, full) = nclx.map_or((p.color.matrix, p.color.full_range), |n| {
         (n.matrix, n.full_range)
@@ -621,6 +635,7 @@ fn hevc_rgba(p: &craft_hevc::Picture, nclx: Option<Nclx>) -> Option<Rgba8Image> 
     }
 }
 
+#[cfg(feature = "avif")]
 fn av1_rgba(p: &craft_av1::Picture, nclx: Option<Nclx>) -> Option<Rgba8Image> {
     let (matrix, full) = nclx.map_or((p.matrix_coefficients, p.full_range), |n| {
         (n.matrix, n.full_range)
