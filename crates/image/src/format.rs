@@ -149,7 +149,9 @@ impl Format {
         (!built).then_some(why)
     }
 
-    /// The error for pixels this build cannot decode.
+    /// The error for pixels this build cannot decode. Only the shims for features that are off
+    /// call it, so a build with every feature on never does.
+    #[allow(dead_code)]
     pub(crate) fn unsupported(self) -> Error {
         Error::Unsupported(
             self,
