@@ -182,8 +182,99 @@ fn encode_webp_lossless(_: &Rgba8Image, _: &EncodeOptions) -> Result<Vec<u8>> {
     Err(not_built(OutputFormat::WebpLossless, "webp"))
 }
 
+/// Prefilter an alpha plane (RFC 9649, "Alpha": filtering methods 1 horizontal, 2 vertical,
+/// 3 gradient). The top-left pixel is predicted from 0, the rest of the top row from the left,
+/// and the rest of the left column from above; residuals are taken modulo 256.
+#[cfg(feature = "webp")]
+fn alpha_prefilter(plane: &[u8], w: usize, method: u8) -> Vec<u8> {
+    let mut out = plane.to_vec();
+    if method == 0 || w == 0 {
+        return out;
+    }
+    for (i, o) in out.iter_mut().enumerate() {
+        let (x, y) = (i % w, i / w);
+        let pred = if i == 0 {
+            0
+        } else if y == 0 {
+            plane[i - 1]
+        } else if x == 0 {
+            plane[i - w]
+        } else {
+            let (l, t, tl) = (plane[i - 1], plane[i - w], plane[i - w - 1]);
+            match method {
+                1 => l,
+                2 => t,
+                _ => (i16::from(l) + i16::from(t) - i16::from(tl)).clamp(0, 255) as u8,
+            }
+        };
+        *o = plane[i].wrapping_sub(pred);
+    }
+    out
+}
+
+/// The alpha plane as a VP8L stream "with implicit dimensions": the alpha values in the green
+/// channel of an otherwise constant image, with the 5-byte VP8L header (signature, 14+14 bit
+/// size, alpha-is-used bit, 3-bit version: exactly 40 bits) and the RIFF framing removed.
+#[cfg(feature = "webp")]
+fn vp8l_alpha_stream(plane: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
+    use image::ImageEncoder;
+    let f = Format::WebP;
+    let mut rgba = Vec::with_capacity(plane.len() * 4);
+    for &a in plane {
+        rgba.extend_from_slice(&[0, a, 0, 255]);
+    }
+    let mut full = Vec::new();
+    image::codecs::webp::WebPEncoder::new_lossless(&mut full)
+        .write_image(&rgba, w, h, image::ExtendedColorType::Rgba8)
+        .map_err(|e| Error::Encode(f, e.to_string()))?;
+    let bad = || Error::Encode(f, "unexpected lossless WebP layout".into());
+    // RIFF header (12), then the `VP8L` chunk: fourcc, size, payload.
+    if full.get(12..16) != Some(b"VP8L".as_slice()) {
+        return Err(bad());
+    }
+    let size = full
+        .get(16..20)
+        .and_then(|b| b.try_into().ok())
+        .map(u32::from_le_bytes)
+        .ok_or_else(bad)? as usize;
+    let payload = full.get(20..20 + size).ok_or_else(bad)?;
+    if payload.first() != Some(&0x2f) {
+        return Err(bad());
+    }
+    payload.get(5..).map(<[u8]>::to_vec).ok_or_else(bad)
+}
+
+/// The `ALPH` chunk payload: header byte (compression, filter, pre-processing) then the data.
+/// Tries VP8L compression under each prefilter and keeps the smallest; falls back to raw
+/// (method 0) when nothing is smaller.
+#[cfg(feature = "webp")]
+fn alph_payload(plane: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
+    let mut best: Option<Vec<u8>> = None;
+    for method in 0..4u8 {
+        let filtered = alpha_prefilter(plane, w as usize, method);
+        let Ok(stream) = vp8l_alpha_stream(&filtered, w, h) else {
+            continue;
+        };
+        if best.as_ref().is_none_or(|b| stream.len() + 1 < b.len()) {
+            let mut v = Vec::with_capacity(stream.len() + 1);
+            v.push(1 | (method << 2));
+            v.extend_from_slice(&stream);
+            best = Some(v);
+        }
+    }
+    Ok(match best {
+        Some(b) if b.len() < plane.len() + 1 => b,
+        _ => {
+            let mut raw = Vec::with_capacity(plane.len() + 1);
+            raw.push(0);
+            raw.extend_from_slice(plane);
+            raw
+        }
+    })
+}
+
 /// Lossy WebP (RFC 9649): the colour as a VP8 key frame and, when any pixel is translucent, the
-/// alpha plane as an uncompressed `ALPH` chunk. The extended (`VP8X`) form is written whenever
+/// alpha plane as an `ALPH` chunk (VP8L-compressed when that is smaller, else raw). The extended (`VP8X`) form is written whenever
 /// there is alpha, ICC or EXIF, with chunks in the order the specification gives.
 #[cfg(feature = "webp")]
 fn encode_webp_lossy(img: &Rgba8Image, quality: u8, opts: &EncodeOptions) -> Result<Vec<u8>> {
@@ -208,13 +299,12 @@ fn encode_webp_lossy(img: &Rgba8Image, quality: u8, opts: &EncodeOptions) -> Res
         },
     )
     .map_err(|e| Error::Encode(f, e.to_string()))?;
-    let alpha = (!img.is_opaque()).then(|| {
-        // ALPH header: no preprocessing, no filter, no compression; then one byte per pixel.
-        let mut a = Vec::with_capacity(w as usize * h as usize + 1);
-        a.push(0);
-        a.extend(img.data().as_chunks::<4>().0.iter().map(|p| p[3]));
-        a
-    });
+    let alpha = if img.is_opaque() {
+        None
+    } else {
+        let plane: Vec<u8> = img.data().as_chunks::<4>().0.iter().map(|p| p[3]).collect();
+        Some(alph_payload(&plane, w, h)?)
+    };
     let chunk = |out: &mut Vec<u8>, fourcc: &[u8; 4], payload: &[u8]| -> Result<()> {
         let len = u32::try_from(payload.len())
             .map_err(|_| Error::Encode(f, "WebP chunk over 4 GiB".into()))?;
@@ -470,5 +560,87 @@ mod webp_tests {
         let low = encode_plain(&img, OutputFormat::Webp { quality: 20 }).unwrap();
         let high = encode_plain(&img, OutputFormat::Webp { quality: 95 }).unwrap();
         assert!(low.len() < high.len(), "{} vs {}", low.len(), high.len());
+    }
+
+    fn alph_of(bytes: &[u8]) -> Option<&[u8]> {
+        let mut i = 12;
+        while i + 8 <= bytes.len() {
+            let len = u32::from_le_bytes(bytes[i + 4..i + 8].try_into().ok()?) as usize;
+            if &bytes[i..i + 4] == b"ALPH" {
+                return bytes.get(i + 8..i + 8 + len);
+            }
+            i += 8 + len + (len & 1);
+        }
+        None
+    }
+
+    fn alpha_plane(img: &Rgba8Image) -> Vec<u8> {
+        img.data().chunks(4).map(|p| p[3]).collect()
+    }
+
+    fn assert_alpha_exact(img: &Rgba8Image) {
+        let bytes = encode_plain(img, OutputFormat::Webp { quality: 80 }).unwrap();
+        let back = decode(&bytes, &DecodeOptions::default()).unwrap().image;
+        assert_eq!(alpha_plane(img), alpha_plane(&back));
+    }
+
+    #[test]
+    fn lossy_webp_alpha_round_trips_exactly() {
+        assert_alpha_exact(&gradient(97, 61, |x| (x * 2 + 10).min(254) as u8));
+        // Hard-edged mask: opaque disc on a transparent field.
+        let mut d = Vec::new();
+        for y in 0..64i32 {
+            for x in 0..80i32 {
+                let a = if (x - 40).pow(2) + (y - 32).pow(2) < 600 {
+                    255
+                } else {
+                    0
+                };
+                d.extend_from_slice(&[200, 100, 50, a]);
+            }
+        }
+        assert_alpha_exact(&Rgba8Image::new(80, 64, d).unwrap());
+    }
+
+    #[test]
+    fn lossy_webp_alpha_is_compressed() {
+        let img = gradient(640, 360, |x| (x * 254 / 640) as u8);
+        let bytes = encode_plain(&img, OutputFormat::Webp { quality: 80 }).unwrap();
+        let alph = alph_of(&bytes).unwrap();
+        assert_eq!(alph[0] & 3, 1, "VP8L-compressed");
+        assert!(alph.len() * 5 <= 640 * 360, "ALPH is {} bytes", alph.len());
+    }
+
+    #[test]
+    fn lossy_webp_with_alpha_is_near_lossless_size() {
+        let (w, h) = (1280u32, 720u32);
+        // Photo-like noisy colour under a feathered, translucent radial mask.
+        let mut seed = 99u32;
+        let mut d = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                let n = (seed >> 28) as u8;
+                let (dx, dy) = (x as f32 - 640.0, y as f32 - 360.0);
+                let a = (255.0 - (dx * dx + dy * dy).sqrt() * 0.4).clamp(20.0, 230.0) as u8;
+                d.extend_from_slice(&[(x / 6) as u8 ^ n, (y / 3) as u8 ^ n, 120 + n, a]);
+            }
+        }
+        let img = Rgba8Image::new(w, h, d).unwrap();
+        let lossy = encode_plain(&img, OutputFormat::Webp { quality: 80 }).unwrap();
+        let lossless = encode_plain(&img, OutputFormat::WebpLossless).unwrap();
+        eprintln!(
+            "lossy {} lossless {} filter {} alph {}",
+            lossy.len(),
+            lossless.len(),
+            (alph_of(&lossy).unwrap()[0] >> 2) & 3,
+            alph_of(&lossy).unwrap().len()
+        );
+        assert!(
+            lossy.len() <= 2 * lossless.len(),
+            "{} vs {}",
+            lossy.len(),
+            lossless.len()
+        );
     }
 }
