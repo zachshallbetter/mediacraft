@@ -146,3 +146,20 @@ cargo check --target wasm32-unknown-unknown -p craft-pdf -p craft-archive -p cra
 # Run AV sync and priming delay verification oracle
 cargo run -p mediacraft-cli -- oracle-test
 ```
+
+---
+
+## 6. Status & Limitations
+
+- The workspace version is `0.1.0`. No git tags or releases have been published, and the repository has no CI workflow; the commands in section 5 are the verification path.
+- `mediacraft-app` and related crates depend on `craft-ui`, `craft-quit`, `craft-settings` and `craft-atomic` from `storytold/craft-libs` through git, pinned to a revision in the root `Cargo.toml`.
+- Capability and conformance statements in this README and in `docs/` describe design targets and recorded results. Under the four-tier claim integrity in section 2, treat a capability as implemented or validated only where the source and tests show it.
+- Links in section 2 to `../CRAFT_*.md` and `../FORMAT_COMPATIBILITY_REFERENCE.md` point to documents outside this repository, which are not included here.
+
+---
+
+## 7. License
+
+MediaCraft is licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option, as declared by the workspace `license` field in `Cargo.toml`.
+
+See also [CONTRIBUTING.md](CONTRIBUTING.md), [SUPPORT.md](SUPPORT.md) and [SECURITY.md](SECURITY.md).

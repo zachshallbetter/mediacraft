@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a new capability, format or option.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Name the crate or media format involved, and the file or workflow you are trying to handle.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The behavior you want
+      description: What should MediaCraft do? What is the use case?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How you imagine it
+      description: A command, an option, an API, or a change to the docs.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
