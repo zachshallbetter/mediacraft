@@ -1,0 +1,39 @@
+name: Bug report
+description: Something in a MediaCraft crate, the daemon, the CLI or the app isn't behaving as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. A minimal reproduction is the fastest path to a fix.
+  - type: input
+    id: package
+    attributes:
+      label: Crate & version
+      placeholder: mediacraft-cli 0.1.0 (or craft-isobmff, craft-archive, ... and the commit)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened — quote the README or docs section if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Steps, a command, a code snippet, or a link.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: OS + version, rustc version (rustc --version)
